@@ -1,0 +1,12 @@
+{
+    "files.associations": {
+        "*.rsdef": "json",   
+        "*.rsproj": "json"   
+    },
+    "json.schemas": [
+        {
+            "fileMatch": ["*.rsproj"],
+            "url": "./schema/rsproj.schema.json"
+        }
+    ]
+}

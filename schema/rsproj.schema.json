@@ -1,0 +1,152 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Robotics Studio Project",
+    "type": "object",
+    "required": [
+        "version",
+        "meta",
+        "assembly",
+        "simulation"
+    ],
+    "properties": {
+        "version": {
+            "type": "number"
+        },
+        "meta": {
+            "type": "object",
+            "required": [
+                "name",
+                "version"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "author": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                },
+                "icon": {
+                    "type": "string"
+                }
+            }
+        },
+        "assembly": {
+            "type": "object",
+            "required": [
+                "dependencies",
+                "components"
+            ],
+            "properties": {
+                "dependencies": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "description": "Map of Model Alias -> File Path"
+                },
+                "components": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/componentNode"
+                    }
+                }
+            }
+        },
+        "simulation": {
+            "type": "object",
+            "required": [
+                "instances"
+            ],
+            "properties": {
+                "dependencies": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "instances": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "uid",
+                            "source",
+                            "position"
+                        ],
+                        "properties": {
+                            "uid": {
+                                "type": "integer"
+                            },
+                            "source": {
+                                "type": "string"
+                            },
+                            "position": {
+                                "type": "array",
+                                "items": {
+                                    "type": "number"
+                                },
+                                "minItems": 3,
+                                "maxItems": 3
+                            },
+                            "rotation": {
+                                "type": "array",
+                                "items": {
+                                    "type": "number"
+                                },
+                                "minItems": 3,
+                                "maxItems": 3
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "componentNode": {
+            "type": "object",
+            "required": [
+                "uid",
+                "parent",
+                "type",
+                "model"
+            ],
+            "properties": {
+                "uid": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "servo",
+                        "motor",
+                        "bracket",
+                        "sensor",
+                        "custom"
+                    ]
+                },
+                "model": {
+                    "type": "string"
+                },
+                "parent_connector": {
+                    "type": [
+                        "string",
+                        "integer"
+                    ]
+                },
+                "self_connector": {
+                    "type": [
+                        "string",
+                        "integer"
+                    ]
+                }
+            }
+        }
+    }
+}

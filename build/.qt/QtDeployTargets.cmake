@@ -1,0 +1,2 @@
+set(__QT_DEPLOY_TARGET_RoboticsStudio_FILE /home/anon/Documents/Code Projects/Mixed Projects/RoboticsStudio/build/RoboticsStudio)
+set(__QT_DEPLOY_TARGET_RoboticsStudio_TYPE EXECUTABLE)

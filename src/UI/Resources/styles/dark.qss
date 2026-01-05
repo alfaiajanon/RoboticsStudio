@@ -1,0 +1,54 @@
+/* Global */
+QWidget {
+    background-color: #1e1e1e;
+    color: #dcdcdc;
+    font-family: "Segoe UI";
+    font-size: 12pt;
+}
+
+/* Buttons */
+QPushButton {
+    background-color: #2d2d2d;
+    color: white;
+    border: 1px solid #3c3c3c;
+    padding: 6px;
+    border-radius: 4px;
+}
+QPushButton:hover {
+    background-color: #3c3c3c;
+}
+QPushButton:pressed {
+    background-color: #444;
+}
+
+/* Dock Widgets */
+QDockWidget {
+    background-color: #262626;
+    border: 1px solid #3a3a3a;
+}
+QDockWidget::title {
+    background-color: #303030;
+    padding: 6px;
+    font-weight: bold;
+    color: #ddd;
+}
+
+/* Tabs */
+QTabWidget::pane {
+    border: 1px solid #3a3a3a;
+}
+QTabBar::tab {
+    background-color: #2e2e2e;
+    padding: 6px;
+}
+QTabBar::tab:selected {
+    background-color: #444;
+}
+
+
+/* Tree Widgets */
+QTreeView {
+    background: #1e1e1e;                      
+    alternate-background-color: #262626;      
+    color: #ddd;                          
+}

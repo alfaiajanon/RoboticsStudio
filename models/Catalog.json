@@ -1,0 +1,17 @@
+{
+    "Categories":[
+        {
+            "id": "servo_motors",
+            "name":"Servo Motors",
+            "keys":["actuator","servo","motor","sg90","mg996r"],
+            "items":[
+                "./models/servo/servo_sg90/servo_sg90.rsdef",
+                "./models/servo/servo_mg996r/servo_mg996r.rsdef"
+            ]
+        },
+        {
+            "name":"Sensors",
+            "items":[]
+        }
+    ]
+}

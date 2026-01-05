@@ -1,0 +1,90 @@
+{
+    "version": 1.0,
+
+    "meta":{
+        "name":"Demo Robot 1",
+        "author":"Anon",
+        "icon":"",
+        "version":"1.0.0"
+    },
+
+    "assembly":{
+        "dependencies":{
+            "cassie":"./home/anon/cassie.rsdef"
+        },
+        "components":[
+            
+            {
+                "uid":1,
+                "parent":null,
+                "name": "Main root",
+                "type":"servo",
+                "model":"sg90",
+                "parent_connector":"point1",
+                "self_connector":"base"
+            },
+            {
+                "uid":14,
+                "parent":1,
+                "name": "another servo",
+                "type":"servo",
+                "model":"sg90",
+                "parent_connector":"horn_shaft",
+                "self_connector":"base"
+            },
+            {
+                "uid":4,
+                "parent":1,
+                "name": "servo2",
+                "type":"servo",
+                "model":"sg90",
+                "parent_connector":"horn_shaft",
+                "self_connector":"base"
+            },
+            {
+                "uid":21,
+                "parent":4,
+                "name": "servo3",
+                "type":"servo",
+                "model":"sg90",
+                "parent_connector":"point2",
+                "self_connector":"base"
+            }
+        ],
+        "constraints": [
+            {
+                "type":"weld",
+                "component_a":1,
+                "connector_a":"horn_shaft",
+                "component_b":21,
+                "connector_b":"horn_shaft"
+            }
+        ]
+    },
+
+    "simulation":{
+        "dependencies":{
+            "robot2":"/home/anon/demo2.rsproj"
+        },
+        "instances":[
+            {
+                "uid":1,
+                "source":"self", 
+                "position":[1,0,1],
+                "rotation": [0, 0, 90]
+            },
+            {
+                "uid":2,
+                "source":"robot2",
+                "position":[7,0,0],
+                "rotation": [0, 0, 0]
+            },
+            {
+                "uid":3,
+                "source":"robot2",
+                "position":[5,0,0],
+                "rotation": [0, 0, -90]
+            }
+        ]
+    }
+}

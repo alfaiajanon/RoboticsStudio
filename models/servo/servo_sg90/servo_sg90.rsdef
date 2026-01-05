@@ -1,0 +1,99 @@
+{
+    "meta": {
+        "id": "servo_sg90",
+        "name": "TowerPro SG90",
+        "version": "1.0.0",
+        "author": "Anon",
+        "icon_path": "icons/sg90.png"
+    },
+
+    "resources": {
+        "mujoco_model_path": "./body.xml"
+    },
+    
+    "specs": {
+        "voltage_max": 6.0,
+        "voltage_min": 4.8,
+        "max_torque_nm": 0.176,  
+        "max_speed_rad": 6.28,   
+        "weight_kg": 0.009
+    },
+
+
+    "pins":[
+        {
+            "id": "vcc",
+            "voltage_range": [4.8, 6.0],
+            "position": [-0.00254, 0.01, 0],
+            "rotation": [0, 0, 90],
+            "description": "Power input pin for servo motor"
+        },
+        {
+            "id": "signal",
+            "position": [0, 0.01, 0],
+            "rotation": [0, 0, 90],
+            "description": "PWM signal input pin for controlling servo position"
+        },
+        {
+            "id": "gnd",
+            "position": [0.00254, 0.01, 0],
+            "rotation": [0, 0, 90],
+            "description": "Ground pin for servo motor"
+        }
+    ],
+
+    
+    "connectors": [
+        {
+            "id": "horn_shaft",
+            "body": "horn",
+            "position": [0, 0, 0.026], 
+            "rotation": [0, 90, 0],     
+            "description": ""
+        },
+        {
+            "id": "base",
+            "body": "base",
+            "position": [0, 0, -0.018], 
+            "rotation": [0, 0, 90],
+            "description": "Flat bottom surface for gluing or taping"
+        },
+        {
+            "id": "side_screw_left",
+            "body": "base",
+            "position": [-0.014, 0, 0.015],
+            "rotation": [0, -90, 0], 
+            "description": ""
+        },
+        {
+            "id": "side_screw_right",
+            "body": "base",
+            "position": [0.014, 0, 0.015],
+            "rotation": [0, 90, 0], 
+            "description": ""
+        }
+    ],
+
+
+    "io": {
+        "inputs": [
+            {
+                "name": "target_angle",
+                "unit": "degrees",
+                "data_type": "float",
+                "range": [-90, 90],
+                "mujoco_actuator_name": "servo_actuator",
+                "pin_required": ["signal"]
+            }
+        ],
+        "outputs": [
+            {
+                "name": "current_angle",
+                "unit": "degrees",
+                "data_type": "float",
+                "mujoco_sensor_name": "servo_pos_sensor",
+                "pin_required": ["vcc","gnd"]
+            }
+        ]
+    }
+}
