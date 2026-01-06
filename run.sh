@@ -1,1 +1,1 @@
-cmake --build build -j4 && ./build/RoboticsStudio
+mkdir -p build && cmake --build build -j4 && ./build/RoboticsStudio
