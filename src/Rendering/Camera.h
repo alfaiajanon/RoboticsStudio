@@ -1,7 +1,7 @@
 #ifndef CAMERA_H
 #define CAMERA_H
 
-#include "Core/Utils.h"
+#include "Utils/Spatial.h"
 
 class Camera{
     mjvCamera *cam;

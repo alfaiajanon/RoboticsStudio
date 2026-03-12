@@ -1,44 +1,43 @@
 #pragma once
 
-
+#include <QSet>
 #include <QString>
 #include <QJsonObject>
-#include "Simulation/Components/Component.h"
+#include <QMap>
+#include <QList>
+#include "Simulation/Components/ComponentInstance.h"
 
 
 
-class Constraint{
-    public:
-        QString type;
-        int componentAUid;
-        int componentBUid;
-        QString componentAConnector;
-        QString componentBConnector;
-};
 
-
-class Project{
+/*
+ * Manages the active workspace and holds the loaded robot assembly.
+ * Handles parsing the project JSON, building the component memory tree,
+ * and compiling the final MuJoCo XML string for the physics engine.
+ */
+class Project {
     private:
         QString projectPath;
         QString directoryPath;
-
         QJsonObject projectData;
-
-        QMap <int, ComponentInstance*> componentMap;
-        QList <Constraint*> constraintList;
-
+        
         ComponentInstance* rootComponent = nullptr;
+        QMap<int, ComponentInstance*> componentMap;
+        QList<Constraint*> constraintList;
 
-        // Internal Steps
         void clear();
         void parseAssembly();
         void buildHierarchy(); 
+
+        QString writeWorldBodyXML(ComponentInstance* comp, QSet<int>& visitedComponents);
+        void writeAssetsXML(ComponentInstance* comp, QString& assetsOut, QSet<QString>& processedModels);
+        void writeActuatorsXML(ComponentInstance* comp, QString& actuatorsOut);
+        void writeSensorsXML(ComponentInstance* comp, QString& sensorsOut);
         
-        void writeComponentXML(ComponentInstance* comp, QString& assetsOut, QString& worldbodyOut, QString& constraintsOut , int indentLevel);
-        
-        void getAssetTransform(const QString& modelName, const QString& connectorName, 
-                            QVector3D& outPos, QQuaternion& outRot);
-        
+        void writeConstraintXML(ComponentInstance* compA, const QString& connA, 
+                                ComponentInstance* compB, const QString& connB, 
+                                QString& constraintsOut, QString& contactsOut);
+            
     public:
         Project();
         ~Project();

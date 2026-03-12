@@ -3,6 +3,12 @@
 #include <QSurfaceFormat>
 #include <QResizeEvent> 
 #include <QDebug>
+#include "Core/Application.h"
+#include "Simulation/SimulationManager.h"
+
+
+
+
 
 MViewport::MViewport(QWidget *parent) : QLabel(parent){
     setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
@@ -14,8 +20,16 @@ MViewport::MViewport(QWidget *parent) : QLabel(parent){
     timer.start(16);
 }
 
+
+
+
+
 MViewport::~MViewport(){
+    delete sim;
 }
+
+
+
 
 
 void MViewport::resizeEvent(QResizeEvent *event){
@@ -25,12 +39,27 @@ void MViewport::resizeEvent(QResizeEvent *event){
     );
 }
 
-void MViewport::renderLoop(){
-    MujocoContext* mujocoContext = MujocoContext::getInstance();
-    mujocoContext->step();
-    mujocoContext->step();
 
-    QImage currentFrame = sim->render();
+
+
+
+/*
+ * The Qt timer-driven render loop (60 FPS).
+ * Briefly locks the physics engine to safely extract render data,
+ * ensuring no geometry mutates mid-draw, then updates UI telemetry.
+ */
+void MViewport::renderLoop(){
+    QImage currentFrame;
+    SimulationManager* simManager = Application::getInstance()->getSimulationManager();
+
+    if (simManager) {
+        std::lock_guard<std::mutex> lock(simManager->physicsMutex);
+        currentFrame = sim->render();
+    } else {
+        currentFrame = sim->render();
+    }
+
     setPixmap(QPixmap::fromImage(currentFrame));
 
+    Application::getInstance()->getEditor()->inspector->updateLiveValues(); 
 }

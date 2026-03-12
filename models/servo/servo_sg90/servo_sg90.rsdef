@@ -8,7 +8,12 @@
     },
 
     "resources": {
-        "mujoco_model_path": "./body.xml"
+        "meshes": {
+            "mesh_body": "meshes/servo_body.obj"
+        },
+        "materials": {
+            "mat_servo": "textures/servo_body_texture.png"
+        }
     },
     
     "specs": {
@@ -19,61 +24,107 @@
         "weight_kg": 0.009
     },
 
-
-    "pins":[
+    "pins": [
         {
             "id": "vcc",
             "voltage_range": [4.8, 6.0],
-            "position": [-0.00254, 0.01, 0],
-            "rotation": [0, 0, 90],
             "description": "Power input pin for servo motor"
         },
         {
             "id": "signal",
-            "position": [0, 0.01, 0],
-            "rotation": [0, 0, 90],
             "description": "PWM signal input pin for controlling servo position"
         },
         {
             "id": "gnd",
-            "position": [0.00254, 0.01, 0],
-            "rotation": [0, 0, 90],
             "description": "Ground pin for servo motor"
         }
     ],
 
+    "kinematics": {
+        "bodies": [
+            {
+                "id": "base",
+                "mass": 0.008,
+                "transform": {
+                    "pos": [0, 0, 0],
+                    "quat": [1, 0, 0, 0]
+                },
+                "geoms": [
+                    { "type": "mesh", "mesh": "mesh_body", "material": "mat_servo" }
+                ]
+            },
+            {
+                "id": "horn",
+                "mass": 0.001,
+                "transform": {
+                    "pos": [-0.005, 0, 0.0205],
+                    "quat": [1, 0, 0, 0]
+                },
+                "geoms": [
+                    { "type": "box", "size": [0.008, 0.002, 0.001], "pos": [0, 0, 0] }
+                ]
+            }
+        ],
+        "joints": [
+            {
+                "id": "servo_joint",
+                "body_a": "base",
+                "body_b": "horn",
+                "type": "hinge",
+                "transform": {
+                    "pos": [-0.005, 0, 0.0205],
+                    "quat": [1, 0, 0, 0]
+                },
+                "range": [-90, 90],
+                "damping": 0.01,
+                "armature": 0.005,
+                "frictionloss": 0.01
+            }
+        ]
+    },
     
     "connectors": [
         {
-            "id": "horn_shaft",
+            "id": "horn",
             "body": "horn",
-            "position": [0, 0, 0.026], 
-            "rotation": [0, 90, 0],     
-            "description": ""
+            "description": "horn for attaching arms",
+            "mechanics": { "snap_angles": [0, 180] },
+            "transform": {
+                "pos": [-0.005, 0, 0.0205],
+                "quat": [1, 0, 0, 0]
+            }
         },
         {
             "id": "base",
             "body": "base",
-            "position": [0, 0, -0.018], 
-            "rotation": [0, 0, 90],
-            "description": "Flat bottom surface for gluing or taping"
+            "description": "Flat bottom surface for gluing or taping",
+            "mechanics": { "snap_angles": [0, 90, 180, 270] },
+            "transform": {
+                "pos": [0, 0, -0.0105],
+                "quat": [0, 1, 0, 0]
+            }
         },
         {
             "id": "side_screw_left",
             "body": "base",
-            "position": [-0.014, 0, 0.015],
-            "rotation": [0, -90, 0], 
-            "description": ""
+            "description": "Left mounting tab hole",
+            "mechanics": { "snap_angles": [0] },
+            "transform": {
+                "pos": [-0.014, 0, 0.0075],
+                "quat": [1, 0, 0, 0]
+            }
         },
         {
             "id": "side_screw_right",
             "body": "base",
-            "position": [0.014, 0, 0.015],
-            "rotation": [0, 90, 0], 
-            "description": ""
+            "description": "Right mounting tab hole",
+            "mechanics": { "snap_angles": [0] },
+            "transform": {
+                "pos": [0.014, 0, 0.0075],
+                "quat": [1, 0, 0, 0]
+            }
         }
     ],
-
 
     "io": {
         "inputs": [
@@ -82,7 +133,11 @@
                 "unit": "degrees",
                 "data_type": "float",
                 "range": [-90, 90],
-                "mujoco_actuator_name": "servo_actuator",
+                "target_joint": "servo_joint",
+                "actuator_type": "position",
+                "kp": 5.0,
+                "kv": 0.5,
+                "forcerange": [-0.176, 0.176],
                 "pin_required": ["signal"]
             }
         ],
@@ -91,8 +146,9 @@
                 "name": "current_angle",
                 "unit": "degrees",
                 "data_type": "float",
-                "mujoco_sensor_name": "servo_pos_sensor",
-                "pin_required": ["vcc","gnd"]
+                "target_joint": "servo_joint",
+                "sensor_type": "jointpos",
+                "pin_required": ["vcc", "gnd"]
             }
         ]
     }

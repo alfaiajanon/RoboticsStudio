@@ -2,18 +2,32 @@
 
 #include <QApplication>
 #include "Project.h"
+#include "UI/EditorWindow.h"
+#include "Simulation/SimulationManager.h"
 
-class MainWindow;
-
-class Application{
-    QApplication qtApp;
-    MainWindow* mainWindow = nullptr;
+class Application {
     
+    QApplication qtApp;
+    EditorWindow editor;
+    SimulationManager* simManager;
+    static Application* instance;
+
+    Application(int& argc, char** argv);
+    ~Application();
+
+    Application(const Application&) = delete;
+    Application& operator=(const Application&) = delete;
+
     public:
         Project currentProject;
-        
-        Application(int& argc, char** argv);
-        ~Application();
+
+        static Application* init(int& argc, char** argv);
+        static Application* getInstance();
+        static void destroy(); 
+
+        Project* getProject();
+        SimulationManager* getSimulationManager();
+        EditorWindow* getEditor();
 
         void loadStyle(const QString& path);    
         int run();

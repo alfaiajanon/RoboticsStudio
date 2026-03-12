@@ -21,9 +21,6 @@ class CameraController{
         virtual void onKeyRelease(int key, int mods){};
 };
 
-
-
-
 class OrbitCameraController : public CameraController{
     private:
         int lastX;
@@ -66,7 +63,6 @@ class OrbitCameraController : public CameraController{
             if(cosPhi > 1.0) cosPhi = 1.0;
             if(cosPhi < -1.0) cosPhi = -1.0;
 
-
             double phi = acos(cosPhi) + angle * M_PI / 180.0;
 
             if(phi < 0.1) phi = 0.1;
@@ -91,21 +87,21 @@ class OrbitCameraController : public CameraController{
             double fz = tgt.z - pos.z;
 
             double fl = sqrt(fx*fx + fy*fy + fz*fz);
-            fx /= fl; fy /= fl; fz /= fl;    // normalize
+            fx /= fl; fy /= fl; fz /= fl;    
 
-            // 2. World up (MuJoCo, Godot, Unity, Blender use +Z as up)
+            // 2. World up
             double upx = 0, upy = 0, upz = 1;
 
-            // 3. Compute RIGHT = normalize(cross(forward, up))
+            // 3. Compute RIGHT
             double rx = fy*upz - fz*upy;
             double ry = fz*upx - fx*upz;
             double rz = fx*upy - fy*upx;
 
             double rl = sqrt(rx*rx + ry*ry + rz*rz);
-            if (rl < 1e-9) return; // handle forward ~ parallel to up
+            if (rl < 1e-9) return; 
             rx /= rl; ry /= rl; rz /= rl;
 
-            // 4. Compute camera UP = cross(right, forward)
+            // 4. Compute camera UP
             double ux = ry*fz - rz*fy;
             double uy = rz*fx - rx*fz;
             double uz = rx*fy - ry*fx;
@@ -113,24 +109,24 @@ class OrbitCameraController : public CameraController{
             double ul = sqrt(ux*ux + uy*uy + uz*uz);
             ux /= ul; uy /= ul; uz /= ul;
 
-            // 5. Screen-space movement: right and up
-            double s = pos.distanceTo(tgt);     // your sensitivity scale
+            // 5. PROPORTIONAL SCALING FIX:
+            // Multiply the raw pixel movement by the distance to the target AND the sensitivity
+            double s = pos.distanceTo(tgt);     
 
-            double dxw = -dx*(1+s);    // drag-right → move-left
-            double dyw =  dy*(1+s);    // drag-up → move-up
+            double dxw = -dx * s * PAN_SENS;    
+            double dyw =  dy * s * PAN_SENS;    
 
+            // 6. Apply to position AND target
             double px = rx*dxw + ux*dyw;
             double py = ry*dxw + uy*dyw;
             double pz = rz*dxw + uz*dyw;
 
-            // 6. Apply to position AND target
             pos.x += px; pos.y += py; pos.z += pz;
             tgt.x += px; tgt.y += py; tgt.z += pz;
 
             cam->setPosition(pos);
-            cam->setTarget(tgt);   // or cam->lookAt(tgt);
+            cam->setTarget(tgt);   
         }
-
 
         void zoom(double delta){
             Position position = cam->getPosition();
@@ -141,8 +137,14 @@ class OrbitCameraController : public CameraController{
             double dz = position.z - target.z;
 
             double dist = sqrt(dx*dx + dy*dy + dz*dz);
-            dist += delta;
-            if(dist < 0.1) dist = 0.1; 
+            
+            // PROPORTIONAL SCALING FIX:
+            // The zoom step is now a percentage of the current distance
+            double zoomStep = dist * delta * ZOOM_SENS;
+            dist += zoomStep;
+            
+            // Lowered minimum distance to 1cm since your parts are tiny!
+            if(dist < 0.01) dist = 0.01; 
 
             double scale = dist / sqrt(dx*dx + dy*dy + dz*dz);
             position.x = target.x + dx * scale;
@@ -151,13 +153,12 @@ class OrbitCameraController : public CameraController{
 
             cam->setPosition(position);
         }
-        
-
 
     public:
+        // Adjusted base sensitivities to match the new proportional math
         float ORBIT_SENS = 0.5; 
         float ZOOM_SENS = 0.1;
-        float PAN_SENS = 0.001;
+        float PAN_SENS = 0.002;
 
         OrbitCameraController(){
             state = IDLE;
@@ -179,7 +180,8 @@ class OrbitCameraController : public CameraController{
                 int dx = x - lastX;
                 int dy = y - lastY;
 
-                pan(dx * 0.001, dy * 0.001);
+                // Pass the raw pixels into pan(). The proportional math inside will handle it.
+                pan(dx, dy); 
                 
                 lastX = x;
                 lastY = y;
@@ -187,7 +189,8 @@ class OrbitCameraController : public CameraController{
         }
 
         void onMouseScroll(double delta) override {
-            zoom(-delta * ZOOM_SENS);
+            // Delta is usually 1 or -1 from the scroll wheel
+            zoom(-delta);
         }
 
         void onMouseDown(int button, int mods) override{
@@ -206,14 +209,9 @@ class OrbitCameraController : public CameraController{
             }
         }
 
-
         void onMouseUp() override {
             state = IDLE;
         }
 };
-
-
-
-
 
 #endif

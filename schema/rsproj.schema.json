@@ -52,6 +52,12 @@
                     "items": {
                         "$ref": "#/definitions/componentNode"
                     }
+                },
+                "constraints": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/constraintNode"
+                    }
                 }
             }
         },
@@ -74,7 +80,7 @@
                         "required": [
                             "uid",
                             "source",
-                            "position"
+                            "frame"
                         ],
                         "properties": {
                             "uid": {
@@ -83,21 +89,33 @@
                             "source": {
                                 "type": "string"
                             },
-                            "position": {
-                                "type": "array",
-                                "items": {
-                                    "type": "number"
-                                },
-                                "minItems": 3,
-                                "maxItems": 3
-                            },
-                            "rotation": {
-                                "type": "array",
-                                "items": {
-                                    "type": "number"
-                                },
-                                "minItems": 3,
-                                "maxItems": 3
+                            "frame": {
+                                "type": "object",
+                                "required": [
+                                    "position",
+                                    "up_vector",
+                                    "forward_vector"
+                                ],
+                                "properties": {
+                                    "position": {
+                                        "type": "array",
+                                        "items": { "type": "number" },
+                                        "minItems": 3,
+                                        "maxItems": 3
+                                    },
+                                    "up_vector": {
+                                        "type": "array",
+                                        "items": { "type": "number" },
+                                        "minItems": 3,
+                                        "maxItems": 3
+                                    },
+                                    "forward_vector": {
+                                        "type": "array",
+                                        "items": { "type": "number" },
+                                        "minItems": 3,
+                                        "maxItems": 3
+                                    }
+                                }
                             }
                         }
                     }
@@ -110,7 +128,6 @@
             "type": "object",
             "required": [
                 "uid",
-                "parent",
                 "type",
                 "model"
             ],
@@ -122,29 +139,68 @@
                     "type": "string"
                 },
                 "type": {
-                    "type": "string",
-                    "enum": [
-                        "servo",
-                        "motor",
-                        "bracket",
-                        "sensor",
-                        "custom"
-                    ]
+                    "type": "string"
                 },
                 "model": {
                     "type": "string"
                 },
-                "parent_connector": {
+                "connection": {
                     "type": [
-                        "string",
-                        "integer"
-                    ]
+                        "object",
+                        "null"
+                    ],
+                    "required": [
+                        "parent_uid",
+                        "parent_connector",
+                        "self_connector",
+                        "snap_angle"
+                    ],
+                    "properties": {
+                        "parent_uid": {
+                            "type": "integer"
+                        },
+                        "parent_connector": {
+                            "type": "string"
+                        },
+                        "self_connector": {
+                            "type": "string"
+                        },
+                        "snap_angle": {
+                            "type": "number"
+                        }
+                    }
                 },
-                "self_connector": {
-                    "type": [
-                        "string",
-                        "integer"
-                    ]
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "description": "Map of parameter overrides like initial_angle, colors, PID configs, etc."
+                }
+            }
+        },
+        "constraintNode": {
+            "type": "object",
+            "required": [
+                "component_a",
+                "connector_a",
+                "component_b",
+                "connector_b",
+                "snap_angle"
+            ],
+            "properties": {
+                "component_a": {
+                    "type": "integer"
+                },
+                "connector_a": {
+                    "type": "string"
+                },
+                "component_b": {
+                    "type": "integer"
+                },
+                "connector_b": {
+                    "type": "string"
+                },
+                "snap_angle": {
+                    "type": "number"
                 }
             }
         }

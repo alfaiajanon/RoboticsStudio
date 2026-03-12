@@ -1,0 +1,87 @@
+#pragma once
+
+#include <QString>
+#include <QList>
+#include <QMap>
+#include <QVariant>
+#include <vector>
+#include <mutex>
+#include "ComponentBlueprint.h"
+#include "Simulation/ErrorSystem/EmulationInjector.h"
+#include "Utils/Spatial.h"
+
+
+
+
+/*
+ * Live memory buffer representing an individual input or output stream for a component.
+ * Used to sync UI sliders and sensors with MuJoCo's low-level data arrays.
+ */
+struct IOStream {
+    int mujocoId = -1;       
+    double targetValue = 0;  
+    double currentValue = 0; 
+    std::vector<double> historyBuffer; 
+};
+
+
+
+
+/*
+ * Defines an explicit closed-loop connection between two components in the workspace.
+ * Generates MuJoCo equality constraints only when the kinematic tree cycles back on itself.
+ */
+class Constraint {
+public:
+    int componentAUid;
+    int componentBUid;
+    QString connectorA;
+    QString connectorB;
+    float snapAngle = 0.0f;
+};
+
+
+
+
+/*
+ * Represents a live, instantiated component within the project workspace.
+ * Holds its unique spatial state via a unified Transform, hierarchical connections, and live IO.
+ */
+class ComponentInstance {
+private:
+    mutable std::mutex ioMutex;
+
+    QMap<QString, IOStream> inputs;
+    QMap<QString, IOStream> outputs;
+
+public:
+    int uid;
+    QString name;
+    QString type;
+    QString model;
+    
+    int parentUid;
+    QString parentConnector;
+    QString selfConnector;
+    float snapAngle;
+    
+    QMap<QString, QVariant> parameters;
+    
+    Transform transform;
+    
+    ComponentBlueprint* blueprint = nullptr;
+    QList<ComponentInstance*> children;
+
+    ComponentInstance() : uid(-1), parentUid(-1), snapAngle(0.0f) {}
+    
+    void initializeIO();
+    
+    void setInputTarget(const QString& key, double value);
+    double getInputTarget(const QString& key) const;
+    
+    void setOutputCurrent(const QString& key, double value);
+    double getOutputCurrent(const QString& key) const;
+
+    void setMujocoId(const QString& key, int id, bool isInput);
+    int getMujocoId(const QString& key, bool isInput) const;
+};

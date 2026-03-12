@@ -1,4 +1,4 @@
-#include "MainWindow.h"
+#include "EditorWindow.h"
 #include <QDockWidget>
 #include <QWidget>
 #include <QHBoxLayout>
@@ -6,13 +6,17 @@
 #include <QTabBar>
 #include "Rendering/MViewport.h"
 #include "Docking/SceneTreePanel.h"
-// #include "Docking/InspectorPanel.h"
+#include "Docking/InspectorPanel.h"
 #include "BottomBar/ConsolePanel.h"
 #include "BottomBar/ComponentsPanel.h"
 #include "Core/InputManager.h"
 #include "Rendering/CameraController.h"
 
-MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent){
+/*
+ * Initializes the main Editor Window workspace.
+ * Sets up the layout splitting and default docking areas.
+ */
+EditorWindow::EditorWindow(QWidget* parent) : QMainWindow(parent){
     this->setWindowTitle("Robotics Studio");
     this->resize(1280, 720);
 
@@ -27,19 +31,21 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent){
 
 
 
-void MainWindow::setupSplitting(){
+/*
+ * Configures the central vertical splitter.
+ * Initializes the 3D viewport, camera controller, and bottom tab panels.
+ */
+void EditorWindow::setupSplitting(){
     this->topDownSplitter = new QSplitter(Qt::Vertical);
     setCentralWidget(topDownSplitter);
 
-
-    
     viewport = new MViewport();
     topDownSplitter->addWidget(viewport);
 
     CameraController* controller = new OrbitCameraController();
     Camera *camera = new Camera(MujocoContext::getInstance()->getCamera());
     controller->setCamera(camera);
-    camera->setPosition(Position(0.0, -3.0, 1.0));
+    camera->setPosition(Position(0.0, -0.20, 0.05));
     camera->setTarget(Position(0.0, 0.0, 0.0));
 
     InputManager &im=InputManager::getInstance();
@@ -64,8 +70,6 @@ void MainWindow::setupSplitting(){
             controller->onMouseScroll(yoffset);
         }
     );
-
-
 
     bottomTabs = new QTabWidget();
     bottomTabs->setMinimumHeight(bottomTabs->tabBar()->sizeHint().height());
@@ -93,41 +97,36 @@ void MainWindow::setupSplitting(){
             }
         }
     });
-
-
-    // QWidget *rightPanel = new QWidget();
-    // rightPanel->setMinimumWidth(200);
-    // mainSplitter->addWidget(rightPanel);
-    // mainSplitter->setCollapsible(0, false);
-    // mainSplitter->setCollapsible(1, false);
-    // int w1 = this->width()*0.75;
-    // int w2 = this->width()*0.25;
-    // mainSplitter->setSizes({w1, w2});
 }
 
 
 
 
+/*
+ * Configures the right and bottom docking panels.
+ * Routes UI signals through the central EditorWindow mediator.
+ */
+void EditorWindow::setupRightDocking(){
+    QDockWidget *inspectorDock = new QDockWidget("Inspector");
+    inspector = new InspectorPanel();
+    inspectorDock->setWidget( inspector );
+    addDockWidget(Qt::RightDockWidgetArea, inspectorDock);
 
-void MainWindow::setupRightDocking(){
     QDockWidget *sceneDock = new QDockWidget("Scene tree");
     sceneTree = new SceneTreePanel();
     sceneDock->setWidget(sceneTree);
     addDockWidget(Qt::RightDockWidgetArea, sceneDock);
 
-    QDockWidget *inspectorDock = new QDockWidget("Inspector");
-    addDockWidget(Qt::RightDockWidgetArea, inspectorDock);
+    connect(sceneTree, &SceneTreePanel::componentSelected, this, &EditorWindow::selectComponent);
 
     QDockWidget *graphDock = new QDockWidget("Graph");
     addDockWidget(Qt::BottomDockWidgetArea, graphDock);
-
 
     sceneDock->setFeatures(QDockWidget::DockWidgetMovable);
     inspectorDock->setFeatures(QDockWidget::DockWidgetMovable);
     graphDock->setFeatures(QDockWidget::DockWidgetMovable);
     sceneDock->setMinimumWidth(150);
     inspectorDock->setMinimumWidth(150);
-
     
     splitDockWidget(sceneDock, graphDock, Qt::Vertical);
     splitDockWidget(sceneDock, inspectorDock, Qt::Horizontal);
@@ -135,3 +134,45 @@ void MainWindow::setupRightDocking(){
 
 
 
+
+/*
+ * Master selection coordinator.
+ * Safely updates all panels and viewports without triggering circular signal loops.
+ */
+void EditorWindow::selectComponent(int uid) {
+    if (this->currentSelectedUid == uid) return;
+    this->currentSelectedUid = uid;
+
+    sceneTree->blockSignals(true);
+    sceneTree->highlightItem(uid);
+    sceneTree->blockSignals(false);
+
+    viewport->blockSignals(true);
+    // viewport->highlightMesh(uid); // TODO: Implement 3D selection highlight
+    viewport->blockSignals(false);
+
+    inspector->setComponent(uid);
+}
+
+
+
+
+
+/*
+ * Clears the active component selection.
+ * Resets tracking variables and clears downstream UI panels.
+ */
+void EditorWindow::clearSelection() {
+    if (this->currentSelectedUid == -1) return;
+    this->currentSelectedUid = -1;
+
+    sceneTree->blockSignals(true);
+    sceneTree->highlightItem(-1);
+    sceneTree->blockSignals(false);
+
+    viewport->blockSignals(true);
+    // viewport->clearHighlight(); // TODO: Implement 3D selection clear
+    viewport->blockSignals(false);
+
+    inspector->setComponent(-1);
+}

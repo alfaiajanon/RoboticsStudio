@@ -1,89 +1,95 @@
 {
     "version": 1.0,
 
-    "meta":{
-        "name":"Demo Robot 1",
-        "author":"Anon",
-        "icon":"",
-        "version":"1.0.0"
+    "meta": {
+        "name": "Demo Robot 1",
+        "author": "Anon",
+        "icon": "",
+        "version": "1.0.0"
     },
 
-    "assembly":{
-        "dependencies":{
-            "cassie":"./home/anon/cassie.rsdef"
+    "assembly": {
+        "dependencies": {
+            "cassie": "./home/anon/cassie.rsdef"
         },
-        "components":[
-            
+        "components": [
             {
-                "uid":1,
-                "parent":null,
+                "uid": 1,
                 "name": "Main root",
-                "type":"servo",
-                "model":"sg90",
-                "parent_connector":"point1",
-                "self_connector":"base"
+                "type": "servo",
+                "model": "sg90",
+                "connection": null,
+                "parameters": {
+                    "initial_angle": 0.0
+                }
             },
             {
-                "uid":14,
-                "parent":1,
+                "uid": 14,
                 "name": "another servo",
-                "type":"servo",
-                "model":"sg90",
-                "parent_connector":"horn_shaft",
-                "self_connector":"base"
+                "type": "servo",
+                "model": "sg90",
+                "connection": {
+                    "parent_uid": 1,
+                    "parent_connector": "horn",
+                    "self_connector": "base",
+                    "snap_angle": 0
+                },
+                "parameters": {
+                    "initial_angle": 0.0
+                }
             },
             {
-                "uid":4,
-                "parent":1,
-                "name": "servo2",
-                "type":"servo",
-                "model":"sg90",
-                "parent_connector":"horn_shaft",
-                "self_connector":"base"
-            },
-            {
-                "uid":21,
-                "parent":4,
-                "name": "servo3",
-                "type":"servo",
-                "model":"sg90",
-                "parent_connector":"point2",
-                "self_connector":"base"
+                "uid": 15,
+                "name": "another servo",
+                "type": "servo",
+                "model": "sg90",
+                "connection": {
+                    "parent_uid": 14,
+                    "parent_connector": "horn",
+                    "self_connector": "base",
+                    "snap_angle": 0
+                },
+                "parameters": {
+                    "initial_angle": 0.0
+                }
             }
         ],
         "constraints": [
-            {
-                "type":"weld",
-                "component_a":1,
-                "connector_a":"horn_shaft",
-                "component_b":21,
-                "connector_b":"horn_shaft"
-            }
+            
         ]
     },
 
-    "simulation":{
-        "dependencies":{
-            "robot2":"/home/anon/demo2.rsproj"
+    "simulation": {
+        "dependencies": {
+            "robot2": "/home/anon/demo2.rsproj"
         },
-        "instances":[
+        "instances": [
             {
-                "uid":1,
-                "source":"self", 
-                "position":[1,0,1],
-                "rotation": [0, 0, 90]
+                "uid": 1,
+                "source": "self", 
+                "frame": {
+                    "position": [1, 0, 1],
+                    "up_vector": [0, 0, 1],
+                    "forward_vector": [0, 1, 0] 
+                }
             },
             {
-                "uid":2,
-                "source":"robot2",
-                "position":[7,0,0],
-                "rotation": [0, 0, 0]
+                "uid": 2,
+                "source": "robot2",
+                "frame": {
+                    "position": [7, 0, 0],
+                    "up_vector": [0, 0, 1],
+                    "forward_vector": [1, 0, 0]
+                }
             },
             {
-                "uid":3,
-                "source":"robot2",
-                "position":[5,0,0],
-                "rotation": [0, 0, -90]
+                "uid": 3,
+                "source": "robot2",
+                "frame": {
+                    "position": [5, 0, 0],
+                    "up_vector": [0, 0, 1],
+                    "forward_vector": [0, -1, 0] 
+                }
             }
         ]
     }
