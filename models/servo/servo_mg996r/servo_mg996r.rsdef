@@ -1,3 +1,155 @@
 {
+    "meta": {
+        "id": "servo_mg996r",
+        "name": "TowerPro MG996R",
+        "version": "1.0.0",
+        "author": "Anon",
+        "icon_path": "mg996r.png"
+    },
+
+    "resources": {
+        "meshes": {
+            "mesh_body": "meshes/mg996r_body.obj"
+        },
+        "materials": {
+            "mat_servo": "textures/mg996r_body_texture.png"
+        }
+    },
     
+    "specs": {
+        "voltage_max": 7.2,
+        "voltage_min": 4.8,
+        "max_torque_nm": 1.08,  
+        "max_speed_rad": 6.16,   
+        "weight_kg": 0.055
+    },
+
+    "pins": [
+        {
+            "id": "vcc",
+            "voltage_range": [4.8, 7.2],
+            "description": "Power input pin for servo motor"
+        },
+        {
+            "id": "signal",
+            "description": "PWM signal input pin for controlling servo position"
+        },
+        {
+            "id": "gnd",
+            "description": "Ground pin for servo motor"
+        }
+    ],
+
+    "kinematics": {
+        "bodies": [
+            {
+                "id": "base",
+                "mass": 0.052,
+                "transform": {
+                    "pos": [0, 0, 0],
+                    "quat": [1, 0, 0, 0]
+                },
+                "geoms": [
+                    { "type": "mesh", "mesh": "mesh_body", "material": "mat_servo" }
+                ]
+            },
+            {
+                "id": "horn",
+                "mass": 0.003,
+                "transform": {
+                    "pos": [-0.01, 0, 0.042],
+                    "quat": [1, 0, 0, 0]
+                },
+                "geoms": [
+                    { "type": "box", "size": [0.018, 0.004, 0.002], "pos": [0, 0, 0] }
+                ]
+            }
+        ],
+        "joints": [
+            {
+                "id": "servo_joint",
+                "body_a": "base",
+                "body_b": "horn",
+                "type": "hinge",
+                "transform": {
+                    "pos": [-0.01, 0, 0.041],
+                    "quat": [1, 0, 0, 0]
+                },
+                "range": [-90, 90],
+                "damping": 0.05,
+                "armature": 0.01,
+                "frictionloss": 0.05
+            }
+        ]
+    },
+    
+    "connectors": [
+        {
+            "id": "horn",
+            "body": "horn",
+            "description": "horn for attaching arms",
+            "mechanics": { "snap_angles": [0, 180] },
+            "transform": {
+                "pos": [-0.01, 0, 0.044],
+                "quat": [1, 0, 0, 0]
+            }
+        },
+        {
+            "id": "base",
+            "body": "base",
+            "description": "Flat bottom surface for mounting",
+            "mechanics": { "snap_angles": [0, 90, 180, 270] },
+            "transform": {
+                "pos": [0, 0, -0.021],
+                "quat": [0, 1, 0, 0]
+            }
+        },
+        {
+            "id": "side_screw_left",
+            "body": "base",
+            "description": "Left mounting tab hole",
+            "mechanics": { "snap_angles": [0] },
+            "transform": {
+                "pos": [-0.024, 0, 0.015],
+                "quat": [1, 0, 0, 0]
+            }
+        },
+        {
+            "id": "side_screw_right",
+            "body": "base",
+            "description": "Right mounting tab hole",
+            "mechanics": { "snap_angles": [0] },
+            "transform": {
+                "pos": [0.024, 0, 0.015],
+                "quat": [1, 0, 0, 0]
+            }
+        }
+    ],
+
+    "io": {
+        "inputs": [
+            {
+                "name": "target_angle",
+                "unit": "degrees",
+                "data_type": "float",
+                "range": [-90, 90],
+                "target_joint": "servo_joint",
+                "actuator_type": "position",
+                "kp": 25.0,
+                "kv": 2.5,
+                "forcerange": [-1.08, 1.08],
+                "pin_required": ["signal"]
+            }
+        ],
+        "outputs": [
+            {
+                "name": "current_angle",
+                "unit": "degrees",
+                "data_type": "float",
+                "target_joint": "servo_joint",
+                "sensor_type": "jointpos",
+                "pin_required": ["vcc", "gnd"]
+            }
+        ]
+    }
 }

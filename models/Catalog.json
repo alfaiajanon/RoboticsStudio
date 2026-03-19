@@ -1,7 +1,7 @@
 {
     "Categories":[
         {
-            "id": "servo_motors",
+            "id": "servo",
             "name":"Servo Motors",
             "keys":["actuator","servo","motor","sg90","mg996r"],
             "items":[
@@ -10,8 +10,12 @@
             ]
         },
         {
-            "name":"Sensors",
-            "items":[]
+            "id": "stepper",
+            "name":"Stepper Motors",
+            "keys":["actuator","stepper","motor","nema17"],
+            "items":[
+                "./models/stepper/nema17/stepper_nema17.rsdef"
+            ]
         }
     ]
 }

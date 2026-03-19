@@ -143,6 +143,14 @@ void MujocoContext::step() {
 
 
 
+void MujocoContext::forward() {
+    if (m && d) {
+        mj_forward(m, d);
+    }
+}
+
+
+
 /*
  * Updates the abstract scene based on the current physics state.
  * Called prior to rendering to update geometry positions.

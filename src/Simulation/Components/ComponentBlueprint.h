@@ -65,9 +65,6 @@ struct IODef {
     double kp = 0.0;
     double kv = 0.0;
     QList<double> forceRange;
-    double noiseStdDev = 0.0;   
-    double deadband = 0.0;
-    double quantization = 0.0;
     
     QList<QString> pinsRequired;
 };

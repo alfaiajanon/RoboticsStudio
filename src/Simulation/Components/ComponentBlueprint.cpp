@@ -286,13 +286,25 @@ QString ComponentBlueprint::getAssetXML() const {
  */
 QString ComponentBlueprint::generateTreeXML(const int uid, const QString& rootConnectorId, const Transform& globalTransform) const {
     QString xml = "";
-    QString rootNodeId = "base"; 
+    QString rootNodeId = ""; 
     Transform rootRelTransform = globalTransform;
 
     if (!rootConnectorId.isEmpty() && connectors.contains(rootConnectorId)) {
         ConnectorDef conn = connectors.value(rootConnectorId);
         rootNodeId = conn.body;
-        rootRelTransform = globalTransform * conn.transform.inverse();
+        
+        Transform baseTransform = globalTransform * conn.transform.inverse();
+        Transform nodeLocalTransform = kinematics.getNode(rootNodeId).localTransform;
+        rootRelTransform = baseTransform * nodeLocalTransform;
+    } else {
+        // Fallback
+        QList<QString> availableNodes = kinematics.getNodes().keys();
+        if (!availableNodes.isEmpty()) {
+            rootNodeId = availableNodes.first();
+        } else {
+            Log::error("Component blueprint has no bodies to render! UID: " + QString::number(uid));
+            return xml;
+        }
     }
 
     QSet<QString> visited;

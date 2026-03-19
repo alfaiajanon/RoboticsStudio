@@ -25,6 +25,7 @@ class MujocoContext {
         void render(mjrRect viewport);
         void updateScene();
         void step();
+        void forward();
 
         mjModel* getModel();
         mjData* getData();

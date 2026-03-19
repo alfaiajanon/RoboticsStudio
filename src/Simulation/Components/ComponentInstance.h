@@ -7,7 +7,7 @@
 #include <vector>
 #include <mutex>
 #include "ComponentBlueprint.h"
-#include "Simulation/ErrorSystem/EmulationInjector.h"
+#include "Simulation/ErrorSystem/BaseEmulator.h"
 #include "Utils/Spatial.h"
 
 
@@ -48,40 +48,53 @@ public:
  * Holds its unique spatial state via a unified Transform, hierarchical connections, and live IO.
  */
 class ComponentInstance {
-private:
-    mutable std::mutex ioMutex;
+    private:
+        mutable std::mutex ioMutex;
 
-    QMap<QString, IOStream> inputs;
-    QMap<QString, IOStream> outputs;
+        QMap<QString, IOStream> joints;
+        QMap<QString, IOStream> sensors;
+        QMap<QString, IOStream> actuators;
 
-public:
-    int uid;
-    QString name;
-    QString type;
-    QString model;
-    
-    int parentUid;
-    QString parentConnector;
-    QString selfConnector;
-    float snapAngle;
-    
-    QMap<QString, QVariant> parameters;
-    
-    Transform transform;
-    
-    ComponentBlueprint* blueprint = nullptr;
-    QList<ComponentInstance*> children;
+    public:
+        int uid;
+        QString name;
+        QString type;
+        QString model;
+        
+        int parentUid;
+        QString parentConnector;
+        QString selfConnector;
+        float snapAngle;
+        
+        QMap<QString, QVariant> parameters;
+        
+        Transform transform;
+        BaseEmulator* emulator = nullptr;
+        
+        ComponentBlueprint* blueprint = nullptr;
+        QList<ComponentInstance*> children;
 
-    ComponentInstance() : uid(-1), parentUid(-1), snapAngle(0.0f) {}
-    
-    void initializeIO();
-    
-    void setInputTarget(const QString& key, double value);
-    double getInputTarget(const QString& key) const;
-    
-    void setOutputCurrent(const QString& key, double value);
-    double getOutputCurrent(const QString& key) const;
+        ComponentInstance() : uid(-1), parentUid(-1), snapAngle(0.0f) {}
+        
+        void initializeIO();
 
-    void setMujocoId(const QString& key, int id, bool isInput);
-    int getMujocoId(const QString& key, bool isInput) const;
+        
+        void setActuatorTarget(const QString& key, double value);
+        double getActuatorTarget(const QString& key) const;
+
+        void setJointTarget(const QString& key, double value);
+        double getJointTarget(const QString& key) const;
+
+        void setSensorCurrent(const QString& key, double value);
+        double getSensorCurrent(const QString& key) const;
+
+
+        void setMujocoActuatorId(const QString& key, int id);
+        void setMujocoSensorId(const QString& key, int id);
+        void setMujocoJointId(const QString& key, int id);
+        
+        int getMujocoActuatorId(const QString& key) const;
+        int getMujocoSensorId(const QString& key) const;
+        int getMujocoJointId(const QString& key) const;
+
 };

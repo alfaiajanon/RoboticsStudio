@@ -5,6 +5,7 @@
 #include <QTreeWidgetItem>
 #include <bits/stdc++.h>
 #include "mujoco/mujoco.h"
+#include "Core/Project.h"
 #include "Simulation/Components/ComponentInstance.h"
 
 using namespace std;
@@ -13,13 +14,12 @@ class SceneTreePanel : public QWidget{
     Q_OBJECT
 
     private:
-        QTreeWidget* treeWidget;
-        
+        QTreeWidget *treeWidget, *unattachedTreeWidget;
+
     public:
         explicit SceneTreePanel(QWidget* parent = nullptr);        
         
-        void buildFromRoot(ComponentInstance* root);
-        void addComponentNode(ComponentInstance* instance, QTreeWidgetItem* parentItem);
+        void buildFromProject(Project* project);
         void highlightItem(int uid);
         
     signals:

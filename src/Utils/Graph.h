@@ -52,6 +52,7 @@ public:
     void addEdge(const Edge& edge);
 
     Node getNode(const QString& id) const;
+    QMap<QString, Node> getNodes() const;
     QList<Edge> getEdgesForNode(const QString& nodeId) const;
     bool containsNode(const QString& id) const;
     void clear();

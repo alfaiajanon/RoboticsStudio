@@ -11,7 +11,8 @@
                 "/usr/include/qt6/QtXml",
                 "/usr/include/qt6/QtWidgets",
                 "/usr/include/qt6/QtOpenGLWidgets",
-                "/usr/include/qt6/QtOpenGL"
+                "/usr/include/qt6/QtOpenGL",
+                "/usr/include/qt6/QtQml"
                 // "/usr/include/qt6/QtOpenGLFunctions"
             ],
             "defines": [],

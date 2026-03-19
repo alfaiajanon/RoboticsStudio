@@ -3,90 +3,176 @@
 #include <QLabel>
 #include <QHeaderView>
 #include <QTreeWidgetItemIterator>
+#include "Core/Application.h"
+#include <QToolBox>
+#include "Core/Log.h"
 
 /*
  * Initializes the Scene Tree UI and sets up the selection listener.
  * Binds the tree's selection event to emit the underlying component UID.
  */
+
+
+
+
 SceneTreePanel::SceneTreePanel(QWidget* parent) : QWidget(parent) {
     QVBoxLayout* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
 
+    QToolBox* toolBox = new QToolBox(this);
+
     treeWidget = new QTreeWidget();
     treeWidget->setAlternatingRowColors(true);
     treeWidget->header()->setVisible(false);
-    
-    layout->addWidget(treeWidget);
 
-    connect(treeWidget, &QTreeWidget::itemSelectionChanged, this, [this]() {
-        QList<QTreeWidgetItem*> selected = treeWidget->selectedItems();
+    unattachedTreeWidget = new QTreeWidget();
+    unattachedTreeWidget->setAlternatingRowColors(true);
+    unattachedTreeWidget->header()->setVisible(false);
+
+    toolBox->addItem(treeWidget, "Robot tree");
+    toolBox->addItem(unattachedTreeWidget, "Unattached parts");
+
+    layout->addWidget(toolBox);
+
+    auto handleSelection = [this](QTreeWidget* activeTree, QTreeWidget* otherTree) {
+        QList<QTreeWidgetItem*> selected = activeTree->selectedItems();
         if (selected.isEmpty()) {
-            emit componentSelected(-1); 
+            int cur= Application::getInstance()->getEditor()->getCurrentSelectedUid();
+            if(cur==-1){
+                emit componentSelected(-1); 
+            }
             return;
         }
+
+        otherTree->blockSignals(true);
+        otherTree->clearSelection();
+        otherTree->blockSignals(false);
 
         QTreeWidgetItem* item = selected.first();
         int uid = item->data(0, Qt::UserRole).toInt();
         
         emit componentSelected(uid); 
+    };
+
+    connect(treeWidget, &QTreeWidget::itemSelectionChanged, this, [this, handleSelection]() {
+        handleSelection(treeWidget, unattachedTreeWidget);
+    });
+
+    connect(unattachedTreeWidget, &QTreeWidget::itemSelectionChanged, this, [this, handleSelection]() {
+        handleSelection(unattachedTreeWidget, treeWidget);
     });
 }
 
 
 
 
-
 /*
- * Populates the entire scene tree from a given root component.
- * Clears existing entries and automatically expands the tree for visibility.
+ * Rebuilds both scene trees while preserving expansion states.
+ * Automatically expands all nodes if the tree was previously empty.
  */
-void SceneTreePanel::buildFromRoot(ComponentInstance* root) {
+
+
+
+
+void SceneTreePanel::buildFromProject(Project* project) {
+    bool wasEmpty = (treeWidget->topLevelItemCount() == 0 && unattachedTreeWidget->topLevelItemCount() == 0);
+    QSet<int> expandedUids;
+    
+    QTreeWidgetItemIterator itAttached(treeWidget);
+    while (*itAttached) {
+        if ((*itAttached)->isExpanded()) expandedUids.insert((*itAttached)->data(0, Qt::UserRole).toInt());
+        ++itAttached;
+    }
+    
+    QTreeWidgetItemIterator itUnattached(unattachedTreeWidget);
+    while (*itUnattached) {
+        if ((*itUnattached)->isExpanded()) expandedUids.insert((*itUnattached)->data(0, Qt::UserRole).toInt());
+        ++itUnattached;
+    }
+
     treeWidget->clear();
-    if (!root) return;
+    unattachedTreeWidget->clear();
+
+    if (!project) return;
+
+    QTreeWidgetItem* virtualRootItem = new QTreeWidgetItem(treeWidget);
+    virtualRootItem->setText(0, project->getProjectData()["meta"].toObject()["name"].toString("Robot Origin")); 
+    virtualRootItem->setData(0, Qt::UserRole, 0);
     
-    addComponentNode(root, nullptr);
-    treeWidget->expandAll();
-}
+    QFont boldFont = virtualRootItem->font(0);
+    boldFont.setBold(true);
+    virtualRootItem->setFont(0, boldFont);
 
+    QMap<int, QTreeWidgetItem*> itemMap;
+    itemMap.insert(0, virtualRootItem);
 
+    for (ComponentInstance* comp : project->getComponentMap().values()) {
+        QTreeWidgetItem* item = new QTreeWidgetItem();
+        item->setText(0, comp->name);
+        item->setData(0, Qt::UserRole, comp->uid);
+        itemMap.insert(comp->uid, item);
+    }
 
+    for (ComponentInstance* comp : project->getComponentMap().values()) {
+        QTreeWidgetItem* item = itemMap.value(comp->uid);
 
+        if (comp->parentUid == -1) {
+            unattachedTreeWidget->addTopLevelItem(item);
+        } else if (itemMap.contains(comp->parentUid)) {
+            itemMap.value(comp->parentUid)->addChild(item);
+        } else {
+            Log::error("Parent UID not found for component: " + QString::number(comp->uid));
+        }
+    }
 
-/*
- * Recursively traverses the component hierarchy to build the UI tree.
- * Safely stores the component UID inside the Qt item's UserRole for later retrieval.
- */
-void SceneTreePanel::addComponentNode(ComponentInstance* instance, QTreeWidgetItem* parentItem) {
-    if (!instance) return;
-
-    QTreeWidgetItem* item = parentItem ? new QTreeWidgetItem(parentItem) : new QTreeWidgetItem(treeWidget);
-
-    QString label = instance->name.isEmpty() ? QString("Component_%1").arg(instance->uid) : instance->name;
+    QTreeWidgetItemIterator restoreIt(treeWidget);
+    while (*restoreIt) {
+        if (wasEmpty || expandedUids.contains((*restoreIt)->data(0, Qt::UserRole).toInt()) || (*restoreIt)->data(0, Qt::UserRole).toInt() == 0) {
+            (*restoreIt)->setExpanded(true);
+        }
+        ++restoreIt;
+    }
     
-    item->setText(0, label);
-    item->setData(0, Qt::UserRole, instance->uid);
+    QTreeWidgetItemIterator restoreUnattachedIt(unattachedTreeWidget);
+    while (*restoreUnattachedIt) {
+        if (wasEmpty || expandedUids.contains((*restoreUnattachedIt)->data(0, Qt::UserRole).toInt())) {
+            (*restoreUnattachedIt)->setExpanded(true);
+        }
+        ++restoreUnattachedIt;
+    }
 
-    for (ComponentInstance* child : instance->children) {
-        addComponentNode(child, item);
+    int currentSelectedUid = Application::getInstance()->getEditor()->getCurrentSelectedUid();
+    if(currentSelectedUid != -1){
+        emit componentSelected(currentSelectedUid);
     }
 }
 
 
 
 
-
 /*
- * Programmatically selects a tree item based on its component UID.
- * Uses an iterator to find the matching node when commanded by the central mediator.
+ * Selects a tree item based on its component UID.
+ * Searches both the attached robot tree and the unattached parts list.
  */
 void SceneTreePanel::highlightItem(int uid) {
-    QTreeWidgetItemIterator it(treeWidget);
-    while (*it) {
-        if ((*it)->data(0, Qt::UserRole).toInt() == uid) {
-            treeWidget->setCurrentItem(*it);
+    QTreeWidgetItemIterator itAttached(treeWidget);
+    while (*itAttached) {
+        if ((*itAttached)->data(0, Qt::UserRole).toInt() == uid) {
+            treeWidget->setCurrentItem(*itAttached);
             return;
         }
-        ++it;
+        ++itAttached;
     }
+
+    QTreeWidgetItemIterator itUnattached(unattachedTreeWidget);
+    while (*itUnattached) {
+        if ((*itUnattached)->data(0, Qt::UserRole).toInt() == uid) {
+            unattachedTreeWidget->setCurrentItem(*itUnattached);
+            return;
+        }
+        ++itUnattached;
+    }
+
     treeWidget->clearSelection();
+    unattachedTreeWidget->clearSelection();
 }

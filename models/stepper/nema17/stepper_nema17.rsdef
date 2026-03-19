@@ -1,0 +1,9 @@
+{
+    "meta": {
+        "id": "stepper_nema17",
+        "name": "NEMA 17 Stepper Motor",
+        "version": "1.0.0",
+        "author": "Anon",
+        "icon_path": "nema17.png"
+    }
+}

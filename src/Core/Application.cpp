@@ -56,19 +56,19 @@ Application::Application(int& argc, char** argv) : qtApp(argc, argv) {
 
     LibraryManager::getInstance().load("./models/Catalog.json");
 
-    currentProject.loadProject("./demo.rsproj");
+    currentProject.loadProject("./demo/demo.rsproj");
 
     MujocoContext::getInstance()->loadModelFromString(
         currentProject.generateMujocoXML().toStdString()
     );
     
-    editor.sceneTree->buildFromRoot(currentProject.getRootComponent());
+    editor.sceneTree->buildFromProject(&currentProject);
 
     simManager = new SimulationManager();
     
     ComponentInstance* root = currentProject.getRootComponent();
     simManager->cacheMujocoIds(root, MujocoContext::getInstance()->getModel());
-    simManager->play();
+    simManager->edit();
 
     editor.show();
 }

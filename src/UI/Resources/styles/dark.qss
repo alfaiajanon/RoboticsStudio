@@ -6,20 +6,53 @@ QWidget {
     font-size: 12pt;
 }
 
+
+
+
 /* Buttons */
 QPushButton {
-    background-color: #2d2d2d;
+    background-color: #252525; /* Darkened from #2d2d2d */
     color: white;
-    border: 1px solid #3c3c3c;
-    padding: 6px;
+    border: 1px solid #2f2f2f;
+    padding: 4px 6px;
     border-radius: 4px;
 }
 QPushButton:hover {
-    background-color: #3c3c3c;
+    background-color: #333333; 
 }
 QPushButton:pressed {
-    background-color: #444;
+    background-color: #1a1a1a; 
 }
+
+
+
+
+/* ComboBox (Dropdowns) */
+QComboBox {
+    background-color: #252525; /* Matches the new darker buttons */
+    color: white;
+    border: 1px solid #2f2f2f;
+    border-radius: 4px;
+    padding: 4px 6px;
+}
+QComboBox:hover {
+    background-color: #333333;
+}
+QComboBox::drop-down {
+    border: none; /* Removes the native 3D button styling for a flat look */
+    width: 20px;
+}
+QComboBox QAbstractItemView {
+    background-color: #1e1e1e; /* The actual popup list menu */
+    color: #dcdcdc;
+    border: 1px solid #3c3c3c;
+    selection-background-color: #444444; 
+    selection-color: white;
+    outline: none; /* Removes the dotted focus rectangle */
+}
+
+
+
 
 /* Dock Widgets */
 QDockWidget {
@@ -28,10 +61,13 @@ QDockWidget {
 }
 QDockWidget::title {
     background-color: #303030;
-    padding: 6px;
+    padding: 4px 6px;
     font-weight: bold;
     color: #ddd;
 }
+
+
+
 
 /* Tabs */
 QTabWidget::pane {
@@ -39,16 +75,105 @@ QTabWidget::pane {
 }
 QTabBar::tab {
     background-color: #2e2e2e;
-    padding: 6px;
+    padding: 8px 10px;
 }
 QTabBar::tab:selected {
     background-color: #444;
 }
 
 
+
+
 /* Tree Widgets */
 QTreeView {
     background: #1e1e1e;                      
     alternate-background-color: #262626;      
-    color: #ddd;                          
+    color: #ddd;                              
+}
+
+
+
+
+/* ToolBox */
+QToolBox::tab {
+    border: 1px solid #2d2d2d;
+    color: #dcdcdc;
+    padding-left: 5px; 
+}
+QToolBox::tab:selected {
+    background:  #2e2e2e;
+}
+QToolBox::tab:hover {
+    background: #353535;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* =========================================
+   DISABLED STATES
+   ========================================= */
+
+/* Global Disabled Text */
+QWidget:disabled {
+    color: #7a7a7a;
+}
+
+/* Disabled Buttons */
+QPushButton:disabled {
+    background-color: #1c1c1c; /* Sinks into the main background */
+    color: #7a7a7a;
+    border: 1px solid #262626;
+}
+
+/* Disabled Dropdowns and Text/Number Inputs */
+QComboBox:disabled,
+QLineEdit:disabled,
+QSpinBox:disabled,
+QDoubleSpinBox:disabled {
+    background-color: #1c1c1c;
+    color: #7a7a7a;
+    border: 1px solid #262626;
+}
+
+/* Disabled Tabs */
+QTabBar::tab:disabled {
+    background-color: #222222;
+    color: #7a7a7a;
+}
+
+/* Disabled Tree Items */
+QTreeView:disabled {
+    color: #7a7a7a;
+}
+
+/* Disabled ToolBox Tabs */
+QToolBox::tab:disabled {
+    background: #222222;
+    color: #7a7a7a;
+    border: 1px solid #262626;
+}
+
+/* Disabled Sliders (if you use them in the Inspector) */
+QSlider::groove:horizontal:disabled {
+    background-color: #1c1c1c;
+    border: 1px solid #262626;
+}
+QSlider::handle:horizontal:disabled {
+    background-color: #2e2e2e;
+    border: 1px solid #262626;
 }

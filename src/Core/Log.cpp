@@ -9,30 +9,26 @@ bool Log::inAppLoggingEnabled = false;
 
 
 
-void Log::info(const char* message){
-    cout << "[INFO]: " << message << endl;
-}
-
-void Log::warning(const char* message){
-    cout << "[WARNING]: " << message << endl;
-}
-
-void Log::error(const char* message){
-    cerr << "[ERROR]: " << message << endl;
-}
-
-
 
 void Log::info(const QString& message){
     cout << "[INFO]: " << message.toStdString() << endl;
+
+    QString htmlMsg = QString("<span style='color:#a9b7c6;'>[INFO]: %1</span>").arg(message.toHtmlEscaped());
+    emit LogDispatcher::getInstance()->messageLogged(htmlMsg);
 }
 
 void Log::warning(const QString& message){
     cout << "[WARNING]: " << message.toStdString() << endl;
+    
+    QString htmlMsg = QString("<span style='color:#ffcc00;'>[WARNING]: %1</span>").arg(message.toHtmlEscaped());
+    emit LogDispatcher::getInstance()->messageLogged(htmlMsg);
 }
 
 void Log::error(const QString& message){
     cerr << "[ERROR]: " << message.toStdString() << endl;
+    
+    QString htmlMsg = QString("<span style='color:#ff5555;'>[ERROR]: %1</span>").arg(message.toHtmlEscaped());
+    emit LogDispatcher::getInstance()->messageLogged(htmlMsg);
 }
 
 
@@ -68,5 +64,6 @@ void Log::enableFileLogging(bool enable){
 void Log::enableInAppLogging(bool enable){
     inAppLoggingEnabled = enable;
 }
+
 
 

@@ -5,9 +5,10 @@
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <queue>
-#include <cmath> // Required for sin/cos in quaternion snap rotation
+#include <cmath> 
 #include "Simulation/Components/ComponentBlueprint.h"
 #include "Simulation/Components/LibraryManager.h"
+#include "Simulation/ErrorSystem/ServoEmulatorCpp.h"
 
 
 
@@ -37,6 +38,24 @@ void Project::clear() {
 
 
 
+
+ 
+void Project::setScript(QString path){
+    QFile file(path);
+    if (!file.open(QFile::ReadOnly)) {
+        Log::error("Failed to open script file: " + path);
+        return;
+    }   
+
+    currentScript = QString::fromUtf8(file.readAll());
+    Log::info(currentScript);
+    file.close();
+}
+
+
+
+
+
 /*
  * Loads the project from a JSON file, parsing components and explicit constraints.
  * Builds the macro-graph hierarchical tree in memory. 
@@ -58,6 +77,9 @@ bool Project::loadProject(const QString& path) {
 
     parseAssembly();
     buildHierarchy();
+
+    // setScript("/home/anon/Documents/Code Projects/Mixed Projects/RoboticsStudio/demo/demoScript.js");
+    // microcontroller.compile(getScript(), getRootComponent());
 
     return true;
 }
@@ -82,6 +104,9 @@ void Project::parseAssembly() {
         component->name = obj["name"].toString();
         component->type = obj["type"].toString();
         component->model = obj["model"].toString();
+
+        #pragma region [TODO]:emulator
+        component->emulator=new ServoEmulatorCpp(component);
         
         QJsonValue connVal = obj["connection"];
         if (connVal.isNull()) {
@@ -107,6 +132,10 @@ void Project::parseAssembly() {
         component->initializeIO();
 
         componentMap.insert(component->uid, component);
+
+        if (component->uid >= nextComponentUid) {
+            nextComponentUid = component->uid + 1;
+        }
     }
 
     for (const auto val : constraintsArray) {
@@ -128,11 +157,11 @@ void Project::parseAssembly() {
 
 /*
  * Constructs the macro-graph tree and calculates spatial alignments.
- * Prepares the components for the recursive MuJoCo generation pass.
+ * Applies mating rotations to all components, including the virtual root (uid 0).
  */
 void Project::buildHierarchy() {
     for (ComponentInstance* c : componentMap) {
-        if (c->parentUid == -1) {
+        if (c->parentUid == 0) {
             rootComponent = c;
         } else {
             if (componentMap.contains(c->parentUid)) {
@@ -143,8 +172,6 @@ void Project::buildHierarchy() {
 
     if (!rootComponent) return;
 
-    rootComponent->transform = Transform(); // Identity transform for root
-
     std::queue<ComponentInstance*> q;
     q.push(rootComponent);
 
@@ -152,7 +179,15 @@ void Project::buildHierarchy() {
         ComponentInstance* current = q.front();
         q.pop();
 
-        if (current->parentUid != -1 && componentMap.contains(current->parentUid)) {
+        if (current->parentUid == 0) {
+            Transform pConnRelTrans; 
+            Rotation mateRot(0, 1, 0, 0); 
+            double halfAngle = current->snapAngle * 0.5 * (M_PI / 180.0);
+            Rotation snapRot(std::cos(halfAngle), 0, 0, std::sin(halfAngle)); 
+            Transform alignTransform(Position(0,0,0), mateRot * snapRot);
+            current->transform = pConnRelTrans * alignTransform; 
+
+        } else if (componentMap.contains(current->parentUid)) {
             ComponentInstance* parent = componentMap[current->parentUid];
             
             if (parent->blueprint && current->blueprint) {
@@ -165,6 +200,7 @@ void Project::buildHierarchy() {
                     Rotation mateRot(0, 1, 0, 0); 
                     double halfAngle = current->snapAngle * 0.5 * (M_PI / 180.0);
                     Rotation snapRot(std::cos(halfAngle), 0, 0, std::sin(halfAngle)); 
+                    
                     Transform alignTransform(Position(0,0,0), mateRot * snapRot);
                     current->transform = pConnRelTrans * alignTransform; 
                 }
@@ -195,14 +231,106 @@ ComponentInstance* Project::getRootComponent() {
 
 
 
+
+QMap<int, ComponentInstance*>& Project::getComponentMap() {
+    return componentMap;
+}
+
+
+
+
+QJsonObject Project::getProjectData() const {
+    return projectData;
+}
+
+
+
+
+
+/*
+ * Creates a new component instance and adds it to the macro-graph.
+ * If parentUid is -1, keeps it as a standalone component. Otherwise, attaches to specified parent and connector.
+ */
+ComponentInstance* Project::createComponentInstance(const int parentUid, 
+                                                    const QString& parentConnector, 
+                                                    const QString& modelId, 
+                                                    const QString& selfConnector, 
+                                                    const float snapAngle) {
+    ComponentBlueprint* blueprint = LibraryManager::getInstance().getBlueprint(modelId);
+    if (!blueprint) {
+        Log::error("Model ID not found in library: " + modelId);
+        return nullptr;
+    }
+
+    QString actualSelfConnector = selfConnector;
+
+    if(selfConnector.isEmpty()){
+        if(blueprint->connectors.isEmpty()){
+            Log::error("Blueprint has no connectors: " + modelId);
+            return nullptr;
+        }
+        actualSelfConnector = blueprint->connectors.firstKey();
+    }
+
+    ComponentInstance* newComp = new ComponentInstance();
+    newComp->uid = nextComponentUid++;
+    newComp->name = blueprint->meta.name + " (" + QString::number(newComp->uid) + ")";
+    newComp->type = modelId.section('_', 0, 0); 
+    newComp->model = modelId.section('_', 1); 
+    newComp->blueprint = blueprint;
+    newComp->selfConnector = actualSelfConnector;
+    newComp->snapAngle = snapAngle;
+    newComp->initializeIO();
+
+    #pragma region [TODO]:emulator
+    newComp->emulator=new ServoEmulatorCpp(newComp);
+
+    if (componentMap.contains(parentUid)) {
+        ComponentInstance* parent = componentMap[parentUid];
+        newComp->parentUid = parentUid;
+        newComp->parentConnector = parentConnector;
+        
+        Transform pConnRelTrans = parent->blueprint->getConnectorRelativeTransform(newComp->parentConnector);
+        Rotation mateRot(0, 1, 0, 0); 
+        double halfAngle = newComp->snapAngle * 0.5 * (M_PI / 180.0);
+        Rotation snapRot(std::cos(halfAngle), 0, 0, std::sin(halfAngle)); 
+        Transform alignTransform(Position(0,0,0), mateRot * snapRot);
+        newComp->transform = pConnRelTrans * alignTransform; 
+
+        parent->children.append(newComp);
+        
+    } else {
+        newComp->parentUid = -1; 
+    }
+
+    componentMap.insert(newComp->uid, newComp);
+    return newComp;
+}
+
+
+
+
+
+
 /*
  * Compiles the entire project into a single valid MuJoCo XML string.
- * Calls the blueprint algorithms to dynamically generate nested physics blocks.
+ * Injects procedural skybox, a solid color floor, and dynamically scaled coordinate axes.
  */
 QString Project::generateMujocoXML() {
     QString worldbody, constraints, contacts, assets, actuators, sensors;
     QSet<QString> processedModels;
     QSet<int> visitedComps; 
+
+    double axisScale = 0.5; 
+    double halfLen = axisScale / 2.0;
+    double radius = axisScale * 0.025;
+
+    QString baseAssets = 
+        "    <texture type=\"skybox\" builtin=\"gradient\" rgb1=\"0.05 0.07 0.1\" rgb2=\"0.06 0.055 0.05\" width=\"512\" height=\"512\"/>\n";
+
+    QString baseWorldBody = QString(
+        "    <light directional=\"true\" diffuse=\"0.6 0.6 0.6\" specular=\"0.2 0.2 0.2\" pos=\"0 .5 .5\" dir=\"0 -1 -1\"/>\n"
+    );
 
     if (rootComponent) {
         worldbody = writeWorldBodyXML(rootComponent, visitedComps);
@@ -222,16 +350,18 @@ QString Project::generateMujocoXML() {
 
     QString xml = QString(
         "<mujoco model=\"%1\">\n"
-        "  <asset>\n%2  </asset>\n\n"
-        "  <worldbody>\n%3  </worldbody>\n\n"
-        "  <equality>\n%4  </equality>\n\n"
-        "  <contact>\n%5  </contact>\n\n"
-        "  <actuator>\n%6  </actuator>\n\n"
-        "  <sensor>\n%7  </sensor>\n"
+        "  <asset>\n%2%3  </asset>\n\n"
+        "  <worldbody>\n%4%5  </worldbody>\n\n"
+        "  <equality>\n%6  </equality>\n\n"
+        "  <contact>\n%7  </contact>\n\n"
+        "  <actuator>\n%8  </actuator>\n\n"
+        "  <sensor>\n%9  </sensor>\n"
         "</mujoco>"
     ).arg(
         projectData["meta"].toObject()["name"].toString(), 
+        baseAssets,
         assets, 
+        baseWorldBody,
         worldbody, 
         constraints,
         contacts,
@@ -246,10 +376,10 @@ QString Project::generateMujocoXML() {
 
 
 
-// Update your generateMujocoXML() call to initialize the set:
-// QSet<int> visitedComps;
-// worldbody = writeWorldBodyXML(rootComponent, visitedComps);
-
+/*
+ *Recursively writes the worldbody XML.
+ *Detects if the component is the physical root and forces it to spawn upright by ignoring its connector.
+ */
 QString Project::writeWorldBodyXML(ComponentInstance* comp, QSet<int>& visitedComponents) {
     if (!comp || !comp->blueprint) return "";
     

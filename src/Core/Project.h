@@ -6,7 +6,7 @@
 #include <QMap>
 #include <QList>
 #include "Simulation/Components/ComponentInstance.h"
-
+#include "Simulation/MicroController/MicroController.h"
 
 
 
@@ -21,9 +21,15 @@ class Project {
         QString directoryPath;
         QJsonObject projectData;
         
+        int nextComponentUid = 1; 
         ComponentInstance* rootComponent = nullptr;
         QMap<int, ComponentInstance*> componentMap;
         QList<Constraint*> constraintList;
+
+        Microcontroller microcontroller;
+        QString currentScript;
+
+
 
         void clear();
         void parseAssembly();
@@ -45,8 +51,23 @@ class Project {
         bool loadProject(const QString& path);
         void unloadProject();
 
-        ComponentInstance* getComponentByUid(int uid);
-        ComponentInstance* getRootComponent();
+        QJsonObject getProjectData() const;
 
+        ComponentInstance* getRootComponent();
+        ComponentInstance* getComponentByUid(int uid);
+        QMap<int, ComponentInstance*>& getComponentMap();
+
+        ComponentInstance* createComponentInstance( const int parentUid, 
+                                                    const QString& parentConnector, 
+                                                    const QString& modelId, 
+                                                    const QString& selfConnector, 
+                                                    const float snapAngle);
+        
+        Microcontroller* getMicrocontroller() { return &microcontroller; }
+    
+        void setScript(QString path);
+        QString getScript() const { return currentScript; }
+
+        
         QString generateMujocoXML();
 };

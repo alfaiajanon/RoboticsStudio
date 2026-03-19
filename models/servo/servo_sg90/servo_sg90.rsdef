@@ -4,7 +4,7 @@
         "name": "TowerPro SG90",
         "version": "1.0.0",
         "author": "Anon",
-        "icon_path": "icons/sg90.png"
+        "icon_path": "sg90.png"
     },
 
     "resources": {
@@ -72,7 +72,7 @@
                 "body_b": "horn",
                 "type": "hinge",
                 "transform": {
-                    "pos": [-0.005, 0, 0.0205],
+                    "pos": [-0.005, 0, 0.02],
                     "quat": [1, 0, 0, 0]
                 },
                 "range": [-90, 90],
@@ -90,7 +90,7 @@
             "description": "horn for attaching arms",
             "mechanics": { "snap_angles": [0, 180] },
             "transform": {
-                "pos": [-0.005, 0, 0.0205],
+                "pos": [-0.005, 0, 0.0215],
                 "quat": [1, 0, 0, 0]
             }
         },
@@ -118,7 +118,7 @@
             "id": "side_screw_right",
             "body": "base",
             "description": "Right mounting tab hole",
-            "mechanics": { "snap_angles": [0] },
+            "mechanics": { "snap_angles": [] },
             "transform": {
                 "pos": [0.014, 0, 0.0075],
                 "quat": [1, 0, 0, 0]

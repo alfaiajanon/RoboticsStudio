@@ -46,6 +46,17 @@ Node KinematicGraph::getNode(const QString& id) const {
 
 
 /*
+ * Retrieves a copy of the entire node dictionary.
+ * Useful for iterating over all bodies in the kinematic graph.
+ */
+QMap<QString, Node> KinematicGraph::getNodes() const {
+    return nodes;
+}
+
+
+
+
+/*
  * Finds all edges connected to a specific node.
  * Checks both bodyA and bodyB to ensure bidirectional traversal is possible.
  */
