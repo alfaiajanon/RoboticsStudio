@@ -77,6 +77,7 @@ bool Project::loadProject(const QString& path) {
 
     parseAssembly();
     buildHierarchy();
+    applyDefaults();
 
     // setScript("/home/anon/Documents/Code Projects/Mixed Projects/RoboticsStudio/demo/demoScript.js");
     // microcontroller.compile(getScript(), getRootComponent());
@@ -218,6 +219,38 @@ void Project::buildHierarchy() {
 
 
 
+
+
+
+void Project::applyDefaults() {
+    // apply joint params
+    for (ComponentInstance* comp : componentMap) {
+        if (comp->blueprint) {
+            for (const QString& key : comp->blueprint->inputDefs.keys()) {
+                QString jkey=comp->blueprint->inputDefs[key].targetJoint;
+                if (comp->parameters.contains(jkey)) {
+                    comp->setJointTarget(jkey, comp->parameters.value(jkey).toDouble());
+                }
+            }
+        }
+    }
+    // others in the future
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ComponentInstance* Project::getComponentByUid(int uid) {
     return componentMap.value(uid, nullptr);
 }
@@ -326,7 +359,8 @@ QString Project::generateMujocoXML() {
     double radius = axisScale * 0.025;
 
     QString baseAssets = 
-        "    <texture type=\"skybox\" builtin=\"gradient\" rgb1=\"0.05 0.07 0.1\" rgb2=\"0.06 0.055 0.05\" width=\"512\" height=\"512\"/>\n";
+    "    <texture type=\"skybox\" builtin=\"gradient\" rgb1=\"0.02 0.03 0.07\" rgb2=\"0.03 0.025 0.02\" width=\"512\" height=\"512\"/>\n";
+    // "";
 
     QString baseWorldBody = QString(
         "    <light directional=\"true\" diffuse=\"0.6 0.6 0.6\" specular=\"0.2 0.2 0.2\" pos=\"0 .5 .5\" dir=\"0 -1 -1\"/>\n"

@@ -7,7 +7,6 @@
 #include "Simulation/Components/ComponentInstance.h"
 
 enum class SimulationState {
-    STOPPED,
     PAUSED,
     PLAYING,
     EDITING
@@ -15,6 +14,7 @@ enum class SimulationState {
 
 class SimulationManager {
 private:
+    int counter = 0;
     std::thread physicsThread;
     std::atomic<bool> isAlive;
     std::atomic<SimulationState> currentState;
@@ -32,9 +32,10 @@ public:
     void play();
     void edit();
     void pause();
-    void stop();
     void setTimeScale(float scale);
+    void storePlotData(mjData* d);
     void processEmulators(ComponentInstance* comp);
+    void resetEmulators(ComponentInstance* comp);
     SimulationState getState() const;
 
     static void cacheMujocoIds(ComponentInstance* root, mjModel* m);

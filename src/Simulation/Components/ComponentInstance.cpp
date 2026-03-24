@@ -12,14 +12,14 @@ void ComponentInstance::initializeIO() {
     if (!blueprint) return;
 
     for (const QString& key : blueprint->inputDefs.keys()) {
-        actuators[key] = IOStream();
+        actuators[key] = std::make_shared<IOStream>();
     }
     for (const QString& key : blueprint->inputDefs.keys()) {
         QString targetJoint = this->blueprint->inputDefs[key].targetJoint;
-        joints[targetJoint] = IOStream();
+        joints[targetJoint] = std::make_shared<IOStream>();
     }
     for (const QString& key : blueprint->outputDefs.keys()) {
-        sensors[key] = IOStream();
+        sensors[key] = std::make_shared<IOStream>();
     }
 }
 
@@ -34,13 +34,13 @@ void ComponentInstance::initializeIO() {
 void ComponentInstance::setActuatorTarget(const QString& key, double value) {
     std::lock_guard<std::mutex> lock(ioMutex);
     if (actuators.contains(key)) {
-        actuators[key].targetValue = value;
+        actuators[key]->targetValue = value;
     }
 }
 
 double ComponentInstance::getActuatorTarget(const QString& key) const {
     std::lock_guard<std::mutex> lock(ioMutex);
-    return actuators.contains(key) ? actuators.value(key).targetValue : 0.0;
+    return actuators.contains(key) ? actuators.value(key)->targetValue : 0.0;
 }
 
 
@@ -48,13 +48,13 @@ double ComponentInstance::getActuatorTarget(const QString& key) const {
 void ComponentInstance::setJointTarget(const QString& key, double value) {
     std::lock_guard<std::mutex> lock(ioMutex);
     if (joints.contains(key)) {
-        joints[key].targetValue = value;
+        joints[key]->targetValue = value;
     }
 }
 
 double ComponentInstance::getJointTarget(const QString& key) const {
     std::lock_guard<std::mutex> lock(ioMutex);
-    return joints.contains(key) ? joints.value(key).targetValue : 0.0;
+    return joints.contains(key) ? joints.value(key)->targetValue : 0.0;
 }
 
 
@@ -62,15 +62,32 @@ double ComponentInstance::getJointTarget(const QString& key) const {
 void ComponentInstance::setSensorCurrent(const QString& key, double value) {
     std::lock_guard<std::mutex> lock(ioMutex);
     if (sensors.contains(key)) {
-        sensors[key].currentValue = value;
+        sensors[key]->currentValue = value;
     }
 }
 
 double ComponentInstance::getSensorCurrent(const QString& key) const {
     std::lock_guard<std::mutex> lock(ioMutex);
-    return sensors.contains(key) ? sensors.value(key).currentValue : 0.0;
+    return sensors.contains(key) ? sensors.value(key)->currentValue : 0.0;
 }
 
+
+RingBuffer<PlotPoint>* ComponentInstance::getSensorBuffer(const QString& key) {
+    std::lock_guard<std::mutex> lock(ioMutex);
+    if (sensors.contains(key)) {
+        return &sensors[key]->historyBuffer;
+    }
+    return nullptr;
+}
+
+
+RingBuffer<PlotPoint>* ComponentInstance::getActuatorBuffer(const QString& key) {
+    std::lock_guard<std::mutex> lock(ioMutex);
+    if (actuators.contains(key)) {
+        return &actuators[key]->historyBuffer;
+    }
+    return nullptr;
+}
 
 
 
@@ -87,21 +104,21 @@ double ComponentInstance::getSensorCurrent(const QString& key) const {
 void ComponentInstance::setMujocoActuatorId(const QString& key, int id) {
     std::lock_guard<std::mutex> lock(ioMutex);
     if (actuators.contains(key)) {
-        actuators[key].mujocoId = id;
+        actuators[key]->mujocoId = id;
     }
 }
 
 void ComponentInstance::setMujocoSensorId(const QString& key, int id) {
     std::lock_guard<std::mutex> lock(ioMutex);
     if (sensors.contains(key)) {
-        sensors[key].mujocoId = id;
+        sensors[key]->mujocoId = id;
     }
 }
 
 void ComponentInstance::setMujocoJointId(const QString& key, int id) {
     std::lock_guard<std::mutex> lock(ioMutex);
     if (joints.contains(key)) {
-        joints[key].mujocoId = id;
+        joints[key]->mujocoId = id;
     }
 }
 
@@ -109,20 +126,20 @@ void ComponentInstance::setMujocoJointId(const QString& key, int id) {
 int ComponentInstance::getMujocoActuatorId(const QString& key) const {
     std::lock_guard<std::mutex> lock(ioMutex);
     if (actuators.contains(key)) 
-        return actuators.value(key).mujocoId;
+        return actuators.value(key)->mujocoId;
     return -1;
 }
 
 int ComponentInstance::getMujocoSensorId(const QString& key) const {
     std::lock_guard<std::mutex> lock(ioMutex);
     if (sensors.contains(key)) 
-    return sensors.value(key).mujocoId;
+    return sensors.value(key)->mujocoId;
     return -1;
 }
 
 int ComponentInstance::getMujocoJointId(const QString& key) const {
     std::lock_guard<std::mutex> lock(ioMutex);
     if (joints.contains(key)) 
-        return joints.value(key).mujocoId;
+        return joints.value(key)->mujocoId;
     return -1;
 }

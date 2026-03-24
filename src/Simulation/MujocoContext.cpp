@@ -22,7 +22,10 @@ MujocoContext::MujocoContext() {
     mjr_defaultContext(&con);
     mjv_defaultCamera(&cam);
 
-    opt.sitegroup[3] = 1;
+    opt.sitegroup[0] = 0;
+    opt.sitegroup[1] = 0;
+    opt.sitegroup[2] = 0; 
+    opt.sitegroup[3] = 0;
 }
 
 
@@ -53,6 +56,10 @@ void MujocoContext::loadModel(const char* model_path) {
  * Cleans up any existing model and data before allocating the new ones.
  */
 void MujocoContext::loadModelFromString(const std::string& xml_content) {
+    if(isGPUInitialized){
+        mjr_freeContext(&con);
+        isGPUInitialized = false;
+    }
     char error[1000] = "";
 
     mjVFS vfs;

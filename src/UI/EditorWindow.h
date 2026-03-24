@@ -5,6 +5,7 @@
 #include <QWidget>
 #include "Docking/SceneTreePanel.h"
 #include "Docking/InspectorPanel.h"
+#include "Docking/PlotPanel.h"
 #include "BottomBar/ComponentsPanel.h"
 #include "BottomBar/OutputPanel.h"
 #include "Rendering/MViewport.h"
@@ -19,6 +20,7 @@ class EditorWindow : public QMainWindow{
         QPushButton* playBtn; 
         QLabel* fpsLabel;
         
+        void setupMenuBar();
         void setupSplitting();
         void setupRightDocking();
         void setupMainViewport();
@@ -31,6 +33,7 @@ class EditorWindow : public QMainWindow{
         InspectorPanel* inspector;
         ComponentsPanel* componentsPanel;
         OutputPanel* outputPanel;
+        PlotPanel* plotPanel;
 
         EditorWindow(QWidget* parent = nullptr);
         

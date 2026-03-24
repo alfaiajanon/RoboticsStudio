@@ -156,6 +156,16 @@ void ComponentBlueprint::parseKinematics(const QJsonObject& kinematicsObj) {
             }
             node.geoms.append(geom);
         }
+
+        QJsonArray sitesArr = bObj["sites"].toArray();
+        for (const auto& sVal : sitesArr) {
+            QJsonObject sObj = sVal.toObject();
+            Site site;
+            site.id = sObj["id"].toString();
+            site.localTransform = parseTransform(sObj);
+            node.sites.append(site);
+        }
+
         kinematics.addNode(node);
     }
 
@@ -258,7 +268,9 @@ void ComponentBlueprint::parseIO(const QJsonObject& ioObj) {
         def.unit = outObj["unit"].toString();
         def.dataType = outObj["data_type"].toString();
         def.targetJoint = outObj["target_joint"].toString();
+        def.targetSite = outObj["target_site"].toString();
         def.sensorType = outObj["sensor_type"].toString();
+        def.axis = outObj["axis"].toInt(0);
         
         outputDefs[def.name] = def;
     }
@@ -343,7 +355,13 @@ void ComponentBlueprint::traverseGraph(QString& outXML, const QString& currentNo
         }
         
         if (geom.type == "mesh" && !geom.mesh.isEmpty() && geom.mesh != (modelId + "_")) {
-            outXML += QString(" mesh=\"%1\" material=\"%2\"").arg(geom.mesh).arg(geom.material);
+            // outXML += QString(" mesh=\"%1\" material=\"%2\"").arg(geom.mesh).arg(geom.material);
+            if(!geom.mesh.isEmpty() && geom.mesh != (modelId + "_")){
+                outXML += QString(" mesh=\"%1\"").arg(geom.mesh);
+            }
+            if(!geom.material.isEmpty() && geom.material != ("mat_" + modelId + "_")) {
+                outXML += QString(" material=\"%1\"").arg(geom.material);
+            }
         } else if ((geom.type == "box" || geom.type == "cylinder" || geom.type == "capsule") && geom.size.size() > 0) {
             outXML += " size=\"";
             for (int j = 0; j < geom.size.size(); ++j) {
@@ -352,6 +370,12 @@ void ComponentBlueprint::traverseGraph(QString& outXML, const QString& currentNo
             outXML += "\"";
         }
         outXML += "/>\n";
+    }
+
+    for (const Site& site : currentNode.sites) {
+        outXML += indent + QString("  <site name=\"%1%2\" pos=\"%3 %4 %5\"/>\n")
+                        .arg(prefix).arg(site.id)
+                        .arg(site.localTransform.position.x).arg(site.localTransform.position.y).arg(site.localTransform.position.z);
     }
 
     if (!parentNodeId.isEmpty()) {
@@ -441,17 +465,43 @@ QString ComponentBlueprint::generateActuatorXML(const int uid) const {
  * Dynamically constructs the <sensor> tags based on the IODef specifications.
  * Links the telemetry output to the exact physical joint.
  */
+// QString ComponentBlueprint::generateSensorXML(const int uid) const {
+//     QString xml = "";
+//     QString prefix = "comp_" + QString::number(uid) + "_";
+    
+//     for (const IODef& def : outputDefs) {
+//         if (!def.sensorType.isEmpty() && !def.targetJoint.isEmpty()) {
+//             xml += QString("    <%1 name=\"%2%3\" joint=\"%2%4\"/>\n")
+//                     .arg(def.sensorType)
+//                     .arg(prefix)
+//                     .arg(def.name)
+//                     .arg(def.targetJoint);
+//         }
+//     }
+//     return xml;
+// }
 QString ComponentBlueprint::generateSensorXML(const int uid) const {
     QString xml = "";
     QString prefix = "comp_" + QString::number(uid) + "_";
     
     for (const IODef& def : outputDefs) {
-        if (!def.sensorType.isEmpty() && !def.targetJoint.isEmpty()) {
+        if (def.sensorType.isEmpty()) continue;
+
+        // If the sensor targets a JOINT (like a servo)
+        if (!def.targetJoint.isEmpty()) {
             xml += QString("    <%1 name=\"%2%3\" joint=\"%2%4\"/>\n")
                     .arg(def.sensorType)
                     .arg(prefix)
                     .arg(def.name)
                     .arg(def.targetJoint);
+        } 
+        // If the sensor targets a SITE (like an IMU or Rangefinder)
+        else if (!def.targetSite.isEmpty()) {
+            xml += QString("    <%1 name=\"%2%3\" site=\"%2%4\"/>\n")
+                    .arg(def.sensorType)
+                    .arg(prefix)
+                    .arg(def.name)
+                    .arg(def.targetSite);
         }
     }
     return xml;

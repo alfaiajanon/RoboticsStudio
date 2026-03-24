@@ -15,6 +15,10 @@ class ServoEmulatorCpp : public BaseEmulator {
             component->setActuatorTarget("target_angle", logicalTarget);
         }
 
+        void reset() override {
+            logicalTarget = 0.0;
+        }
+
 
 
         // API exposed to JS

@@ -16,12 +16,19 @@ struct Geom {
 
 
 
+struct Site {
+    QString id;
+    Transform localTransform;
+};
+
+
 
 struct Node {
     QString id;
     double mass = 0.0;
     Transform localTransform;
     QList<Geom> geoms;
+    QList<Site> sites;
 };
 
 

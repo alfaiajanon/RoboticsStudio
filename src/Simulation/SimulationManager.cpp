@@ -12,7 +12,7 @@
  * Initializes the simulation manager and spawns the background physics thread.
  * Starts in a stopped state with a default 1.0x real-time scale.
  */
-SimulationManager::SimulationManager() : isAlive(true), currentState(SimulationState::STOPPED), timeScale(1.0f), stepAccumulator(0.0f) {}
+SimulationManager::SimulationManager() : isAlive(true), currentState(SimulationState::PAUSED), timeScale(1.0f), stepAccumulator(0.0f) {}
 
 
 
@@ -36,15 +36,19 @@ SimulationManager::~SimulationManager() {
 /*
  *  Following functions are the public API for controlling the simulation state and time scale.
  */
+#pragma region play/edit
 
 void SimulationManager::play() {
-    if (currentState == SimulationState::STOPPED && !physicsThread.joinable()) {
+    if (currentState == SimulationState::PAUSED && !physicsThread.joinable()) {
         physicsThread = std::thread(&SimulationManager::physicsLoop, this);
     }
 
-    #pragma region [TODO] 
-    // [TODO]
-    // copy join data to actuators
+    // move joint data to actuator targets before starting simulation
+    #pragma region todo
+
+    Project* proj = Application::getInstance()->getProject();
+    MicroController* mcu = proj->getMicroController();
+    mcu->compile(proj->getScript(), proj->getRootComponent());
 
     currentState = SimulationState::PLAYING;
 }
@@ -52,9 +56,21 @@ void SimulationManager::play() {
 
 
 void SimulationManager::edit() {
-    if (currentState == SimulationState::STOPPED && !physicsThread.joinable()) {
+    if (currentState == SimulationState::PAUSED && !physicsThread.joinable()) {
         physicsThread = std::thread(&SimulationManager::physicsLoop, this);
     }
+
+    Project* proj = Application::getInstance()->getProject();
+    MujocoContext* mj = MujocoContext::getInstance();
+    MicroController* mcu = proj->getMicroController();
+    mcu->stop(); 
+
+    ComponentInstance* root = proj->getRootComponent();
+    resetEmulators(root);
+
+    mj_resetData(mj->getModel(), mj->getData());
+    mj->forward();
+
     currentState = SimulationState::EDITING;
 }
 
@@ -66,11 +82,6 @@ void SimulationManager::pause() {
 
 
 
-void SimulationManager::stop() {
-    currentState = SimulationState::STOPPED;
-    stepAccumulator = 0.0f;
-    // TODO: Later, call a reset function here to snap the robot back to origin
-}
 
 
 
@@ -118,8 +129,15 @@ void SimulationManager::physicsLoop() {
                 syncFromMujocoSensor(root, mj->getModel(), mj->getData());
                 
                 // JS script injection goes here
-                proj->getMicrocontroller()->tick(mj->getData());
+                proj->getMicroController()->tick(mj->getData());
                 processEmulators(root);
+
+                // store buffer data for plotting
+                // if(counter==10){
+                //     counter=0;
+                // }
+                // counter++;
+                storePlotData(mj->getData());
 
                 syncToMujocoActuator(root, mj->getModel(), mj->getData());
                 
@@ -170,17 +188,60 @@ void SimulationManager::processEmulators(ComponentInstance* comp) {
 
 
 
+// In your header file: void storePlotData(mjData* d);
+
+void SimulationManager::storePlotData(mjData* d) {
+    Project* proj = Application::getInstance()->getProject();
+    QList<PlotTarget> target = proj->getActivePlotsVal();
+    
+    for(const PlotTarget& t : target) {
+        ComponentInstance* comp = proj->getComponentByUid(t.compUid);
+        if(!comp) continue;
+
+        RingBuffer<PlotPoint>* buffer = nullptr;
+        double currentVal = 0.0;
+
+        if (t.type == PlotTargetType::SENSOR) {
+            buffer = comp->getSensorBuffer(t.ioKey);
+            currentVal = comp->getSensorCurrent(t.ioKey);
+        } else {
+            buffer = comp->getActuatorBuffer(t.ioKey);
+            currentVal = comp->getActuatorTarget(t.ioKey);
+        }
+
+        if(buffer){
+            buffer->push(PlotPoint{d->time, currentVal});
+        }
+    }
+}
+
+
+
+
+void SimulationManager::resetEmulators(ComponentInstance* comp) {
+    if (!comp) return;
+    if (comp->emulator) {
+        comp->emulator->reset(); 
+    }
+    for (ComponentInstance* child : comp->children) {
+        resetEmulators(child);
+    }
+}
 
 
 
 
 
 
+
+
+#pragma region mujoco stuff
 
 /*
  * One-time setup to map string names to MuJoCo's internal C-array indices.
  * Traverses the component tree recursively to cache actuator and sensor IDs.
  */
+
 void SimulationManager::cacheMujocoIds(ComponentInstance* root, mjModel* m) {
     if (!m || !root) return;
 
@@ -295,21 +356,28 @@ void SimulationManager::syncToMujocoJoint(ComponentInstance* root, mjModel* m, m
  * Post-step hook to pull live physics telemetry out of the engine.
  * Safely extracts sensor readings from d->sensordata and updates the components.
  */
+
 void SimulationManager::syncFromMujocoSensor(ComponentInstance* root, mjModel* m, mjData* d) {
     if (!m || !d || !root) return;
 
     if (root->blueprint) {
         for (const QString& key : root->blueprint->outputDefs.keys()) {
-            int mujocoId = root->getMujocoSensorId(key);
-            if (mujocoId >= 0 && mujocoId < m->nsensordata) {
-                double val = d->sensordata[mujocoId];
-                QString unit = root->blueprint->outputDefs[key].unit.toLower();
+            int sensorId = root->getMujocoSensorId(key);
+            
+            if (sensorId >= 0 && sensorId < m->nsensor) {
+                int adr = m->sensor_adr[sensorId];
+                int axisOffset = root->blueprint->outputDefs[key].axis; 
 
-                if (unit == "degree" || unit == "deg" || unit == "degrees") {
-                    val = val * (180.0 / M_PI);
+                if (adr + axisOffset < m->nsensordata) {
+                    double val = d->sensordata[adr + axisOffset];
+                    QString unit = root->blueprint->outputDefs[key].unit.toLower();
+
+                    if (unit == "degree" || unit == "deg" || unit == "degrees") {
+                        val = val * (180.0 / M_PI);
+                    }
+
+                    root->setSensorCurrent(key, val);
                 }
-
-                root->setSensorCurrent(key, val);
             }
         }
     }

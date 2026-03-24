@@ -9,6 +9,9 @@ QWidget {
 
 
 
+
+
+
 /* Buttons */
 QPushButton {
     background-color: #252525; /* Darkened from #2d2d2d */

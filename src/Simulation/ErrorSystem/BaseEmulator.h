@@ -21,4 +21,5 @@ class BaseEmulator : public QObject {
 
         virtual ~BaseEmulator() = default;
         virtual void update() = 0; 
+        virtual void reset() = 0;
 };

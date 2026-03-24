@@ -20,12 +20,13 @@
  */
 EditorWindow::EditorWindow(QWidget* parent) : QMainWindow(parent){
     this->setWindowTitle("Robotics Studio");
-    this->resize(1280, 720);
+    this->resize(1400, 850);
 
     topDownSplitter=nullptr;
     viewport=nullptr;
     bottomTabs=nullptr;
 
+    setupMenuBar();
     setupSplitting();
     setupRightDocking();
 }
@@ -53,6 +54,63 @@ void EditorWindow::refresh() {
 int EditorWindow::getCurrentSelectedUid() const {
     return currentSelectedUid;
 }
+
+
+
+
+
+
+// Instantiates the top menu bar and populates it with standard application actions.
+// Categories are split into File, Edit, View, and Help, with standard OS keyboard shortcuts applied.
+void EditorWindow::setupMenuBar() {
+    QMenuBar* topMenu = this->menuBar();
+
+    QMenu* fileMenu = topMenu->addMenu("&File");
+    QAction* newAct = fileMenu->addAction("New Project");
+    newAct->setShortcut(QKeySequence::New);
+    QAction* openAct = fileMenu->addAction("Open Project...");
+    openAct->setShortcut(QKeySequence::Open);
+    fileMenu->addSeparator();
+    QAction* saveAct = fileMenu->addAction("Save");
+    saveAct->setShortcut(QKeySequence::Save);
+    QAction* saveAsAct = fileMenu->addAction("Save As...");
+    saveAsAct->setShortcut(QKeySequence::SaveAs);
+    fileMenu->addSeparator();
+    QAction* exitAct = fileMenu->addAction("Exit");
+    exitAct->setShortcut(QKeySequence::Quit);
+
+    QMenu* editMenu = topMenu->addMenu("&Edit");
+    QAction* undoAct = editMenu->addAction("Undo");
+    undoAct->setShortcut(QKeySequence::Undo);
+    QAction* redoAct = editMenu->addAction("Redo");
+    redoAct->setShortcut(QKeySequence::Redo);
+    editMenu->addSeparator();
+    QAction* prefsAct = editMenu->addAction("Preferences");
+    prefsAct->setShortcut(QKeySequence::Preferences);
+
+    QMenu* viewMenu = topMenu->addMenu("&View");
+    QAction* toggleGridAct = viewMenu->addAction("Toggle Grid");
+    toggleGridAct->setCheckable(true); 
+    toggleGridAct->setChecked(true);   
+    viewMenu->addSeparator();
+    QAction* resetLayoutAct = viewMenu->addAction("Reset Layout");
+
+    QMenu* helpMenu = topMenu->addMenu("&Help");
+    QAction* shortcutsAct = helpMenu->addAction("Keyboard Shortcuts");
+    QAction* docsAct = helpMenu->addAction("MuJoCo Documentation");
+    helpMenu->addSeparator();
+    QAction* aboutAct = helpMenu->addAction("About RoboticsStudio");
+
+    connect(exitAct, &QAction::triggered, this, &QWidget::close);
+    
+    // connect(saveAct, &QAction::triggered, this, [](){
+    //     Application::getInstance()->getProject()->saveToFile();
+    // });
+    // connect(resetLayoutAct, &QAction::triggered, this, &EditorWindow::resetDockLayouts);
+}
+
+
+
 
 
 
@@ -145,7 +203,10 @@ void EditorWindow::setupMainViewport() {
         if (sim->getState() == SimulationState::EDITING) {
             Project* project = Application::getInstance()->getProject();
             project->setScript("/home/anon/Documents/Code Projects/Mixed Projects/RoboticsStudio/demo/demoScript.js");
-            project->getMicrocontroller()->compile(project->getScript(), project->getRootComponent());
+            
+            if (this->plotPanel) {
+                this->plotPanel->clearAllGraphs();
+            }
 
             sim->play();
             playBtn->setText("⬛ STOP");
@@ -207,6 +268,8 @@ void EditorWindow::setupRightDocking(){
     connect(sceneTree, &SceneTreePanel::componentSelected, this, &EditorWindow::selectComponent);
 
     QDockWidget *graphDock = new QDockWidget("Graph");
+    plotPanel = new PlotPanel();
+    graphDock->setWidget(plotPanel);
     addDockWidget(Qt::BottomDockWidgetArea, graphDock);
 
     sceneDock->setFeatures(QDockWidget::DockWidgetMovable);
@@ -214,6 +277,7 @@ void EditorWindow::setupRightDocking(){
     graphDock->setFeatures(QDockWidget::DockWidgetMovable);
     sceneDock->setMinimumWidth(150);
     inspectorDock->setMinimumWidth(150);
+    graphDock->setMinimumHeight(200);
     
     splitDockWidget(sceneDock, graphDock, Qt::Vertical);
     splitDockWidget(sceneDock, inspectorDock, Qt::Horizontal);

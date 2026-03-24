@@ -1,0 +1,163 @@
+{
+    "meta": {
+        "id": "sensor_mpu6050",
+        "name": "MPU-6050 IMU Sensor",
+        "version": "1.0.0",
+        "author": "Anon",
+        "icon_path": "mpu6050.png"
+    },
+
+    "resources": {
+        "meshes": {
+            "mesh_body": "meshes/mpu6050.obj"
+        },
+        "materials": {
+            "mat_body": "textures/mpu6050-2.png"
+        }
+    },
+    
+    "specs": {
+        "voltage_max": 3.3,
+        "voltage_min": 2.3,
+        "current_ma": 3.9,  
+        "weight_kg": 0.005
+    },
+
+    "pins": [
+        {
+            "id": "vcc",
+            "voltage_range": [2.3, 3.3],
+            "description": "Power input pin for servo motor"
+        },
+        {
+            "id": "gnd",
+            "description": "Ground pin for servo motor"
+        },
+        {
+            "id": "scl",
+            "description": "I2C clock pin for communication"
+        },
+        {
+            "id": "sda",
+            "description": "I2C data pin for communication"
+        },
+        {
+            "id": "xda",
+            "description": "Auxiliary I2C data pin (not commonly used)"
+        },
+        {
+            "id": "xcl",
+            "description": "Auxiliary I2C clock pin (not commonly used)"
+        },
+        {
+            "id": "ad0",
+            "description": "I2C address selection pin (connect to GND for 0x68, VCC for 0x69)"
+        },
+        {
+            "id": "int",
+            "description": "Interrupt pin for motion detection"
+        }
+    ],
+
+    "kinematics": {
+        "bodies": [
+            {
+                "id": "base",
+                "mass": 0.005,
+                "transform": {
+                    "pos": [0, 0, 0],
+                    "quat": [1, 0, 0, 0]
+                },
+                "geoms": [
+                    { "type": "mesh", "mesh": "mesh_body", "material": "mat_body" }
+                ],
+                "sites": [
+                    {
+                        "id": "imu_site",
+                        "transform": {
+                            "pos": [0, 0, 0],
+                            "quat": [1, 0, 0, 0]
+                        }
+                    }
+                ]
+            }
+        ],
+        "joints": []
+    },
+    
+    "connectors": [
+        {
+            "id": "connector_1",
+            "body": "base",
+            "description": "Connector 1 for mounting the MPU-6050 sensor",
+            "mechanics": { "snap_angles": [0, 180] },
+            "transform": {
+                "pos": [0.008, 0.0058, -0.0015],
+                "quat": [0, 1, 0, 0]
+            }
+        },
+        {
+            "id": "connector_2",
+            "body": "base",
+            "description": "Connector 2 for mounting the MPU-6050 sensor",
+            "mechanics": { "snap_angles": [0, 180] },
+            "transform": {
+                "pos": [-0.008, 0.0058, -0.0015],
+                "quat": [0, 1, 0, 0]
+            }
+        }
+    ],
+
+    "io": {
+        "emulator":{
+            "type": "?_emulator",
+            "source": null
+        },
+        "inputs": [
+        ],
+        "outputs": [
+            {
+                "name": "accel_x",
+                "unit": "m/s^2",
+                "sensor_type": "accelerometer",
+                "target_site": "imu_site",
+                "axis": 0
+            },
+            {
+                "name": "accel_y",
+                "unit": "m/s^2",
+                "sensor_type": "accelerometer",
+                "target_site": "imu_site",
+                "axis": 1
+            },
+            {
+                "name": "accel_z",
+                "unit": "m/s^2",
+                "sensor_type": "accelerometer",
+                "target_site": "imu_site",
+                "axis": 2
+            },
+            {
+                "name": "gyro_x",
+                "unit": "degrees/s",
+                "sensor_type": "gyro",
+                "target_site": "imu_site",
+                "axis": 0
+            },
+            {
+                "name": "gyro_y",
+                "unit": "degrees/s",
+                "sensor_type": "gyro",
+                "target_site": "imu_site",
+                "axis": 1
+            },
+            {
+                "name": "gyro_z",
+                "unit": "degrees/s",
+                "sensor_type": "gyro",
+                "target_site": "imu_site",
+                "axis": 2
+            }
+        ]
+    }
+}

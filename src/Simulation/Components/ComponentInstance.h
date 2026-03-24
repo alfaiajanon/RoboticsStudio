@@ -9,7 +9,7 @@
 #include "ComponentBlueprint.h"
 #include "Simulation/ErrorSystem/BaseEmulator.h"
 #include "Utils/Spatial.h"
-
+#include "Utils/Buffer.h"
 
 
 
@@ -21,7 +21,7 @@ struct IOStream {
     int mujocoId = -1;       
     double targetValue = 0;  
     double currentValue = 0; 
-    std::vector<double> historyBuffer; 
+    RingBuffer<PlotPoint> historyBuffer{0};
 };
 
 
@@ -51,9 +51,9 @@ class ComponentInstance {
     private:
         mutable std::mutex ioMutex;
 
-        QMap<QString, IOStream> joints;
-        QMap<QString, IOStream> sensors;
-        QMap<QString, IOStream> actuators;
+        QMap<QString, std::shared_ptr<IOStream>> joints;
+        QMap<QString, std::shared_ptr<IOStream>> sensors;
+        QMap<QString, std::shared_ptr<IOStream>> actuators;
 
     public:
         int uid;
@@ -87,6 +87,9 @@ class ComponentInstance {
 
         void setSensorCurrent(const QString& key, double value);
         double getSensorCurrent(const QString& key) const;
+
+        RingBuffer<PlotPoint>* getSensorBuffer(const QString& key);
+        RingBuffer<PlotPoint>* getActuatorBuffer(const QString& key);
 
 
         void setMujocoActuatorId(const QString& key, int id);

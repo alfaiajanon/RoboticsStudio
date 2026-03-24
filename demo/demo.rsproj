@@ -17,7 +17,7 @@
                 "uid": 1,
                 "name": "Main root",
                 "type": "servo",
-                "model": "sg90",
+                "model": "mg996r",
                 "connection": {
                     "parent_uid": 0,
                     "parent_connector": "root",
@@ -25,14 +25,14 @@
                     "snap_angle": 0
                 },
                 "parameters": {
-                    "initial_angle": 0.0
+                    "servo_joint": 40.0
                 }
             },
             {
                 "uid": 14,
                 "name": "child servo",
                 "type": "servo",
-                "model": "sg90",
+                "model": "mg996r",
                 "connection": {
                     "parent_uid": 1,
                     "parent_connector": "horn",
@@ -40,7 +40,7 @@
                     "snap_angle": 0
                 },
                 "parameters": {
-                    "initial_angle": 0.0
+                    "servo_joint": 0.0
                 }
             },
             {
@@ -50,12 +50,12 @@
                 "model": "sg90",
                 "connection": {
                     "parent_uid": 14,
-                    "parent_connector": "side_screw_left",
+                    "parent_connector": "side_screw_left1",
                     "self_connector": "base",
                     "snap_angle": 90
                 },
                 "parameters": {
-                    "initial_angle": 0.0
+                    "servo_joint": 0.0
                 }
             },
             {
@@ -65,7 +65,7 @@
                 "model": "sg90",
                 "connection":null,
                 "parameters": {
-                    "initial_angle": 0.0
+                    "servo_joint": 0.0
                 }
             },
             {
@@ -80,7 +80,7 @@
                     "snap_angle": 0
                 },
                 "parameters": {
-                    "initial_angle": 0.0
+                    "servo_joint": 0.0
                 }
             },
             {
@@ -90,7 +90,7 @@
                 "model": "sg90",
                 "connection":null,
                 "parameters": {
-                    "initial_angle": 0.0
+                    "servo_joint": 0.0
                 }
             }
         ],

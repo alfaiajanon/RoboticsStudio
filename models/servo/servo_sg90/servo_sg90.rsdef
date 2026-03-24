@@ -127,6 +127,10 @@
     ],
 
     "io": {
+        "emulator":{
+            "type": "servo_emulator",
+            "source": null
+        },
         "inputs": [
             {
                 "name": "target_angle",

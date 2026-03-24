@@ -59,6 +59,9 @@ struct IODef {
     QPair<float, float> range;  
     
     QString targetJoint;   
+    QString targetSite;
+    int axis = 0;
+
     QString actuatorType;
     QString sensorType;
     

@@ -16,6 +16,14 @@
             "items":[
                 "./models/stepper/nema17/stepper_nema17.rsdef"
             ]
+        },
+        {
+            "id": "sensor",
+            "name":"Sensors",
+            "keys":["sensor","mpu6050","imu"],
+            "items":[
+                "./models/sensor/sensor_mpu6050/sensor_mpu6050.rsdef"
+            ]
         }
     ]
 }

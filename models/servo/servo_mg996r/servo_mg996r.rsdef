@@ -9,10 +9,10 @@
 
     "resources": {
         "meshes": {
-            "mesh_body": "meshes/mg996r_body.obj"
+            "mesh_body": "meshes/servo_mg996r.obj"
         },
         "materials": {
-            "mat_servo": "textures/mg996r_body_texture.png"
+            "tex_body":"textures/servo_mg996r_tex.png"
         }
     },
     
@@ -50,14 +50,14 @@
                     "quat": [1, 0, 0, 0]
                 },
                 "geoms": [
-                    { "type": "mesh", "mesh": "mesh_body", "material": "mat_servo" }
+                    { "type": "mesh", "mesh": "mesh_body", "material": "tex_body" }
                 ]
             },
             {
                 "id": "horn",
                 "mass": 0.003,
                 "transform": {
-                    "pos": [-0.01, 0, 0.042],
+                    "pos": [0, 0, 0.0176],
                     "quat": [1, 0, 0, 0]
                 },
                 "geoms": [
@@ -72,7 +72,7 @@
                 "body_b": "horn",
                 "type": "hinge",
                 "transform": {
-                    "pos": [-0.01, 0, 0.041],
+                    "pos": [0, 0, 0.021],
                     "quat": [1, 0, 0, 0]
                 },
                 "range": [-90, 90],
@@ -90,7 +90,7 @@
             "description": "horn for attaching arms",
             "mechanics": { "snap_angles": [0, 180] },
             "transform": {
-                "pos": [-0.01, 0, 0.044],
+                "pos": [0, 0, 0.02],
                 "quat": [1, 0, 0, 0]
             }
         },
@@ -100,27 +100,47 @@
             "description": "Flat bottom surface for mounting",
             "mechanics": { "snap_angles": [0, 90, 180, 270] },
             "transform": {
-                "pos": [0, 0, -0.021],
+                "pos": [-0.01, 0, -0.028],
                 "quat": [0, 1, 0, 0]
             }
         },
         {
-            "id": "side_screw_left",
+            "id": "side_screw_left1",
             "body": "base",
-            "description": "Left mounting tab hole",
+            "description": "Left mounting tab hole 1",
             "mechanics": { "snap_angles": [0] },
             "transform": {
-                "pos": [-0.024, 0, 0.015],
+                "pos": [0.0145, 0.005, 0.0025],
                 "quat": [1, 0, 0, 0]
             }
         },
         {
-            "id": "side_screw_right",
+            "id": "side_screw_left2",
             "body": "base",
-            "description": "Right mounting tab hole",
+            "description": "Left mounting tab hole 2",
             "mechanics": { "snap_angles": [0] },
             "transform": {
-                "pos": [0.024, 0, 0.015],
+                "pos": [0.0145, -0.005, 0.0025],
+                "quat": [1, 0, 0, 0]
+            }
+        },
+        {
+            "id": "side_screw_right1",
+            "body": "base",
+            "description": "Right mounting tab hole 1",
+            "mechanics": { "snap_angles": [0] },
+            "transform": {
+                "pos": [-0.0145, 0.005, 0.0025],
+                "quat": [1, 0, 0, 0]
+            }
+        },
+        {
+            "id": "side_screw_right2",
+            "body": "base",
+            "description": "Right mounting tab hole 2",
+            "mechanics": { "snap_angles": [0] },
+            "transform": {
+                "pos": [-0.0145, -0.005, 0.0025],
                 "quat": [1, 0, 0, 0]
             }
         }

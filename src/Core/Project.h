@@ -5,8 +5,24 @@
 #include <QJsonObject>
 #include <QMap>
 #include <QList>
+#include <QColor>
 #include "Simulation/Components/ComponentInstance.h"
 #include "Simulation/MicroController/MicroController.h"
+
+
+
+enum class PlotTargetType {
+    SENSOR,
+    ACTUATOR
+};
+
+struct PlotTarget {
+    int compUid;          // Which component?
+    PlotTargetType type;  // Sensor or Actuator?
+    QString ioKey;        // The dictionary key (e.g., "target_angle")
+    QColor color;         // Line color on the graph
+    bool isVisible = true;// UI Checkbox state
+};
 
 
 
@@ -26,14 +42,17 @@ class Project {
         QMap<int, ComponentInstance*> componentMap;
         QList<Constraint*> constraintList;
 
-        Microcontroller microcontroller;
+        MicroController microcontroller;
         QString currentScript;
+
+        QList<PlotTarget> activePlots;
 
 
 
         void clear();
         void parseAssembly();
         void buildHierarchy(); 
+        void applyDefaults();
 
         QString writeWorldBodyXML(ComponentInstance* comp, QSet<int>& visitedComponents);
         void writeAssetsXML(ComponentInstance* comp, QString& assetsOut, QSet<QString>& processedModels);
@@ -53,6 +72,8 @@ class Project {
 
         QJsonObject getProjectData() const;
 
+        QList<PlotTarget> getActivePlotsVal(){ return activePlots; } 
+        QList<PlotTarget>* getActivePlots(){ return &activePlots; }
         ComponentInstance* getRootComponent();
         ComponentInstance* getComponentByUid(int uid);
         QMap<int, ComponentInstance*>& getComponentMap();
@@ -60,10 +81,10 @@ class Project {
         ComponentInstance* createComponentInstance( const int parentUid, 
                                                     const QString& parentConnector, 
                                                     const QString& modelId, 
-                                                    const QString& selfConnector, 
+                                                    const QString& selfConnector,
                                                     const float snapAngle);
         
-        Microcontroller* getMicrocontroller() { return &microcontroller; }
+        MicroController* getMicroController() { return &microcontroller; }
     
         void setScript(QString path);
         QString getScript() const { return currentScript; }
