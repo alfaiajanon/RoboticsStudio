@@ -77,6 +77,7 @@ struct IODef {
 
 struct EmulatorDef {
     QString type;
+    QJsonObject source;
     QMap<QString, QVariant> parameters;
 };
 
@@ -102,7 +103,7 @@ public:
     ComponentBlueprint(const QString& rsdefFile);
 
     MetaDef meta;
-    EmulatorDef emulator;
+    EmulatorDef emulatorDef;
 
     QMap<QString, PinDef> pins; 
     QMap<QString, ConnectorDef> connectors;

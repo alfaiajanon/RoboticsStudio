@@ -1,22 +1,24 @@
 #include "MicroController.h"
+#include <thread>
+#include <chrono>
+
+
+
 
 
 /*
  * Recursively walks your component tree and exposes emulators to JS
  */
 void MicroController::injectEmulators(ComponentInstance* comp) {
-    Log::info("injecting .... (UID):" + QString::number(comp->uid));
-    if (!comp) {
-        Log::info("Comp invalid");
-        return;
-    }
+    if (!comp) return;
+
     if (comp->emulator) {
         QString jsVarName = "comp_" + QString::number(comp->uid);
+        QJSEngine::setObjectOwnership(comp->emulator, QJSEngine::CppOwnership);
         QJSValue wrappedEmulator = engine.newQObject(comp->emulator);
         engine.globalObject().setProperty(jsVarName, wrappedEmulator);
-    } else {
-        Log::error("emulator not found");
-    }
+    } 
+    
     for (ComponentInstance* child : comp->children) {
         injectEmulators(child);
     }
@@ -26,11 +28,31 @@ void MicroController::injectEmulators(ComponentInstance* comp) {
 
 
 
-MicroController::MicroController(QObject* parent) : QObject(parent) {
+
+
+MicroController::MicroController(QObject* parent) : QObject(parent), stopRequested(false) {
+    // Setup Console
     consoleProxy = new JSConsoleProxy(this);
+    QJSEngine::setObjectOwnership(consoleProxy, QJSEngine::CppOwnership);
     QJSValue jsConsole = engine.newQObject(consoleProxy);
     engine.globalObject().setProperty("console", jsConsole);
+
+    // Setup Native Delay Function
+    QJSEngine::setObjectOwnership(this, QJSEngine::CppOwnership);
+    QJSValue mcuObject = engine.newQObject(this);
+    engine.globalObject().setProperty("delay", mcuObject.property("delay"));
 }
+
+
+
+
+
+
+MicroController::~MicroController() {
+    stop();
+}
+
+
 
 
 
@@ -38,8 +60,8 @@ MicroController::MicroController(QObject* parent) : QObject(parent) {
 
 void MicroController::compile(const QString& script, ComponentInstance* root) {
     isCompiled = false;
-
-    engine.evaluate("function delay(ms) { return ms / 1000.0; }");
+    stopRequested = false;
+    engine.setInterrupted(false); // Clear any previous interrupts
 
     injectEmulators(root);
 
@@ -51,60 +73,30 @@ void MicroController::compile(const QString& script, ComponentInstance* root) {
 
     loopFunction = engine.globalObject().property("loop");
     if (loopFunction.isCallable()) {
-        jsIterator = loopFunction.call();
-
-        // Safety check: Did they actually use a generator (function*)?
-        if (jsIterator.hasProperty("next")) {
-            isCompiled = true;
-            isSleeping = false;
-            wakeupTime = 0.0;
-            Log::info("MicroController compiled and coroutine primed!");
-        } else {
-            Log::error("Compile Error: loop() must be a generator! Use 'function* loop()'");
-        }
-
+        isCompiled = true;
+        Log::info("MicroController compiled and ready!");
     } else {
-        Log::error("No callable 'loop()' function found in script.");
+        Log::error("Compile Error: No callable 'loop()' function found in script.");
     }
 }
 
 
 
 
+/*
+ * Executes one full cycle of the user's loop() function.
+ * Called continuously by the mcuLoop background thread.
+ */
+void MicroController::run() {
+    if (!isCompiled || stopRequested) return;
 
+    QJSValue resultObj = loopFunction.call();
 
-
-
-void MicroController::tick(mjData* d) {
-    if (!isCompiled || !d) return;
-
-    double currentSimTime = d->time;
-
-    if (isSleeping) {
-        if (currentSimTime < wakeupTime) return;
-        isSleeping = false;
-    }
-
-    QJSValue nextFunc = jsIterator.property("next");
-    QJSValue resultObj = nextFunc.callWithInstance(jsIterator);
-
-    if (resultObj.isError()) {
+    // If the engine gets interrupted by stop() while stuck in a busy JS loop, 
+    // it will return an error here. We safely ignore it if a stop was requested.
+    if (resultObj.isError() && !stopRequested) {
         Log::error("JS Runtime Error: " + resultObj.toString());
-        isCompiled = false;
-        return;
-    }
-
-    bool isDone = resultObj.property("done").toBool();
-    if (isDone) {
-        jsIterator = loopFunction.call();
-        return;
-    }
-
-    QJSValue yieldedValue = resultObj.property("value");
-    if (yieldedValue.isNumber()) {
-        double delaySeconds = yieldedValue.toNumber();
-        wakeupTime = currentSimTime + delaySeconds;
-        isSleeping = true;
+        isCompiled = false; 
     }
 }
 
@@ -113,12 +105,36 @@ void MicroController::tick(mjData* d) {
 
 
 
-
+/*
+ * Safely aborts any running JS code and interrupts native delays.
+ * Called from the UI thread when the user clicks Pause or Edit.
+ */
 void MicroController::stop() {
-    isSleeping = false;
-    wakeupTime = 0.0;
+    stopRequested = true;
+    engine.setInterrupted(true); 
+}
 
-    if (isCompiled && loopFunction.isCallable()) {
-        jsIterator = loopFunction.call();
+
+
+
+
+
+
+/*
+ * A native sleep function exposed to the JS engine.
+ * Fast-polls the stopRequested flag so it can wake up instantly if the user hits stop.
+ */
+void MicroController::delay(int milliseconds) {
+    auto start = std::chrono::steady_clock::now();
+    
+    while (!stopRequested) {
+        auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count() >= milliseconds) {
+            break;
+        }
+        
+        // Sleep for 1ms at a time so we don't hog the CPU, 
+        // but remain incredibly responsive to the stopRequested flag!
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 }

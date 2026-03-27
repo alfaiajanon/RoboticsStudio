@@ -171,5 +171,13 @@
                 "pin_required": ["vcc", "gnd"]
             }
         ]
+    },
+    "emulator":{
+        "type": "servo_emulator",
+        "source": null,
+        "parameters": {
+            "noise_stddev": 1.0,
+            "delay_ms": 30
+        }
     }
 }

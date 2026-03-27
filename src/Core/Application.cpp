@@ -3,7 +3,6 @@
 #include "Simulation/Components/LibraryManager.h"
 #include <QFile>
 
-Application* Application::instance = nullptr;
 
 
 
@@ -16,33 +15,6 @@ Application* Application::init(int& argc, char** argv) {
 }
 
 
-
-
-Application* Application::getInstance() {
-    return instance;
-}
-
-
-
-
-Project* Application::getProject() {
-    return &currentProject;
-}
-
-
-
-
-EditorWindow* Application::getEditor() {
-    return &editor; 
-}
-
-
-
-
-
-SimulationManager* Application::getSimulationManager() {
-    return simManager;
-}
 
 
 
@@ -63,6 +35,7 @@ Application::Application(int& argc, char** argv) : qtApp(argc, argv) {
     );
     
     editor.sceneTree->buildFromProject(&currentProject);
+    editor.scriptPanel->loadScript(currentProject.getScriptPath());
 
     simManager = new SimulationManager();
     
@@ -70,14 +43,31 @@ Application::Application(int& argc, char** argv) : qtApp(argc, argv) {
     simManager->cacheMujocoIds(root, MujocoContext::getInstance()->getModel());
     simManager->edit();
 
+    editor.setupSimConn();
+    editor.frameScene();
+    editor.selectComponent(0);
     editor.show();
 }
 
 
 
 
-Application::~Application() {
+
+
+
+void Application::destroy() {
+    if (instance) {
+        if (instance->simManager) {
+            delete instance->simManager;
+            instance->simManager = nullptr;
+        }
+        delete instance;
+        instance = nullptr;
+    }
 }
+
+
+
 
 
 
@@ -95,6 +85,8 @@ void Application::loadStyle(const QString& path) {
 
 
 
+
+
 int Application::run() {
     return qtApp.exec();
 }
@@ -103,18 +95,38 @@ int Application::run() {
 
 
 
-/*
- * Safely destroys the singleton instance.
- * Ensures QApplication and all UI components are cleanly deallocated 
- * before the main thread tears down its local storage.
- */
-void Application::destroy() {
-    if (instance) {
-        if (instance->simManager) {
-            delete instance->simManager;
-            instance->simManager = nullptr;
-        }
-        delete instance;
-        instance = nullptr;
-    }
+
+
+Application* Application::instance = nullptr;
+
+
+Application* Application::getInstance() {
+    return instance;
 }
+
+
+Project* Application::getProject() {
+    return &currentProject;
+}
+
+
+EditorWindow* Application::getEditor() {
+    return &editor; 
+}
+
+
+SimulationManager* Application::getSimulationManager() {
+    return simManager;
+}
+
+
+Application::~Application() {
+}
+
+
+
+
+
+
+
+

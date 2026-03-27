@@ -1,11 +1,13 @@
-function* loop() {
-    comp_1.write_angle(90);
+let servo = comp_1; 
+let imu = comp_21;
+
+function loop() {
+    servo.write_angle(90);
     console.log("goto 90 deg");
-
-    yield delay(1000);
+    delay(1000);
     
-    comp_1.write_angle(-90);
+    servo.write_angle(-90);
     console.log("goto -90 deg");
-
-    yield delay(1000);
+    delay(2000);
 }
+

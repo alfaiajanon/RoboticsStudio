@@ -24,6 +24,14 @@ SimulationManager::SimulationManager() : isAlive(true), currentState(SimulationS
  */
 SimulationManager::~SimulationManager() {
     isAlive = false;
+    
+    Project* proj = Application::getInstance()->getProject();
+    MicroController* mcu = proj->getMicroController();
+    mcu->stop();
+
+    if (mcuThread.joinable()) {
+        mcuThread.join();
+    }
     if (physicsThread.joinable()) {
         physicsThread.join();
     }
@@ -39,8 +47,13 @@ SimulationManager::~SimulationManager() {
 #pragma region play/edit
 
 void SimulationManager::play() {
-    if (currentState == SimulationState::PAUSED && !physicsThread.joinable()) {
-        physicsThread = std::thread(&SimulationManager::physicsLoop, this);
+    if (currentState == SimulationState::PAUSED) {
+        if(!physicsThread.joinable()) {
+            physicsThread = std::thread(&SimulationManager::physicsLoop, this);
+        }
+        if(!mcuThread.joinable()) {
+            mcuThread = std::thread(&SimulationManager::mcuLoop, this);
+        }
     }
 
     // move joint data to actuator targets before starting simulation
@@ -56,8 +69,13 @@ void SimulationManager::play() {
 
 
 void SimulationManager::edit() {
-    if (currentState == SimulationState::PAUSED && !physicsThread.joinable()) {
-        physicsThread = std::thread(&SimulationManager::physicsLoop, this);
+    if (currentState == SimulationState::PAUSED) {
+        if(!physicsThread.joinable()){
+            physicsThread = std::thread(&SimulationManager::physicsLoop, this);
+        }
+        if (!mcuThread.joinable()) {
+            mcuThread = std::thread(&SimulationManager::mcuLoop, this);
+        }
     }
 
     Project* proj = Application::getInstance()->getProject();
@@ -105,12 +123,62 @@ void SimulationManager::setTimeScale(float scale) {
 
 
 
+void SimulationManager::trackFps() {
+    if (!fpsTimer.isValid()) {
+        fpsTimer.start();
+    }
+
+    frameCount++;
+
+    if (fpsTimer.elapsed() >= 400) {
+        int currentFps = static_cast<int>((frameCount*1000.0 / fpsTimer.elapsed()));
+        emit fpsUpdated(currentFps);
+        
+        frameCount = 0;
+        fpsTimer.restart();
+    }
+}
+
+
+
+
+
+
+
+#pragma region mcuLoop
+
+
+void SimulationManager::mcuLoop() {
+    Project* proj = Application::getInstance()->getProject();
+    MicroController* mcu = proj->getMicroController();
+
+    while (isAlive) {
+        if (currentState == SimulationState::PLAYING) {
+
+            mcu->run(); 
+    
+            // Throttle the MCU to simulate a cheap processor
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }else{
+            // Sleep to avoid busy-waiting
+            std::this_thread::sleep_for(std::chrono::milliseconds(16)); 
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
 /*
  * The continuous background physics loop.
  * Calculates scaled timesteps, locks the engine, processes math, and yields.
  */
 #pragma region physicsLoop
-
 void SimulationManager::physicsLoop() {
     while (isAlive) {
         if (currentState == SimulationState::PLAYING) {
@@ -120,38 +188,28 @@ void SimulationManager::physicsLoop() {
             stepAccumulator -= stepsToTake;
 
             if (stepsToTake > 0) {
-                std::lock_guard<std::mutex> lock(physicsMutex);
-                
                 Project* proj = Application::getInstance()->getProject();
                 MujocoContext* mj = MujocoContext::getInstance();
                 ComponentInstance* root = proj->getRootComponent();
 
-                syncFromMujocoSensor(root, mj->getModel(), mj->getData());
-                
-                // JS script injection goes here
-                proj->getMicroController()->tick(mj->getData());
                 processEmulators(root);
 
-                // store buffer data for plotting
-                // if(counter==10){
-                //     counter=0;
-                // }
-                // counter++;
-                storePlotData(mj->getData());
-
-                syncToMujocoActuator(root, mj->getModel(), mj->getData());
-                
-                for(int i = 0; i < stepsToTake; ++i) {
-                    mj->step();
-                }
-                
-                syncFromMujocoSensor(root, mj->getModel(), mj->getData());
+                {
+                    std::lock_guard<std::mutex> lock(physicsMutex);
+                    
+                    syncToMujocoActuator(root, mj->getModel(), mj->getData());
+                    for(int i = 0; i < stepsToTake; ++i) {
+                        mj->step();
+                    }
+                    syncFromMujocoSensor(root, mj->getModel(), mj->getData());
+                    
+                    storePlotData(mj->getData());
+                } 
             }
         } 
         
-        
-        else if( currentState == SimulationState::EDITING) {
-            // In editing mode, we might want to sync joint positions without stepping
+        else if (currentState == SimulationState::EDITING) {
+            // In editing mode, we sync joint positions to allow dragging components
             std::lock_guard<std::mutex> lock(physicsMutex);
             
             Project* proj = Application::getInstance()->getProject();
@@ -163,11 +221,12 @@ void SimulationManager::physicsLoop() {
 
             syncFromMujocoSensor(root, mj->getModel(), mj->getData());
         }
+
+        trackFps(); 
         
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
 }
-
 
 
 

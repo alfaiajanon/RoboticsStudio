@@ -7,6 +7,8 @@
 #include "Docking/InspectorPanel.h"
 #include "Docking/PlotPanel.h"
 #include "BottomBar/ComponentsPanel.h"
+#include "Rendering/CameraController.h"
+#include "BottomBar/ScriptPanel.h"
 #include "BottomBar/OutputPanel.h"
 #include "Rendering/MViewport.h"
 
@@ -26,6 +28,7 @@ class EditorWindow : public QMainWindow{
         void setupMainViewport();
         
     public:
+        Camera *camera;
         MViewport *viewport;
         QTabWidget *bottomTabs;
 
@@ -34,10 +37,14 @@ class EditorWindow : public QMainWindow{
         ComponentsPanel* componentsPanel;
         OutputPanel* outputPanel;
         PlotPanel* plotPanel;
+        ScriptPanel* scriptPanel;
+
 
         EditorWindow(QWidget* parent = nullptr);
         
         void refresh();
+        void frameScene();
+        void setupSimConn();
         int getCurrentSelectedUid() const;
 
     signals:

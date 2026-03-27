@@ -8,6 +8,47 @@ QWidget {
 
 
 
+/* Menu Bar and Menus */
+QMenuBar {
+    background-color: #1e1e1e;
+    color: #bbbbbb;
+}
+
+QMenuBar::item {
+    padding: 4px 6px;
+    background: transparent;
+    border-radius: 2px;
+}
+
+QMenuBar::item:selected {
+    background-color: #2d2d2d;
+    color: #ffffff;
+}
+
+QMenu {
+    background-color: #252525;
+    color: #bbbbbb;
+    border: none;
+    padding: 2px 0px;
+}
+
+QMenu::item {
+    padding: 4px 24px 4px 16px;
+    background-color: transparent;
+}
+
+QMenu::item:selected {
+    background-color: #3d3d3d;
+    color: #ffffff;
+}
+
+QMenu::separator {
+    height: 1px;
+    background: #3a3a3a;
+    margin: 2px 0px;
+}
+
+
 
 
 

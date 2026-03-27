@@ -44,6 +44,7 @@ class Project {
 
         MicroController microcontroller;
         QString currentScript;
+        QString currentScriptPath;
 
         QList<PlotTarget> activePlots;
 
@@ -53,6 +54,7 @@ class Project {
         void parseAssembly();
         void buildHierarchy(); 
         void applyDefaults();
+        void saveDefaults();
 
         QString writeWorldBodyXML(ComponentInstance* comp, QSet<int>& visitedComponents);
         void writeAssetsXML(ComponentInstance* comp, QString& assetsOut, QSet<QString>& processedModels);
@@ -68,6 +70,8 @@ class Project {
         ~Project();
 
         bool loadProject(const QString& path);
+        void setProjectPath(const QString& path);
+        bool saveProject();
         void unloadProject();
 
         QJsonObject getProjectData() const;
@@ -87,6 +91,7 @@ class Project {
         MicroController* getMicroController() { return &microcontroller; }
     
         void setScript(QString path);
+        QString getScriptPath() const {return currentScriptPath; }
         QString getScript() const { return currentScript; }
 
         

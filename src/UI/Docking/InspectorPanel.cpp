@@ -9,6 +9,7 @@
 #include <QListWidget>
 #include <QFrame>
 #include <QGridLayout>
+#include "UI/Toast/Toast.h"
 
 
 
@@ -377,8 +378,8 @@ void InspectorPanel::buildUI() {
                     });
                 }
 
-                connect(actionBtn, &QPushButton::clicked, this, []() {
-                    /* TODO: Manual Add logic */ 
+                connect(actionBtn, &QPushButton::clicked, this, [this]() {
+                    Toast::showMessage(this, "drag a component from the Component Library");
                 });
                 
                 

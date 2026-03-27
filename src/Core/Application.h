@@ -6,11 +6,11 @@
 #include "Simulation/SimulationManager.h"
 
 class Application {
+    static Application* instance;
     
     QApplication qtApp;
     EditorWindow editor;
     SimulationManager* simManager;
-    static Application* instance;
 
     Application(int& argc, char** argv);
     ~Application();

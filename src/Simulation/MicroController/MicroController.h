@@ -2,10 +2,9 @@
 
 #include <QJSEngine>
 #include <QString>
+#include <atomic>
 #include "Simulation/Components/ComponentInstance.h"
 #include "Core/Log.h"
-
-
 
 class JSConsoleProxy : public QObject {
     Q_OBJECT
@@ -16,26 +15,26 @@ class JSConsoleProxy : public QObject {
         }
 };
 
-
-
-
-class MicroController : public QObject{
+class MicroController : public QObject {
     Q_OBJECT
     private:
         QJSEngine engine;
-        QJSValue jsIterator;       
         QJSValue loopFunction;
         JSConsoleProxy* consoleProxy;
+        
         bool isCompiled = false;
-        bool isSleeping = false;   
-        double wakeupTime = 0.0;
+        std::atomic<bool> stopRequested; 
     
         void injectEmulators(ComponentInstance* comp);
 
     public:
         MicroController(QObject* parent = nullptr);
+        ~MicroController();
 
         void compile(const QString& script, ComponentInstance* root);
-        void tick(mjData* d);
+        void run(); 
         void stop();
+
+        // The native C++ sleep function exposed to JS
+        Q_INVOKABLE void delay(int milliseconds); 
 };

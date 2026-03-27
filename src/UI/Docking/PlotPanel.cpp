@@ -12,11 +12,24 @@
 
 
 PlotPanel::PlotPanel(QWidget* parent) : QWidget(parent) {
-    QVBoxLayout* mainLayout = new QVBoxLayout(this);
+    QVBoxLayout* outerLayout = new QVBoxLayout(this);
+    outerLayout->setContentsMargins(0, 0, 0, 0);
+
+    QScrollArea* scrollArea = new QScrollArea(this);
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setFrameShape(QFrame::NoFrame);
+    outerLayout->addWidget(scrollArea);
+
+    QWidget* scrollContent = new QWidget();
+    scrollArea->setWidget(scrollContent);
+
+
+
+    QVBoxLayout* mainLayout = new QVBoxLayout(scrollContent);
     mainLayout->setContentsMargins(0, 0, 0, 0);
 
     customPlot = new QCustomPlot(this);
-    customPlot->setMinimumHeight(300); 
+    customPlot->setMinimumHeight(200); 
     
     customPlot->setBackground(QBrush(QColor(30, 30, 30)));
     customPlot->xAxis->setLabel("Time (s)");

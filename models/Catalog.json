@@ -18,11 +18,11 @@
             ]
         },
         {
-            "id": "sensor",
-            "name":"Sensors",
+            "id": "imu",
+            "name":"IMU Sensors",
             "keys":["sensor","mpu6050","imu"],
             "items":[
-                "./models/sensor/sensor_mpu6050/sensor_mpu6050.rsdef"
+                "./models/imu/imu_mpu6050/imu_mpu6050.rsdef"
             ]
         }
     ]

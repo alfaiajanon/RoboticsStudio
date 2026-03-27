@@ -8,7 +8,8 @@
 #include <cmath> 
 #include "Simulation/Components/ComponentBlueprint.h"
 #include "Simulation/Components/LibraryManager.h"
-#include "Simulation/ErrorSystem/ServoEmulatorCpp.h"
+#include "Simulation/ErrorSystem/Emulator.h"
+#include "Simulation/ErrorSystem/EmulatorFactory.h"
 
 
 
@@ -16,11 +17,36 @@
 Project::Project() : rootComponent(nullptr) {}
 
 
-
-
 Project::~Project() {
     clear();
 }
+
+
+ComponentInstance* Project::getComponentByUid(int uid) {
+    return componentMap.value(uid, nullptr);
+}
+
+
+ComponentInstance* Project::getRootComponent() {
+    return rootComponent;
+}
+
+
+QMap<int, ComponentInstance*>& Project::getComponentMap() {
+    return componentMap;
+}
+
+
+QJsonObject Project::getProjectData() const {
+    return projectData;
+}
+
+
+void Project::setProjectPath(const QString& path) {
+    projectPath = path;
+}
+
+
 
 
 
@@ -47,6 +73,8 @@ void Project::setScript(QString path){
         return;
     }   
 
+    currentScriptPath = path;
+
     currentScript = QString::fromUtf8(file.readAll());
     Log::info(currentScript);
     file.close();
@@ -56,10 +84,12 @@ void Project::setScript(QString path){
 
 
 
+#pragma region load/unload
 /*
  * Loads the project from a JSON file, parsing components and explicit constraints.
  * Builds the macro-graph hierarchical tree in memory. 
  */
+
 bool Project::loadProject(const QString& path) {
     clear();
     projectPath = path;
@@ -74,6 +104,7 @@ bool Project::loadProject(const QString& path) {
     file.close();
 
     directoryPath = QFileInfo(path).absolutePath();
+    currentScriptPath = projectData["script"].toObject()["path"].toString();
 
     parseAssembly();
     buildHierarchy();
@@ -87,11 +118,131 @@ bool Project::loadProject(const QString& path) {
 
 
 
+void Project::unloadProject() {
+    clear();
+    projectData = QJsonObject();
+    projectPath = "";
+    directoryPath = "";
+    currentScript = "";
+}
+
+
+
+    
+
+
+
+
+#pragma region save data
+
+bool Project::saveProject() {
+    if (projectPath.isEmpty()) {
+        Log::error("Cannot save project: Project path is empty.");
+        return false;
+    }
+
+    QJsonArray componentsArray;
+    for (ComponentInstance* comp : componentMap.values()) {
+        QJsonObject compObj;
+        compObj["uid"] = comp->uid;
+        compObj["name"] = comp->name;
+        compObj["type"] = comp->type;
+        compObj["model"] = comp->model;
+
+        if (comp->parentUid == -1) {
+            compObj["connection"] = QJsonValue::Null;
+        } else {
+            QJsonObject connObj;
+            connObj["parent_uid"] = comp->parentUid;
+            connObj["parent_connector"] = comp->parentConnector;
+            connObj["self_connector"] = comp->selfConnector;
+            connObj["snap_angle"] = static_cast<double>(comp->snapAngle);
+            compObj["connection"] = connObj;
+        }
+
+        saveDefaults();
+        QJsonObject paramsObj;
+        for (auto it = comp->parameters.constBegin(); it != comp->parameters.constEnd(); ++it) {
+            paramsObj[it.key()] = QJsonValue::fromVariant(it.value());
+        }
+        compObj["parameters"] = paramsObj;
+
+        componentsArray.append(compObj);
+    }
+
+    QJsonArray constraintsArray;
+    for (Constraint* constraint : constraintList) {
+        QJsonObject constraintObj;
+        constraintObj["component_a"] = constraint->componentAUid;
+        constraintObj["component_b"] = constraint->componentBUid;
+        constraintObj["connector_a"] = constraint->connectorA;
+        constraintObj["connector_b"] = constraint->connectorB;
+        constraintObj["snap_angle"] = static_cast<double>(constraint->snapAngle);
+        constraintsArray.append(constraintObj);
+    }
+
+    QJsonObject assemblyObj;
+    assemblyObj["components"] = componentsArray;
+    assemblyObj["constraints"] = constraintsArray;
+
+    projectData["assembly"] = assemblyObj;
+
+    projectData["script"] = QJsonObject{
+        {"path", currentScriptPath}
+    };
+
+    QFile file(projectPath);
+    if (!file.open(QFile::WriteOnly | QFile::Truncate)) {
+        Log::error("Failed to open project file for saving: " + projectPath);
+        return false;
+    }
+
+    QJsonDocument doc(projectData);
+    file.write(doc.toJson(QJsonDocument::Indented));
+    file.close();
+
+    Log::info("Project saved successfully to " + projectPath);
+    return true;
+}
+
+
+
+
+
+void Project::saveDefaults() {
+    for (ComponentInstance* comp : componentMap) {
+        if (comp->blueprint) {
+            for (const QString& key : comp->blueprint->inputDefs.keys()) {
+                QString jkey = comp->blueprint->inputDefs[key].targetJoint;
+                
+                if (!jkey.isEmpty()) {
+                    // Fetch the current state from the component's memory
+                    double currentValue = comp->getJointTarget(jkey); 
+                    
+                    // Overwrite the old parameter with the new live value
+                    comp->parameters.insert(jkey, currentValue);
+                }
+            }
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+#pragma region read & build data
 
 /*
  * Parses the grouped JSON schema into memory.
  * Extracts the connection rules, nested parameters, and explicit loop constraints.
  */
+
 void Project::parseAssembly() {
     QJsonObject assemblyObj = projectData["assembly"].toObject();
     QJsonArray componentsArray = assemblyObj["components"].toArray();
@@ -105,9 +256,6 @@ void Project::parseAssembly() {
         component->name = obj["name"].toString();
         component->type = obj["type"].toString();
         component->model = obj["model"].toString();
-
-        #pragma region [TODO]:emulator
-        component->emulator=new ServoEmulatorCpp(component);
         
         QJsonValue connVal = obj["connection"];
         if (connVal.isNull()) {
@@ -131,6 +279,15 @@ void Project::parseAssembly() {
         QString model_id = component->type + "_" + component->model;
         component->blueprint = LibraryManager::getInstance().getBlueprint(model_id);
         component->initializeIO();
+        
+        
+        QString emulatorType = component->blueprint->emulatorDef.type;
+        if(!emulatorType.isEmpty()){
+            component->emulator = EmulatorFactory::create(emulatorType, component);
+        }else{
+            component->emulator = EmulatorFactory::create("default_emulator", component);
+        }
+        
 
         componentMap.insert(component->uid, component);
 
@@ -156,10 +313,14 @@ void Project::parseAssembly() {
 
 
 
+
+
+
 /*
  * Constructs the macro-graph tree and calculates spatial alignments.
  * Applies mating rotations to all components, including the virtual root (uid 0).
  */
+
 void Project::buildHierarchy() {
     for (ComponentInstance* c : componentMap) {
         if (c->parentUid == 0) {
@@ -234,7 +395,6 @@ void Project::applyDefaults() {
             }
         }
     }
-    // others in the future
 }
 
 
@@ -244,37 +404,6 @@ void Project::applyDefaults() {
 
 
 
-
-
-
-
-
-
-
-ComponentInstance* Project::getComponentByUid(int uid) {
-    return componentMap.value(uid, nullptr);
-}
-
-
-
-
-ComponentInstance* Project::getRootComponent() {
-    return rootComponent;
-}
-
-
-
-
-QMap<int, ComponentInstance*>& Project::getComponentMap() {
-    return componentMap;
-}
-
-
-
-
-QJsonObject Project::getProjectData() const {
-    return projectData;
-}
 
 
 
@@ -315,8 +444,10 @@ ComponentInstance* Project::createComponentInstance(const int parentUid,
     newComp->snapAngle = snapAngle;
     newComp->initializeIO();
 
-    #pragma region [TODO]:emulator
-    newComp->emulator=new ServoEmulatorCpp(newComp);
+    QString emulatorType = blueprint->emulatorDef.type;
+    if(!emulatorType.isEmpty()){
+        newComp->emulator = EmulatorFactory::create(emulatorType, newComp);
+    }
 
     if (componentMap.contains(parentUid)) {
         ComponentInstance* parent = componentMap[parentUid];
@@ -345,10 +476,19 @@ ComponentInstance* Project::createComponentInstance(const int parentUid,
 
 
 
+
+
+
+
+
+#pragma region mujoco stuff
+
+
 /*
  * Compiles the entire project into a single valid MuJoCo XML string.
  * Injects procedural skybox, a solid color floor, and dynamically scaled coordinate axes.
  */
+
 QString Project::generateMujocoXML() {
     QString worldbody, constraints, contacts, assets, actuators, sensors;
     QSet<QString> processedModels;
@@ -359,11 +499,11 @@ QString Project::generateMujocoXML() {
     double radius = axisScale * 0.025;
 
     QString baseAssets = 
-    "    <texture type=\"skybox\" builtin=\"gradient\" rgb1=\"0.02 0.03 0.07\" rgb2=\"0.03 0.025 0.02\" width=\"512\" height=\"512\"/>\n";
+    "    <texture type=\"skybox\" builtin=\"gradient\" rgb1=\"0.07 0.08 0.10\" rgb2=\"0.05 0.04 0.045\" width=\"512\" height=\"512\"/>\n";
     // "";
 
     QString baseWorldBody = QString(
-        "    <light directional=\"true\" diffuse=\"0.6 0.6 0.6\" specular=\"0.2 0.2 0.2\" pos=\"0 .5 .5\" dir=\"0 -1 -1\"/>\n"
+        "    <light directional=\"true\" diffuse=\"0.6 0.6 0.6\" specular=\"0.2 0.2 0.2\" pos=\"-0.5 -.5 .5\" dir=\"1 1 -1\"/>\n"
     );
 
     if (rootComponent) {
@@ -410,10 +550,8 @@ QString Project::generateMujocoXML() {
 
 
 
-/*
- *Recursively writes the worldbody XML.
- *Detects if the component is the physical root and forces it to spawn upright by ignoring its connector.
- */
+
+
 QString Project::writeWorldBodyXML(ComponentInstance* comp, QSet<int>& visitedComponents) {
     if (!comp || !comp->blueprint) return "";
     
@@ -444,6 +582,9 @@ QString Project::writeWorldBodyXML(ComponentInstance* comp, QSet<int>& visitedCo
 
 
 
+
+
+
 void Project::writeAssetsXML(ComponentInstance* comp, QString& assetsOut, QSet<QString>& processedModels) {
     if (!comp->blueprint) return;
 
@@ -462,9 +603,7 @@ void Project::writeAssetsXML(ComponentInstance* comp, QString& assetsOut, QSet<Q
 
 
 
-/*
- * Recursively asks the blueprint to generate data-driven actuator blocks.
- */
+
 void Project::writeActuatorsXML(ComponentInstance* comp, QString& actuatorsOut) {
     if (comp->blueprint) {
         actuatorsOut += comp->blueprint->generateActuatorXML(comp->uid);
@@ -478,9 +617,7 @@ void Project::writeActuatorsXML(ComponentInstance* comp, QString& actuatorsOut) 
 
 
 
-/*
- * Recursively asks the blueprint to generate data-driven sensor blocks.
- */
+
 void Project::writeSensorsXML(ComponentInstance* comp, QString& sensorsOut) {
     if (comp->blueprint) {
         sensorsOut += comp->blueprint->generateSensorXML(comp->uid);
@@ -494,10 +631,7 @@ void Project::writeSensorsXML(ComponentInstance* comp, QString& sensorsOut) {
 
 
 
-/*
- * Generates <equality> tags ONLY for explicit closed-loop constraints.
- * Retains collision exclusion tags to prevent overlapping mesh explosions.
- */
+
 void Project::writeConstraintXML(ComponentInstance* compA, const QString& connA, ComponentInstance* compB, const QString& connB, QString& constraintsOut, QString& contactsOut) {
     if (!compA || !compB || !compA->blueprint || !compB->blueprint) return;
     if (!compA->blueprint->connectors.contains(connA) || !compB->blueprint->connectors.contains(connB)) return;

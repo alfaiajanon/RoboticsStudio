@@ -82,6 +82,19 @@ ComponentBlueprint::ComponentBlueprint(const QString& rsdefFile) {
         pins[pinDef.id] = pinDef;
     }
 
+    if(mainJson.contains("emulator")){
+        QJsonObject emuObj = mainJson["emulator"].toObject();
+        
+        emulatorDef.type = emuObj["type"].toString();
+        emulatorDef.source = emuObj["source"].toObject();
+        if (emuObj.contains("parameters")) {
+            QJsonObject paramsObj = emuObj["parameters"].toObject();
+            for (const QString& key : paramsObj.keys()) {
+                emulatorDef.parameters[key] = paramsObj[key].toVariant();
+            }
+        }
+    }
+
     if (mainJson.contains("resources")) parseResources(mainJson["resources"].toObject());
     if (mainJson.contains("kinematics")) parseKinematics(mainJson["kinematics"].toObject());
     if (mainJson.contains("connectors")) parseConnectors(mainJson["connectors"].toArray());

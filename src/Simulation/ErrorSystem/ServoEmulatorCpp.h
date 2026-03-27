@@ -1,15 +1,15 @@
-#include "BaseEmulator.h"
+#include "Emulator.h"
 #include "Simulation/Components/ComponentInstance.h"
 #include "Core/Log.h"
 
 
-class ServoEmulatorCpp : public BaseEmulator {
+class ServoEmulatorCpp : public Emulator {
     Q_OBJECT
     private:
         double logicalTarget = 0.0; 
 
     public:
-        using BaseEmulator::BaseEmulator;
+        using Emulator::Emulator;
 
         void update() override {
             component->setActuatorTarget("target_angle", logicalTarget);

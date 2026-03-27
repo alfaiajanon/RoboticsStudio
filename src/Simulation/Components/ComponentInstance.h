@@ -7,7 +7,7 @@
 #include <vector>
 #include <mutex>
 #include "ComponentBlueprint.h"
-#include "Simulation/ErrorSystem/BaseEmulator.h"
+#include "Simulation/ErrorSystem/Emulator.h"
 #include "Utils/Spatial.h"
 #include "Utils/Buffer.h"
 
@@ -69,7 +69,7 @@ class ComponentInstance {
         QMap<QString, QVariant> parameters;
         
         Transform transform;
-        BaseEmulator* emulator = nullptr;
+        Emulator* emulator = nullptr;
         
         ComponentBlueprint* blueprint = nullptr;
         QList<ComponentInstance*> children;
