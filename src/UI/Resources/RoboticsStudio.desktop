@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=RoboticsStudio
+Comment=Lightweight Robotics Simulator
+Exec=RoboticsStudio
+Icon=icon
+Categories=Development;Science;
+Terminal=false
