@@ -1,0 +1,66 @@
+name: Build RoboticsStudio AppImage
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Install System Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake patchelf libgl1-mesa-dev libx11-dev libglfw3-dev
+
+    - name: Install Qt6
+      uses: jurplel/install-qt-action@v3
+      with:
+        version: '6.5.3'
+        modules: 'qtbase qtdeclarative qt3d qtwayland'
+
+    - name: Configure CMake
+      run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+
+    - name: Build RoboticsStudio
+      run: cmake --build build --config Release -j$(nproc)
+
+    - name: Download linuxdeploy
+      run: |
+        wget -c "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
+        wget -c "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage"
+        chmod +x linuxdeploy*.AppImage 
+
+    - name: Package AppImage
+      run: |
+        mkdir -p AppDir/usr/lib
+        
+        # Copy the pre-existing MuJoCo library directly into the AppDir
+        cp -a extern/mujoco-3.3.7/lib/libmujoco.so* AppDir/usr/lib/
+
+        export QMAKE=$(which qmake)
+        
+        # Run linuxdeploy to gather Qt plugins and system libraries
+        ./linuxdeploy-x86_64.AppImage \
+          --appdir AppDir \
+          -e build/RoboticsStudio \
+          -d src/UI/Resources/RoboticsStudio.desktop \
+          -i src/UI/Resources/icon.png \
+          --plugin qt
+
+        # Patch the binary so it knows to look in usr/lib for MuJoCo
+        patchelf --set-rpath '$ORIGIN/../lib' AppDir/usr/bin/RoboticsStudio
+
+        # Compress into the final .AppImage
+        ./linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
+
+    - name: Upload AppImage Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: RoboticsStudio-Linux-x86_64
+        path: "*.AppImage"
