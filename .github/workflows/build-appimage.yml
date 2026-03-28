@@ -17,17 +17,14 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y \
-          build-essential \
-          cmake \
-          patchelf \
-          libgl1-mesa-dev \
-          libx11-dev \
-          libglfw3-dev \
-          libcups2-dev \
-          libxkbcommon-dev \
-          libvulkan-dev \
-          libfontconfig1-dev \
-          libfuse2
+          build-essential cmake patchelf libfuse2 \
+          libgl1-mesa-dev libegl1-mesa-dev libvulkan-dev libglfw3-dev \
+          libx11-dev libwayland-dev \
+          libcups2-dev libfontconfig1-dev libfreetype-dev \
+          libxkbcommon-dev libxkbcommon-x11-0 \
+          libxcb-cursor0 libxcb-xinerama0 libxcb-icccm4 libxcb-image0 \
+          libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 \
+          libxcb-shape0 libxcb-sync1 libxcb-xfixes0 libxcb-xkb1
 
     - name: Install Qt6
       uses: jurplel/install-qt-action@v3
