@@ -3,6 +3,7 @@ name: Build RoboticsStudio AppImage
 on:
   push:
     branches: [ "main" ]
+    tags: [ "v*.*.*" ]
   workflow_dispatch:
 
 jobs:
@@ -48,12 +49,10 @@ jobs:
       run: |
         mkdir -p AppDir/usr/lib
         
-        # Copy the pre-existing MuJoCo library directly into the AppDir
         cp -a extern/mujoco-3.3.7/lib/libmujoco.so* AppDir/usr/lib/
 
         export QMAKE=$(which qmake)
         
-        # Run linuxdeploy to gather Qt plugins and system libraries
         ./linuxdeploy-x86_64.AppImage \
           --appdir AppDir \
           -e build/RoboticsStudio \
@@ -61,14 +60,20 @@ jobs:
           -i src/UI/Resources/icon.png \
           --plugin qt
 
-        # Patch the binary so it knows to look in usr/lib for MuJoCo
         patchelf --set-rpath '$ORIGIN/../lib' AppDir/usr/bin/RoboticsStudio
 
-        # Compress into the final .AppImage
         ./linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
 
     - name: Upload AppImage Artifact
       uses: actions/upload-artifact@v4
       with:
         name: RoboticsStudio-Linux-x86_64
-        path: "*.AppImage"
+        path: "RoboticsStudio*.AppImage"
+
+    - name: Publish to GitHub Releases
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: softprops/action-gh-release@v2
+      with:
+        files: "RoboticsStudio*.AppImage"
+        generate_release_notes: true
+        prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
