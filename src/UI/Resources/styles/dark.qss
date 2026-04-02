@@ -8,6 +8,7 @@ QWidget {
 
 
 
+
 /* Menu Bar and Menus */
 QMenuBar {
     background-color: #1e1e1e;
@@ -52,18 +53,19 @@ QMenu::separator {
 
 
 
-
 /* Buttons */
 QPushButton {
-    background-color: #252525; /* Darkened from #2d2d2d */
+    background-color: #252525;
     color: white;
     border: 1px solid #2f2f2f;
     padding: 4px 6px;
     border-radius: 4px;
 }
+
 QPushButton:hover {
     background-color: #333333; 
 }
+
 QPushButton:pressed {
     background-color: #1a1a1a; 
 }
@@ -71,29 +73,35 @@ QPushButton:pressed {
 
 
 
+
 /* ComboBox (Dropdowns) */
 QComboBox {
-    background-color: #252525; /* Matches the new darker buttons */
+    background-color: #252525;
     color: white;
     border: 1px solid #2f2f2f;
     border-radius: 4px;
     padding: 4px 6px;
 }
+
 QComboBox:hover {
     background-color: #333333;
 }
+
 QComboBox::drop-down {
-    border: none; /* Removes the native 3D button styling for a flat look */
+    border: none;
     width: 20px;
 }
+
 QComboBox QAbstractItemView {
-    background-color: #1e1e1e; /* The actual popup list menu */
+    background-color: #1e1e1e;
     color: #dcdcdc;
     border: 1px solid #3c3c3c;
     selection-background-color: #444444; 
     selection-color: white;
-    outline: none; /* Removes the dotted focus rectangle */
+    outline: none;
 }
+
+
 
 
 
@@ -103,6 +111,7 @@ QDockWidget {
     background-color: #262626;
     border: 1px solid #3a3a3a;
 }
+
 QDockWidget::title {
     background-color: #303030;
     padding: 4px 6px;
@@ -113,17 +122,24 @@ QDockWidget::title {
 
 
 
+
+
+
 /* Tabs */
 QTabWidget::pane {
     border: 1px solid #3a3a3a;
 }
+
 QTabBar::tab {
     background-color: #2e2e2e;
     padding: 8px 10px;
 }
+
 QTabBar::tab:selected {
     background-color: #444;
 }
+
+
 
 
 
@@ -138,15 +154,20 @@ QTreeView {
 
 
 
+
+
+
 /* ToolBox */
 QToolBox::tab {
     border: 1px solid #2d2d2d;
     color: #dcdcdc;
     padding-left: 5px; 
 }
+
 QToolBox::tab:selected {
     background:  #2e2e2e;
 }
+
 QToolBox::tab:hover {
     background: #353535;
 }
@@ -157,10 +178,83 @@ QToolBox::tab:hover {
 
 
 
+/* Dialogs */
+QDialog {
+    background-color: #222222;
+    border: 1px solid #3a3a3a;
+}
 
 
 
 
+
+
+
+
+/* ScrollBars (Vertical) */
+QScrollBar:vertical {
+    background-color: #1e1e1e;
+    width: 10px;
+    margin: 0px;
+    border: none;
+}
+
+QScrollBar::handle:vertical {
+    background-color: #444444;
+    min-height: 30px;
+    border-radius: 3px;
+    margin: 2px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background-color: #5a5a5a;
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    border: none;
+    background: none;
+    height: 0px;
+}
+
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: none;
+}
+
+
+
+
+
+
+
+
+/* ScrollBars (Horizontal) */
+QScrollBar:horizontal {
+    background-color: #1e1e1e;
+    height: 10px;
+    margin: 0px;
+    border: none;
+}
+
+QScrollBar::handle:horizontal {
+    background-color: #444444;
+    min-width: 30px;
+    border-radius: 3px;
+    margin: 2px;
+}
+
+QScrollBar::handle:horizontal:hover {
+    background-color: #5a5a5a;
+}
+
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+    border: none;
+    background: none;
+    width: 0px;
+}
+
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+    background: none;
+}
 
 
 
@@ -172,19 +266,16 @@ QToolBox::tab:hover {
    DISABLED STATES
    ========================================= */
 
-/* Global Disabled Text */
 QWidget:disabled {
     color: #7a7a7a;
 }
 
-/* Disabled Buttons */
 QPushButton:disabled {
-    background-color: #1c1c1c; /* Sinks into the main background */
+    background-color: #1c1c1c;
     color: #7a7a7a;
     border: 1px solid #262626;
 }
 
-/* Disabled Dropdowns and Text/Number Inputs */
 QComboBox:disabled,
 QLineEdit:disabled,
 QSpinBox:disabled,
@@ -194,29 +285,26 @@ QDoubleSpinBox:disabled {
     border: 1px solid #262626;
 }
 
-/* Disabled Tabs */
 QTabBar::tab:disabled {
     background-color: #222222;
     color: #7a7a7a;
 }
 
-/* Disabled Tree Items */
 QTreeView:disabled {
     color: #7a7a7a;
 }
 
-/* Disabled ToolBox Tabs */
 QToolBox::tab:disabled {
     background: #222222;
     color: #7a7a7a;
     border: 1px solid #262626;
 }
 
-/* Disabled Sliders (if you use them in the Inspector) */
 QSlider::groove:horizontal:disabled {
     background-color: #1c1c1c;
     border: 1px solid #262626;
 }
+
 QSlider::handle:horizontal:disabled {
     background-color: #2e2e2e;
     border: 1px solid #262626;

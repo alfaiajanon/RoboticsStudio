@@ -8,11 +8,9 @@
 
 Emulator* EmulatorFactory::create(const QString& type, ComponentInstance* comp) {
     if (type == "servo_emulator") {
-        Log::info("Creating Servo Emulator for component: " + comp->name);
         return new ServoEmulatorCpp(comp);
     } 
     else if (type == "imu_emulator") {
-        Log::info("Creating IMU Emulator for component: " + comp->name);
         return new IMUEmulatorCpp(comp);
     }
     else if(type == "custom_emulator"){
@@ -20,10 +18,11 @@ Emulator* EmulatorFactory::create(const QString& type, ComponentInstance* comp) 
         return nullptr; 
     }
     else if(type == "default_emulator"){
+        Log::warning("Default Emulator created for component '" + comp->name + "' of type '" + comp->type + "'. Consider implementing a specific emulator for better simulation fidelity.");
         return new DefaultEmulatorCpp(comp); 
     }
     else {
         Log::error("Factory failed: Unknown emulator type requested -> " + type);
-        return nullptr;
+        return nullptr; 
     }
 }

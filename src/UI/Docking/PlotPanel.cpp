@@ -76,6 +76,8 @@ PlotPanel::PlotPanel(QWidget* parent) : QWidget(parent) {
     // target list setup
     targetListArea = new QScrollArea(this);
     targetListArea->setWidgetResizable(true);
+    targetListArea->setMinimumHeight(100); 
+    targetListArea->hide();
     
     targetListWidget = new QWidget();
     targetListLayout = new QVBoxLayout(targetListWidget);
@@ -97,6 +99,21 @@ PlotPanel::PlotPanel(QWidget* parent) : QWidget(parent) {
     updateTimer = new QTimer(this);
     connect(updateTimer, &QTimer::timeout, this, &PlotPanel::onUpdateTimer);
     updateTimer->start(16); 
+}
+
+
+
+
+
+
+
+
+void PlotPanel::updateTargetListVisibility() {
+    if (targetListLayout->count() > 0) {
+        targetListArea->show();
+    } else {
+        targetListArea->hide();
+    }
 }
 
 
@@ -131,6 +148,7 @@ void PlotPanel::addTarget(const PlotTarget& target) {
     targetCursors.insert(targetId, 0); 
 
     buildTargetRowUI(target);
+    updateTargetListVisibility();
 }
 
 
@@ -170,6 +188,7 @@ void PlotPanel::removeTarget(const QString& targetId) {
         targetListLayout->removeWidget(rowWidget);
         rowWidget->deleteLater();
     }
+    updateTargetListVisibility();
 }
 
 

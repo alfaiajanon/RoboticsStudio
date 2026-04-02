@@ -11,7 +11,7 @@ class JSConsoleProxy : public QObject {
     public:
         explicit JSConsoleProxy(QObject* parent = nullptr) : QObject(parent) {}
         Q_INVOKABLE void log(const QString& msg) {
-            Log::info(msg); 
+            Log::info("[MCU]: "+msg); 
         }
 };
 

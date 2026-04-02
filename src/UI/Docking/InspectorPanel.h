@@ -13,6 +13,13 @@
 #include <QDropEvent>
 #include <QMimeData>
 
+
+
+
+class ComponentInstance;
+
+
+
 class ConnectorDropTargetBtn : public QPushButton {
     Q_OBJECT
 
@@ -49,6 +56,10 @@ class InspectorPanel : public QWidget {
         
         void clearLayout(QLayout* layout); 
         void showEmptyState();
+
+        void build_UID_0();
+        void build_inputs(ComponentInstance* comp);
+        void build_outputs(ComponentInstance* comp);
         
         void populateAvailableComponents(QComboBox* combo);
         void populateAvailableConnectors(QComboBox* combo, int targetUid);

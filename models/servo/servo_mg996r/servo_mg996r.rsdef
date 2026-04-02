@@ -88,7 +88,7 @@
             "id": "horn",
             "body": "horn",
             "description": "horn for attaching arms",
-            "mechanics": { "snap_angles": [0, 180] },
+            "mechanics": { "snap_angles": [0,90, 180, 270] },
             "transform": {
                 "pos": [0, 0, 0.02],
                 "quat": [1, 0, 0, 0]
@@ -98,7 +98,7 @@
             "id": "base",
             "body": "base",
             "description": "Flat bottom surface for mounting",
-            "mechanics": { "snap_angles": [0, 90, 180, 270] },
+            "mechanics": { "snap_angles": [] },
             "transform": {
                 "pos": [-0.01, 0, -0.028],
                 "quat": [0, 1, 0, 0]
@@ -108,7 +108,7 @@
             "id": "side_screw_left1",
             "body": "base",
             "description": "Left mounting tab hole 1",
-            "mechanics": { "snap_angles": [0] },
+            "mechanics": { "snap_angles": [0, 180] },
             "transform": {
                 "pos": [0.0145, 0.005, 0.0025],
                 "quat": [1, 0, 0, 0]
@@ -118,7 +118,7 @@
             "id": "side_screw_left2",
             "body": "base",
             "description": "Left mounting tab hole 2",
-            "mechanics": { "snap_angles": [0] },
+            "mechanics": { "snap_angles": [0, 180] },
             "transform": {
                 "pos": [0.0145, -0.005, 0.0025],
                 "quat": [1, 0, 0, 0]
@@ -128,9 +128,9 @@
             "id": "side_screw_right1",
             "body": "base",
             "description": "Right mounting tab hole 1",
-            "mechanics": { "snap_angles": [0] },
+            "mechanics": { "snap_angles": [0, 180] },
             "transform": {
-                "pos": [-0.0145, 0.005, 0.0025],
+                "pos": [-0.0335, 0.005, 0.0025],
                 "quat": [1, 0, 0, 0]
             }
         },
@@ -138,9 +138,9 @@
             "id": "side_screw_right2",
             "body": "base",
             "description": "Right mounting tab hole 2",
-            "mechanics": { "snap_angles": [0] },
+            "mechanics": { "snap_angles": [0, 180] },
             "transform": {
-                "pos": [-0.0145, -0.005, 0.0025],
+                "pos": [-0.0335, -0.005, 0.0025],
                 "quat": [1, 0, 0, 0]
             }
         }

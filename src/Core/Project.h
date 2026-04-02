@@ -53,6 +53,7 @@ class Project {
         void clear();
         void parseAssembly();
         void buildHierarchy(); 
+        void applyTransforms();
         void applyDefaults();
         void saveDefaults();
 
@@ -73,6 +74,7 @@ class Project {
         void setProjectPath(const QString& path);
         bool saveProject();
         void unloadProject();
+        void refresh();
 
         QJsonObject getProjectData() const;
 

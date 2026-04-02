@@ -26,8 +26,11 @@ Application::Application(int& argc, char** argv) : qtApp(argc, argv) {
     
     this->loadStyle(":/styles/dark.qss");
 
+    Log::info("Application initialized.");
+    Log::info("Loading component catalog...");
     LibraryManager::getInstance().load("./models/Catalog.json");
 
+    Log::info("Loading project...");
     currentProject.loadProject("./demo/demo.rsproj");
 
     MujocoContext::getInstance()->loadModelFromString(
@@ -45,8 +48,17 @@ Application::Application(int& argc, char** argv) : qtApp(argc, argv) {
 
     editor.setupSimConn();
     editor.frameScene();
-    editor.selectComponent(0);
     editor.show();
+
+
+    Log::info("Application setup complete.");
+    Log::info("================================");
+    Log::info("  Welcome to Robotics Studio!  ");
+    Log::info("  version 0.1.0                 ");
+    Log::info("================================");
+
+
+    editor.selectComponent(0);
 }
 
 

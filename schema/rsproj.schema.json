@@ -36,8 +36,8 @@
         "assembly": {
             "type": "object",
             "required": [
-                "dependencies",
-                "components"
+                "components",
+                "constraints"
             ],
             "properties": {
                 "dependencies": {

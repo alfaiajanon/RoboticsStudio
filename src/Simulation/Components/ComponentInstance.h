@@ -76,26 +76,24 @@ class ComponentInstance {
 
         ComponentInstance() : uid(-1), parentUid(-1), snapAngle(0.0f) {}
         
+        QList<QString> getFreeConnections() const;
+        QMap<QString, QPair<int, QString>> getActiveConnections() const; 
+
         void initializeIO();
 
-        
         void setActuatorTarget(const QString& key, double value);
         double getActuatorTarget(const QString& key) const;
-
         void setJointTarget(const QString& key, double value);
         double getJointTarget(const QString& key) const;
-
         void setSensorCurrent(const QString& key, double value);
         double getSensorCurrent(const QString& key) const;
 
         RingBuffer<PlotPoint>* getSensorBuffer(const QString& key);
         RingBuffer<PlotPoint>* getActuatorBuffer(const QString& key);
 
-
         void setMujocoActuatorId(const QString& key, int id);
         void setMujocoSensorId(const QString& key, int id);
         void setMujocoJointId(const QString& key, int id);
-        
         int getMujocoActuatorId(const QString& key) const;
         int getMujocoSensorId(const QString& key) const;
         int getMujocoJointId(const QString& key) const;

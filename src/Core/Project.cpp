@@ -76,7 +76,6 @@ void Project::setScript(QString path){
     currentScriptPath = path;
 
     currentScript = QString::fromUtf8(file.readAll());
-    Log::info(currentScript);
     file.close();
 }
 
@@ -332,6 +331,15 @@ void Project::buildHierarchy() {
         }
     }
 
+    applyTransforms();
+}
+
+
+
+
+
+
+void Project::applyTransforms() {
     if (!rootComponent) return;
 
     std::queue<ComponentInstance*> q;
@@ -398,6 +406,12 @@ void Project::applyDefaults() {
 }
 
 
+
+
+
+void Project::refresh() {
+    applyTransforms();
+}
 
 
 
@@ -543,7 +557,8 @@ QString Project::generateMujocoXML() {
         sensors
     );
 
-    Log::info("Generated Mujoco XML successfully : \n" + xml);
+    Log::info("Generated internal Mujoco XML successfully");
+    // Log::info("Generated Mujoco XML successfully : \n" + xml);
     return xml;
 }
 

@@ -8,6 +8,6 @@ function loop() {
     
     servo.write_angle(-90);
     console.log("goto -90 deg");
-    delay(2000);
+    delay(1000);
 }
 

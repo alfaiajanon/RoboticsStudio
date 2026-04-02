@@ -1,5 +1,43 @@
 #include "ComponentInstance.h"
 #include "Core/Log.h"
+#include "Core/Application.h"
+#include "Core/Project.h"
+
+
+
+
+
+
+QMap<QString, QPair<int, QString>> ComponentInstance::getActiveConnections() const {
+    Project* project = Application::getInstance()->getProject();
+    QMap<QString, QPair<int, QString>> activeConnections;
+    for (ComponentInstance* child : children) {
+        activeConnections.insert(child->parentConnector, qMakePair(child->uid, child->selfConnector));
+    }
+    if (parentUid != -1) {
+        activeConnections.insert(selfConnector, qMakePair(parentUid, parentConnector));
+    }
+    return activeConnections;
+}
+
+
+QList<QString> ComponentInstance::getFreeConnections() const {
+    QList<QString> freeConnections;
+    QSet<QString> occupiedConnectors;
+    for (ComponentInstance* child : children) {
+        occupiedConnectors.insert(child->parentConnector);
+    }
+    occupiedConnectors.insert(selfConnector);
+    for (const QString& connId : blueprint->connectors.keys()) {
+        if (!occupiedConnectors.contains(connId)) {
+            freeConnections.append(connId);
+        }
+    }
+    return freeConnections;
+}
+
+
+
 
 
 

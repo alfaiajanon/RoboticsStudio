@@ -2,6 +2,10 @@
  
 A lightweight, drag-and-drop robotics simulator powered by MuJoCo.
 
+<p align="center">
+  <img src="assets/demo.png" width="192" />
+</p>
+
 
 # Why does this exist?
 
@@ -29,7 +33,7 @@ You don't need to learn a massive API. If you know how to write basic Arduino co
 let servo = comp_1;  // from scene tree
 let imu = comp_21;   //        "
 
-function* loop() {
+function loop() {
     let accel_x = imu.read_accel_x();
 
     if (accel_x > 2.0) {
@@ -38,8 +42,17 @@ function* loop() {
         servo.write_angle(0.0);
     }
 
-    yield delay(100); // arduino equivalent delay()
+    delay(100); // arduino equivalent delay()
 }
+```
+
+
+# Getting Started
+Download the repo and run the build script `run.sh`
+``` bash
+git clone https://github.com/alfaiajanon/RoboticsStudio.git
+cd RoboticsStudio
+./run.sh
 ```
 
 

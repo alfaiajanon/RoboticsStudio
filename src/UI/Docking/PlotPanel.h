@@ -25,7 +25,8 @@ class PlotPanel : public QWidget {
         double displayWindowSeconds = 7.0; 
         double memoryWindowSeconds = 21.0;
 
-        // Helper to consistently generate the MuJoCo-style ID
+        // Helper
+        void updateTargetListVisibility();
         QString getTargetId(const PlotTarget& target) const {
             return QString("comp_%1_%2").arg(target.compUid).arg(target.ioKey);
         }

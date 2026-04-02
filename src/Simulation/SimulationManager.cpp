@@ -310,7 +310,7 @@ void SimulationManager::cacheMujocoIds(ComponentInstance* root, mjModel* m) {
         for (const QString& key : root->blueprint->inputDefs.keys()) {
             QString actuatorName = prefix + root->blueprint->inputDefs[key].name;
             int id = mj_name2id(m, mjOBJ_ACTUATOR, actuatorName.toStdString().c_str());
-            Log::info("Caching Actuator: " + actuatorName + " --> ID: " + QString::number(id));
+            // Log::info("Caching Actuator: " + actuatorName + " --> ID: " + QString::number(id));
             root->setMujocoActuatorId(key, id);
         }
 
@@ -318,14 +318,14 @@ void SimulationManager::cacheMujocoIds(ComponentInstance* root, mjModel* m) {
             QString jkey = root->blueprint->inputDefs[key].targetJoint;
             QString jointName = prefix + jkey;
             int id = mj_name2id(m, mjOBJ_JOINT, jointName.toStdString().c_str());
-            Log::info("Caching Joint: " + jointName + " --> ID: " + QString::number(id));
+            // Log::info("Caching Joint: " + jointName + " --> ID: " + QString::number(id));
             root->setMujocoJointId(jkey, id);
         }
         
         for (const QString& key : root->blueprint->outputDefs.keys()) {
             QString sensorName = prefix + root->blueprint->outputDefs[key].name;
             int id = mj_name2id(m, mjOBJ_SENSOR, sensorName.toStdString().c_str());
-            Log::info("Caching Sensor: " + sensorName + " --> ID: " + QString::number(id));
+            // Log::info("Caching Sensor: " + sensorName + " --> ID: " + QString::number(id));
             root->setMujocoSensorId(key, id);
         }
     }

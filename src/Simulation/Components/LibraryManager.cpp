@@ -77,7 +77,6 @@ void LibraryManager::load(const QString& catalogJsonPath) {
             if (!blueprint->meta.iconPath.isEmpty()) {
                 QString rsdefDir = QFileInfo(itemPath).absolutePath();
                 blueprint->meta.iconPath = QFileInfo(rsdefDir + "/" + blueprint->meta.iconPath).absoluteFilePath();
-                Log::info("Resolved icon path for " + blueprint->getModelId() + ": " + blueprint->meta.iconPath);
             }
 
             QString model_id = blueprint->getModelId();
