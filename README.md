@@ -5,10 +5,18 @@
 <h1 align="center">RoboticsStudio</h1>
 
 <p align="center">
-  <a href="[https://github.com/alfaiajanon/RoboticsStudio/releases/latest](https://github.com/alfaiajanon/RoboticsStudio/releases/latest)"><img src="[https://img.shields.io/github/v/release/alfaiajanon/RoboticsStudio?style=flat-square&color=blue](https://img.shields.io/github/v/release/alfaiajanon/RoboticsStudio?style=flat-square&color=blue)" alt="Latest Release"></a>
-  <a href="[https://github.com/alfaiajanon/RoboticsStudio/actions](https://github.com/alfaiajanon/RoboticsStudio/actions)"><img src="[https://img.shields.io/github/actions/workflow/status/alfaiajanon/RoboticsStudio/build.yml?branch=main&style=flat-square](https://img.shields.io/github/actions/workflow/status/alfaiajanon/RoboticsStudio/build.yml?branch=main&style=flat-square)" alt="Build Status"></a>
-  <a href="[https://github.com/alfaiajanon/RoboticsStudio/network/members](https://github.com/alfaiajanon/RoboticsStudio/network/members)"><img src="[https://img.shields.io/github/forks/alfaiajanon/RoboticsStudio?style=flat-square](https://img.shields.io/github/forks/alfaiajanon/RoboticsStudio?style=flat-square)" alt="Forks"></a>
-  <a href="[https://github.com/alfaiajanon/RoboticsStudio/stargazers](https://github.com/alfaiajanon/RoboticsStudio/stargazers)"><img src="[https://img.shields.io/github/stars/alfaiajanon/RoboticsStudio?style=flat-square](https://img.shields.io/github/stars/alfaiajanon/RoboticsStudio?style=flat-square)" alt="Stars"></a>
+  <a href="https://github.com/alfaiajanon/RoboticsStudio/network">
+    <img src="https://img.shields.io/github/forks/alfaiajanon/RoboticsStudio" alt="Forks">
+  </a>
+  <a href="https://github.com/alfaiajanon/RoboticsStudio/stargazers">
+    <img src="https://img.shields.io/github/stars/alfaiajanon/RoboticsStudio" alt="Stars">
+  </a>
+  <a href="https://github.com/alfaiajanon/RoboticsStudio/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/alfaiajanon/RoboticsStudio" alt="License">
+  </a>
+  <a href="https://github.com/alfaiajanon/RoboticsStudio/releases">
+    <img src="https://img.shields.io/github/v/release/alfaiajanon/RoboticsStudio?include_prereleases" alt="Latest Release">
+  </a>
 </p>
 
 <p align="center"><b>A zero-setup, drag-and-drop robotics simulator powered by MuJoCo.</b></p>
