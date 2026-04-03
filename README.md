@@ -1,37 +1,60 @@
-# RoboticsStudio
- 
-A lightweight, drag-and-drop robotics simulator powered by MuJoCo.
-
 <p align="center">
-  <img src="assets/demo.png" width="192" />
+  <img src="assets/icon.png" width="100" alt="RoboticsStudio Logo" />
 </p>
 
+<h1 align="center">RoboticsStudio</h1>
 
-# Why does this exist?
+<p align="center">
+  <a href="[https://github.com/alfaiajanon/RoboticsStudio/releases/latest](https://github.com/alfaiajanon/RoboticsStudio/releases/latest)"><img src="[https://img.shields.io/github/v/release/alfaiajanon/RoboticsStudio?style=flat-square&color=blue](https://img.shields.io/github/v/release/alfaiajanon/RoboticsStudio?style=flat-square&color=blue)" alt="Latest Release"></a>
+  <a href="[https://github.com/alfaiajanon/RoboticsStudio/actions](https://github.com/alfaiajanon/RoboticsStudio/actions)"><img src="[https://img.shields.io/github/actions/workflow/status/alfaiajanon/RoboticsStudio/build.yml?branch=main&style=flat-square](https://img.shields.io/github/actions/workflow/status/alfaiajanon/RoboticsStudio/build.yml?branch=main&style=flat-square)" alt="Build Status"></a>
+  <a href="[https://github.com/alfaiajanon/RoboticsStudio/network/members](https://github.com/alfaiajanon/RoboticsStudio/network/members)"><img src="[https://img.shields.io/github/forks/alfaiajanon/RoboticsStudio?style=flat-square](https://img.shields.io/github/forks/alfaiajanon/RoboticsStudio?style=flat-square)" alt="Forks"></a>
+  <a href="[https://github.com/alfaiajanon/RoboticsStudio/stargazers](https://github.com/alfaiajanon/RoboticsStudio/stargazers)"><img src="[https://img.shields.io/github/stars/alfaiajanon/RoboticsStudio?style=flat-square](https://img.shields.io/github/stars/alfaiajanon/RoboticsStudio?style=flat-square)" alt="Stars"></a>
+</p>
 
-Industry simulators like Gazebo or Isaac Sim are built for an ideal world with perfect, expensive hardware. But students and hobbyists usually work with cheap $3 servos that have gear backlash and noisy sensors.
+<p align="center"><b>A zero-setup, drag-and-drop robotics simulator powered by MuJoCo.</b></p>
 
-RoboticsStudio is built for reality. It is a plug-and-play environment where components are pre-configured to behave like the flawed, budget hardware you actually buy. Instead of spending a week configuring ROS to test a simple PID loop, you can just drag, drop, and script. And because it is a lightweight C++/Qt app, it runs flawlessly on a standard 8GB laptop without needing a dedicated GPU.
+<p align="center">
+  <img src="assets/demo.png" width="600" alt="RoboticsStudio Interface Demo" />
+</p>
 
+---
 
+## Why does this exist?
 
-# Key Features
+Industry simulators like Gazebo or Isaac Sim assume you are working in an ideal world with perfect, expensive hardware. But students and hobbyists usually work with cheap $3 servos that have gear backlash and noisy sensors.
 
-- `Visual Assembly`: Drag and drop pre-configured components (Servos, IMUs, structural parts) 
-- `Component Library` (.rsdef): Mapped real-world hardware to MuJoCo using a simple JSON (.rsdef) schema. 
-- `Script Control`: Write simple, non-blocking JS coroutines to control actuators and read sensors (with arduino like syntax). 
-- `Live Telemetry`: Built-in multi-axis graphing to visualize raw input and output data as it happens.
+RoboticsStudio is built for reality. It is a plug-and-play environment where components are pre-configured to behave like the flawed, budget hardware you actually buy. 
 
+Instead of spending a week configuring ROS to test a simple PID loop, you can just drag, drop, and script. Built with C++ and Qt, it runs flawlessly on a standard 8GB laptop without needing a dedicated GPU.
 
+## Download & Run (Zero Setup)
 
-# Scripting: Just like Arduino
+RoboticsStudio is packaged as a standalone AppImage for Linux. No dependencies, no complex installation, no compiling required.
+
+1. Download the latest `.AppImage` from the [Releases page](https://github.com/alfaiajanon/RoboticsStudio/releases/latest).
+2. Make it executable:
+   ```bash
+   chmod +x RoboticsStudio-Linux-x86_64.AppImage
+   ```
+3. Run it:
+   ```bash
+   ./RoboticsStudio-Linux-x86_64.AppImage
+   ```
+
+## Key Features
+
+* `Visual Assembly:` Drag and drop pre-configured components (Servos, IMUs, structural parts) directly into the scene.
+* `Component Library (.rsdef):` Real-world hardware mapped to MuJoCo physics using a simple JSON schema.
+* `Script Control:` Write simple, non-blocking JavaScript coroutines to control actuators and read sensors.
+* `Live Telemetry:` Built-in multi-axis graphing to visualize raw input and output data in real-time.
+
+## Scripting: Just like Arduino
 
 You don't need to learn a massive API. If you know how to write basic Arduino code, you can simulate your logic here.
 
-
-``` js
-let servo = comp_1;  // from scene tree
-let imu = comp_21;   //        "
+```javascript
+let servo = comp_1;  // Reference from scene tree
+let imu = comp_21;   
 
 function loop() {
     let accel_x = imu.read_accel_x();
@@ -42,21 +65,20 @@ function loop() {
         servo.write_angle(0.0);
     }
 
-    delay(100); // arduino equivalent delay()
+    delay(100); // Standard Arduino-equivalent delay
 }
 ```
 
+## Building from Source
 
-# Getting Started
-Download the repo and run the build script `run.sh`
-``` bash
+If you prefer to compile the application yourself:
+
+```bash
 git clone https://github.com/alfaiajanon/RoboticsStudio.git
 cd RoboticsStudio
 ./run.sh
 ```
 
+## Contributing
 
-
-# Contributing
-
-RoboticsStudio relies on community components. If you have mapped a real-world sensor, motor, or structural piece to an .rsdef file and tuned its real-world errors, please open a Pull Request to add it to the standard library.
+RoboticsStudio relies on community-driven hardware profiles. If you have mapped a real-world sensor, motor, or structural piece to an `.rsdef` file and tuned its physical errors, please open a Pull Request to add it to the standard library.
