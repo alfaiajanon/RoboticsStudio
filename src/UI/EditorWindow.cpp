@@ -130,13 +130,41 @@ void EditorWindow::setupMenuBar() {
     connect(exitAct, &QAction::triggered, this, &QWidget::close);
     connect(frameSceneAct, &QAction::triggered, this, &EditorWindow::frameScene);
 
+    connect(newAct, &QAction::triggered, this, [this]() {
+        if (QMessageBox::question(this, "Confirm New Project", "Are you sure you want to start a new project?") == QMessageBox::Yes) {
+            Application::getInstance()->getProject()->newProject();
+            Project* currentProject = Application::getInstance()->getProject();
+            sceneTree->buildFromProject(currentProject);
+            scriptPanel->loadScript(currentProject->getScriptPath());
+            frameScene();
+            refresh();
+        }
+    });
+
     connect(openAct, &QAction::triggered, this, [this]() {
         QString path = QFileDialog::getOpenFileName(this, "Open Project", "", "Robotics Studio Project (*.rsproj);;All Files (*)");
         if (!path.isEmpty()) {
+
+            SimulationManager* simManager = Application::getInstance()->getSimulationManager();
+            simManager->pause();
+
             Application::getInstance()->getProject()->loadProject(path);
-            Toast::showMessage(this, "Project loaded successfully!");
-            // Depending on your architecture, you might need to call a method here 
-            // to refresh your Component Tree UI and OpenGL viewport!
+            Project* currentProject = Application::getInstance()->getProject();
+            MujocoContext::getInstance()->loadModelFromString(
+                currentProject->generateMujocoXML().toStdString()
+            );
+
+            sceneTree->buildFromProject(currentProject);
+            scriptPanel->loadScript(currentProject->getScriptPath());
+
+            ComponentInstance* root = currentProject->getRootComponent();
+            simManager->cacheMujocoIds(root, MujocoContext::getInstance()->getModel());
+            simManager->edit();
+
+            setupSimConn();
+            frameScene();
+            refresh();
+            
         }
     });
 
@@ -268,7 +296,7 @@ void EditorWindow::setupMainViewport() {
         
         if (sim->getState() == SimulationState::EDITING) {
             Project* project = Application::getInstance()->getProject();
-            project->setScript("/home/anon/Documents/Code Projects/Mixed Projects/RoboticsStudio/demo/demoScript.js");
+            project->reloadScript();
             
             if (this->plotPanel) {
                 this->plotPanel->clearAllGraphs();

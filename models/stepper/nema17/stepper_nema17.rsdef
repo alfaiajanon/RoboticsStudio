@@ -5,5 +5,160 @@
         "version": "1.0.0",
         "author": "Anon",
         "icon_path": "nema17.png"
+    },
+
+    "resources": {
+        "meshes": {
+            "mesh_body": "meshes/stepper_nema17.obj"
+        },
+        "materials": {
+            "mat_motor": "textures/tex_nema17.png"
+        }
+    },
+    
+    "specs": {
+        "voltage_max": 24.0,
+        "voltage_min": 9.0,
+        "max_torque_nm": 0.45,  
+        "max_speed_rad": 20.0,   
+        "weight_kg": 0.28
+    },
+
+    "pins": [
+        {
+            "id": "vmot",
+            "voltage_range": [9.0, 24.0],
+            "description": "Motor power supply"
+        },
+        {
+            "id": "step",
+            "description": "Pulse input for stepping"
+        },
+        {
+            "id": "dir",
+            "description": "Direction control (HIGH/LOW)"
+        },
+        {
+            "id": "gnd",
+            "description": "Common ground"
+        }
+    ],
+
+    "kinematics": {
+        "bodies": [
+            {
+                "id": "base",
+                "mass": 0.27,
+                "transform": {
+                    "pos": [0, 0, 0],
+                    "quat": [1, 0, 0, 0]
+                },
+                "geoms": [
+                    { "type": "mesh", "mesh": "mesh_body", "material": "mat_motor" }
+                ]
+            },
+            {
+                "id": "shaft",
+                "mass": 0.01,
+                "transform": {
+                    "pos": [0, 0, 0.036],
+                    "quat": [1, 0, 0, 0]
+                },
+                "geoms": [
+                    { "type": "cylinder", "size": [0.0025, 0.012], "pos": [0, 0, 0] }
+                ]
+            }
+        ],
+        "joints": [
+            {
+                "id": "stepper_joint",
+                "body_a": "base",
+                "body_b": "shaft",
+                "type": "hinge",
+                "transform": {
+                    "pos": [0, 0, 0.024],
+                    "quat": [1, 0, 0, 0]
+                },
+                "damping": 0.05,
+                "armature": 0.01,
+                "frictionloss": 0.02
+            }
+        ]
+    },
+    
+    "connectors": [
+        {
+            "id": "shaft_tip",
+            "body": "shaft",
+            "description": "Flat tip of the 5mm shaft for pulleys or couplers",
+            "mechanics": { "snap_angles": [0, 90, 180, 270] },
+            "transform": {
+                "pos": [0, 0, 0.048],
+                "quat": [1, 0, 0, 0]
+            }
+        },
+        {
+            "id": "face_mount",
+            "body": "base",
+            "description": "Front face with M3 mounting holes",
+            "mechanics": { "snap_angles": [0, 90, 180, 270] },
+            "transform": {
+                "pos": [0, 0, 0.024],
+                "quat": [1, 0, 0, 0]
+            }
+        },
+        {
+            "id": "back_mount",
+            "body": "base",
+            "description": "Rear face of the motor",
+            "mechanics": { "snap_angles": [0, 90, 180, 270] },
+            "transform": {
+                "pos": [0, 0, -0.024],
+                "quat": [0, 1, 0, 0]
+            }
+        }
+    ],
+
+    "io": {
+        "inputs": [
+            {
+                "name": "target_velocity",
+                "unit": "rad/s",
+                "data_type": "float",
+                "range": [-20.0, 20.0],
+                "target_joint": "stepper_joint",
+                "actuator_type": "velocity",
+                "kv": 1.0,
+                "forcerange": [-0.45, 0.45],
+                "pin_required": ["step", "dir"]
+            }
+        ],
+        "outputs": [
+            {
+                "name": "current_position",
+                "unit": "radians",
+                "data_type": "float",
+                "target_joint": "stepper_joint",
+                "sensor_type": "jointpos",
+                "pin_required": ["vmot", "gnd"]
+            },
+            {
+                "name": "current_velocity",
+                "unit": "rad/s",
+                "data_type": "float",
+                "target_joint": "stepper_joint",
+                "sensor_type": "jointvel",
+                "pin_required": ["vmot", "gnd"]
+            }
+        ]
+    },
+    "emulator":{
+        "type": "stepper_emulator",
+        "source": null,
+        "parameters": {
+            "step_angle_deg": 1.8,
+            "microstepping": 1,
+            "holding_torque_factor": 1.0
+        }
     }
 }

@@ -6,6 +6,7 @@
 
 
 
+#pragma region creation
 
 Application* Application::init(int& argc, char** argv) {
     if (!instance) {
@@ -14,10 +15,23 @@ Application* Application::init(int& argc, char** argv) {
     return instance;
 }
 
+Application* Application::instance = nullptr;
+
+
+Application* Application::getInstance() {
+    return instance;
+}
+
+Application::~Application() {
+}
 
 
 
 
+
+
+
+#pragma region setup
 
 Application::Application(int& argc, char** argv) : qtApp(argc, argv) {
     Application::instance = this;
@@ -28,10 +42,17 @@ Application::Application(int& argc, char** argv) : qtApp(argc, argv) {
 
     Log::info("Application initialized.");
     Log::info("Loading component catalog...");
+
     LibraryManager::getInstance().load("./models/Catalog.json");
 
     Log::info("Loading project...");
-    currentProject.loadProject("./demo/demo.rsproj");
+    QString lastProjectPath = loadLastProject();
+    if (lastProjectPath.isEmpty()) {
+        saveLastProject("./demo/demo1.rsproj");
+        lastProjectPath = "./demo/demo1.rsproj";
+        Log::info("No last project found, loading default demo.");
+    }
+    currentProject.loadProject(lastProjectPath);
 
     MujocoContext::getInstance()->loadModelFromString(
         currentProject.generateMujocoXML().toStdString()
@@ -64,9 +85,6 @@ Application::Application(int& argc, char** argv) : qtApp(argc, argv) {
 
 
 
-
-
-
 void Application::destroy() {
     if (instance) {
         if (instance->simManager) {
@@ -77,9 +95,6 @@ void Application::destroy() {
         instance = nullptr;
     }
 }
-
-
-
 
 
 
@@ -97,8 +112,6 @@ void Application::loadStyle(const QString& path) {
 
 
 
-
-
 int Application::run() {
     return qtApp.exec();
 }
@@ -109,12 +122,39 @@ int Application::run() {
 
 
 
-Application* Application::instance = nullptr;
 
 
-Application* Application::getInstance() {
-    return instance;
+#pragma region Project Persistence
+
+void Application::saveLastProject(const QString& path) {
+    QSettings settings("RoboticsStudio", "RoboticsStudio");
+    settings.setValue("lastOpenedProject", path);
 }
+
+
+QString Application::loadLastProject() {
+    QSettings settings("RoboticsStudio", "RoboticsStudio");
+    return settings.value("lastOpenedProject", "").toString();
+}
+
+
+QString Application::getModelsDirectory() {
+    QString dataPath = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    QDir dir(dataPath);
+    
+    if (!dir.exists("models")) {
+        dir.mkpath("models");
+    }
+    
+    return dir.absoluteFilePath("models");
+}
+
+
+
+
+
+
+#pragma region Getters
 
 
 Project* Application::getProject() {
@@ -132,8 +172,6 @@ SimulationManager* Application::getSimulationManager() {
 }
 
 
-Application::~Application() {
-}
 
 
 

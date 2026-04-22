@@ -1,0 +1,149 @@
+{
+    "assembly": {
+        "components": [
+            {
+                "connection": {
+                    "parent_connector": "root",
+                    "parent_uid": 0,
+                    "self_connector": "back",
+                    "snap_angle": 0
+                },
+                "model": "base_rect",
+                "name": "Dummy Base for fixed robots (32)",
+                "parameters": {
+                },
+                "type": "dummy",
+                "uid": 1
+            },
+            {
+                "connection": {
+                    "parent_connector": "front",
+                    "parent_uid": 1,
+                    "self_connector": "base",
+                    "snap_angle": 0
+                },
+                "model": "mg996r",
+                "name": "TowerPro MG996R (2)",
+                "parameters": {
+                    "servo_joint": 0
+                },
+                "type": "servo",
+                "uid": 2
+            },
+            {
+                "connection": {
+                    "parent_connector": "horn",
+                    "parent_uid": 2,
+                    "self_connector": "back_mount",
+                    "snap_angle": 0
+                },
+                "model": "multipurpose_bracket",
+                "name": "Multipurpose Bracket (3)",
+                "parameters": {
+                },
+                "type": "joints",
+                "uid": 3
+            },
+            {
+                "connection": {
+                    "parent_connector": "self_mount",
+                    "parent_uid": 3,
+                    "self_connector": "side_screw_left2",
+                    "snap_angle": 0
+                },
+                "model": "mg996r",
+                "name": "TowerPro MG996R (4)",
+                "parameters": {
+                    "servo_joint": 0
+                },
+                "type": "servo",
+                "uid": 4
+            },
+            {
+                "connection": {
+                    "parent_connector": "horn",
+                    "parent_uid": 4,
+                    "self_connector": "inside_mount",
+                    "snap_angle": 0
+                },
+                "model": "long_u_bracket",
+                "name": "Long U-Bracket (5)",
+                "parameters": {
+                },
+                "type": "joints",
+                "uid": 5
+            },
+            {
+                "connection": {
+                    "parent_connector": "back_mount",
+                    "parent_uid": 5,
+                    "self_connector": "back_mount",
+                    "snap_angle": 0
+                },
+                "model": "long_u_bracket",
+                "name": "Long U-Bracket (6)",
+                "parameters": {
+                },
+                "type": "joints",
+                "uid": 6
+            },
+            {
+                "connection": {
+                    "parent_connector": "inside_mount",
+                    "parent_uid": 6,
+                    "self_connector": "horn",
+                    "snap_angle": 180
+                },
+                "model": "mg996r",
+                "name": "TowerPro MG996R (7)",
+                "parameters": {
+                    "servo_joint": -48
+                },
+                "type": "servo",
+                "uid": 7
+            },
+            {
+                "connection": {
+                    "parent_connector": "side_screw_left2",
+                    "parent_uid": 7,
+                    "self_connector": "self_mount",
+                    "snap_angle": 0
+                },
+                "model": "multipurpose_bracket",
+                "name": "Multipurpose Bracket (8)",
+                "parameters": {
+                },
+                "type": "joints",
+                "uid": 8
+            },
+            {
+                "connection": {
+                    "parent_connector": "back_mount",
+                    "parent_uid": 8,
+                    "self_connector": "back_mount",
+                    "snap_angle": 0
+                },
+                "model": "long_u_bracket",
+                "name": "Long U-Bracket (9)",
+                "parameters": {
+                },
+                "type": "joints",
+                "uid": 9
+            }
+        ],
+        "constraints": [
+        ]
+    },
+    "meta": {
+        "author": "Anon",
+        "icon": "",
+        "name": "Demo Robot 1",
+        "version": "1.0.0"
+    },
+    "script": {
+        "path": "/home/anon/Documents/Code Projects/Mixed Projects/RoboticsStudio/demo/demo1.js"
+    },
+    "simulation": {
+    },
+    "version": 1
+}

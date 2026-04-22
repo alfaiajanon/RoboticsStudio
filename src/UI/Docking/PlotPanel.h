@@ -5,7 +5,7 @@
 #include <QVBoxLayout>
 #include <QScrollArea>
 #include <QMap>
-#include "qcustomplot/qcustomplot.h"
+#include "qcustomplot.h"
 #include "Core/Project.h"
 
 class PlotPanel : public QWidget {

@@ -1,6 +1,14 @@
 {
     "Categories":[
         {
+            "id": "dc_motor",
+            "name":"DC Motors",
+            "keys":["actuator","dc","motor","gear"],
+            "items":[
+                "./models/motor/dc_gear_60rpm/dc_gear_60rpm.rsdef"
+            ]
+        },
+        {
             "id": "servo",
             "name":"Servo Motors",
             "keys":["actuator","servo","motor","sg90","mg996r"],
@@ -23,6 +31,23 @@
             "keys":["sensor","mpu6050","imu"],
             "items":[
                 "./models/imu/imu_mpu6050/imu_mpu6050.rsdef"
+            ]
+        },
+        {
+            "id":"joints",
+            "name":"Joints",
+            "keys":["joint","bracket","u-bracket"],
+            "items":[
+                "./models/joints/long_u_bracket/long_u_bracket.rsdef",
+                "./models/joints/multipurpose_bracket/multipurpose_bracket.rsdef"
+            ]
+        },
+        {
+            "id":"dummy",
+            "name":"Dummy/Placeholder Models",
+            "keys":["dummy","placeholder"],
+            "items":[
+                "./models/dummy/base_rect/base_rect.rsdef"
             ]
         }
     ]

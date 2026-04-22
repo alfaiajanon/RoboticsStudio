@@ -25,6 +25,10 @@ class Application {
         static Application* getInstance();
         static void destroy(); 
 
+        void saveLastProject(const QString& path);
+        QString loadLastProject();
+        QString getModelsDirectory();
+
         Project* getProject();
         SimulationManager* getSimulationManager();
         EditorWindow* getEditor();

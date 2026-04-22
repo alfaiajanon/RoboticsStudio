@@ -452,19 +452,36 @@ QString ComponentBlueprint::generateActuatorXML(const int uid) const {
     
     for (const IODef& def : inputDefs) {
         if (!def.actuatorType.isEmpty() && !def.targetJoint.isEmpty()) {
-            QString forceStr = "";
+            
+            // 1. Base tag with name and joint
+            QString actuatorOut = QString("    <%1 name=\"%2%3\" joint=\"%2%4\"")
+                                    .arg(def.actuatorType)
+                                    .arg(prefix)
+                                    .arg(def.name)
+                                    .arg(def.targetJoint);
+
+            // 2. Add force limits if they exist
             if (def.forceRange.size() == 2) {
-                forceStr = QString(" forcerange=\"%1 %2\"").arg(def.forceRange[0]).arg(def.forceRange[1]);
+                actuatorOut += QString(" forcerange=\"%1 %2\"")
+                                .arg(def.forceRange[0])
+                                .arg(def.forceRange[1]);
             }
             
-            xml += QString("    <%1 name=\"%2%3\" joint=\"%2%4\" kp=\"%5\" kv=\"%6\"%7/>\n")
-                    .arg(def.actuatorType)
-                    .arg(prefix)
-                    .arg(def.name)
-                    .arg(def.targetJoint)
-                    .arg(def.kp)
-                    .arg(def.kv)
-                    .arg(forceStr);
+            // 3. Strictly filter PID/control attributes by actuator type
+            if (def.actuatorType == "position") {
+                actuatorOut += QString(" kp=\"%1\" kv=\"%2\"").arg(def.kp).arg(def.kv);
+            } 
+            else if (def.actuatorType == "velocity") {
+                actuatorOut += QString(" kv=\"%1\"").arg(def.kv);
+            }
+            else if (def.actuatorType == "motor") {
+                // Direct torque motors usually just need a gear ratio
+                actuatorOut += QString(" gear=\"1\""); 
+            }
+
+            // 4. Close the tag and append
+            actuatorOut += "/>\n";
+            xml += actuatorOut;
         }
     }
     return xml;

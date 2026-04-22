@@ -6,6 +6,7 @@
 #include <QJsonArray>
 #include <queue>
 #include <cmath> 
+#include "Core/Application.h"
 #include "Simulation/Components/ComponentBlueprint.h"
 #include "Simulation/Components/LibraryManager.h"
 #include "Simulation/ErrorSystem/Emulator.h"
@@ -82,6 +83,20 @@ void Project::setScript(QString path){
 
 
 
+void Project::reloadScript(){
+    QFile file(currentScriptPath);
+    if (!file.open(QFile::ReadOnly)) {
+        Log::error("Failed to open script file: " + currentScriptPath);
+        return;
+    }   
+
+    currentScript = QString::fromUtf8(file.readAll());
+    file.close();
+}
+
+
+
+
 
 #pragma region load/unload
 /*
@@ -89,29 +104,47 @@ void Project::setScript(QString path){
  * Builds the macro-graph hierarchical tree in memory. 
  */
 
+bool Project::newProject() {
+    clear();
+    projectData = QJsonObject();
+    projectPath = "";
+    directoryPath = "";
+    currentScript = "";
+    currentScriptPath = "";
+    activePlots.clear();
+
+    nextComponentUid = 1;
+    rootComponent = nullptr;
+
+    return true;
+}
+
+
+
 bool Project::loadProject(const QString& path) {
     clear();
     projectPath = path;
-
+    
     QFile file(path);
     if (!file.open(QFile::ReadOnly)) {
         Log::error("Failed to open project file: " + path);
         return false;
     }   
-
+    
     projectData = QJsonDocument::fromJson(file.readAll()).object();
     file.close();
-
+    
     directoryPath = QFileInfo(path).absolutePath();
     currentScriptPath = projectData["script"].toObject()["path"].toString();
-
+    
     parseAssembly();
     buildHierarchy();
     applyDefaults();
-
+    
     // setScript("/home/anon/Documents/Code Projects/Mixed Projects/RoboticsStudio/demo/demoScript.js");
     // microcontroller.compile(getScript(), getRootComponent());
-
+    
+    Application::getInstance()->saveLastProject(path);
     return true;
 }
 
@@ -243,6 +276,12 @@ void Project::saveDefaults() {
  */
 
 void Project::parseAssembly() {
+    // load script path from script->path
+    QJsonObject scriptObj = projectData["script"].toObject();
+    QString scriptPath = scriptObj["path"].toString();
+    setScript(scriptPath);
+
+
     QJsonObject assemblyObj = projectData["assembly"].toObject();
     QJsonArray componentsArray = assemblyObj["components"].toArray();
     QJsonArray constraintsArray = assemblyObj["constraints"].toArray();

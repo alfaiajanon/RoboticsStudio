@@ -4,12 +4,20 @@
 #include "Simulation/ErrorSystem/DefaultEmulatorCpp.h"
 #include "Simulation/ErrorSystem/IMUEmulatorCpp.h"
 #include "Simulation/ErrorSystem/ServoEmulatorCpp.h"
+#include "Simulation/ErrorSystem/StepperEmulatorCpp.h"
+#include "Simulation/ErrorSystem/DcGearEmulatorCpp.h"
 #include "Core/Log.h"
 
 Emulator* EmulatorFactory::create(const QString& type, ComponentInstance* comp) {
     if (type == "servo_emulator") {
         return new ServoEmulatorCpp(comp);
     } 
+    else if(type == "stepper_emulator") {
+        return new StepperEmulatorCpp(comp);
+    }
+    else if (type == "dc_gear_emulator") {
+        return new DcGearEmulatorCpp(comp);
+    }
     else if (type == "imu_emulator") {
         return new IMUEmulatorCpp(comp);
     }

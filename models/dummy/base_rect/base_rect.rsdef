@@ -1,0 +1,64 @@
+{
+    "meta": {
+        "id": "dummy_base_rect",
+        "name": "Dummy Base for fixed robots",
+        "version": "1.0.0",
+        "author": "Anon",
+        "icon_path": "dummy_base_rect.png"
+    },
+
+    "resources": {
+        "meshes": {
+        },
+        "materials": {
+        }
+    },
+    
+    "specs": {
+    },
+
+    "pins": [
+    ],
+
+    "kinematics": {
+        "bodies": [
+            {
+                "id": "base",
+                "mass": 3.0,
+                "transform": {
+                    "pos": [0, 0, 0],
+                    "quat": [1, 0, 0, 0]
+                },
+                "geoms": [
+                    { "type": "box", "size": [0.05, 0.05, 0.01], "pos": [0, 0, 0] }
+                ]
+            }
+        ],
+        "joints": [
+        ]
+    },
+    
+    "connectors": [
+        {
+            "id": "back",
+            "body": "base",
+            "description": "",
+            "mechanics": { "snap_angles": [] },
+            "transform": {
+                "pos": [0, 0, -0.01],
+                "quat": [0, 1, 0, 0]
+            }
+        },
+        {
+            "id": "front",
+            "body": "base",
+            "description": "",
+            "mechanics": { "snap_angles": [] },
+            "transform": {
+                "pos": [0, 0, 0.01],
+                "quat":[1, 0, 0, 0]
+            }
+        }
+    ]
+
+}

@@ -70,6 +70,7 @@ class Project {
         Project();
         ~Project();
 
+        bool newProject();
         bool loadProject(const QString& path);
         void setProjectPath(const QString& path);
         bool saveProject();
@@ -93,6 +94,7 @@ class Project {
         MicroController* getMicroController() { return &microcontroller; }
     
         void setScript(QString path);
+        void reloadScript();
         QString getScriptPath() const {return currentScriptPath; }
         QString getScript() const { return currentScript; }
 

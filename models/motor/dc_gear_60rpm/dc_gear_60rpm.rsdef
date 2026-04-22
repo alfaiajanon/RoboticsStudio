@@ -1,0 +1,160 @@
+{
+    "meta": {
+        "id": "motor_dc_gear_60rpm",
+        "name": "12V 60RPM DC Gear BO Motor (Dual Shaft)",
+        "version": "1.0.0",
+        "author": "Anon",
+        "icon_path": "dc_gear_60rpm.png"
+    },
+
+    "resources": {
+        "meshes": {
+            "mesh_body": "meshes/tt_motor.obj",
+            "mesh_shaft": "meshes/shaft.obj"
+        },
+        "materials": {
+            "mat_motor": "textures/tex_tt_motor.png"
+        }
+    },
+    
+    "specs": {
+        "voltage_max": 12.0,
+        "voltage_min": 3.0,
+        "max_torque_nm": 0.15,  
+        "max_speed_rad": 6.28,   
+        "weight_kg": 0.035
+    },
+
+    "pins": [
+        {
+            "id": "motor_a",
+            "voltage_range": [-12.0, 12.0],
+            "description": "Motor terminal A (H-Bridge Output 1)"
+        },
+        {
+            "id": "motor_b",
+            "voltage_range": [-12.0, 12.0],
+            "description": "Motor terminal B (H-Bridge Output 2)"
+        }
+    ],
+
+    "kinematics": {
+        "bodies": [
+            {
+                "id": "base",
+                "mass": 0.030,
+                "transform": {
+                    "pos": [0, 0, 0],
+                    "quat": [1, 0, 0, 0]
+                },
+                "geoms": [
+                    { "type": "mesh", "mesh": "mesh_body", "material": "mat_motor" }
+                ]
+            },
+            {
+                "id": "axle",
+                "mass": 0.005,
+                "transform": {
+                    "pos": [0, 0.0, 0],
+                    "quat": [1, 0, 0, 0]
+                },
+                "geoms": [
+                    { "type": "mesh", "mesh": "mesh_shaft" }
+                ]
+            }
+        ],
+        "joints": [
+            {
+                "id": "dc_joint",
+                "body_a": "base",
+                "body_b": "axle",
+                "type": "hinge",
+                "transform": {
+                    "pos": [0, 0.0, 0],
+                    "quat": [0.7071, 0.7071, 0, 0] 
+                },
+                "damping": 0.1,
+                "armature": 0.02,
+                "frictionloss": 0.05
+            }
+        ]
+    },
+    
+    "connectors": [
+        {
+            "id": "shaft_left",
+            "body": "axle",
+            "description": "Left-side flattened TT shaft",
+            "mechanics": { "snap_angles": [0, 180] },
+            "transform": {
+                "pos": [0, -0.02, 0],
+                "quat": [0.7071, 0.7071, 0, 0]
+            }
+        },
+        {
+            "id": "shaft_right",
+            "body": "axle",
+            "description": "Right-side flattened TT shaft",
+            "mechanics": { "snap_angles": [0, 180] },
+            "transform": {
+                "pos": [0, 0.002, 0],
+                "quat": [0.7071, -0.7071, 0, 0]
+            }
+        },
+        {
+            "id": "chassis_mount_1",
+            "body": "base",
+            "description": "Right mounting hole",
+            "mechanics": { "snap_angles": [0, 90, 180, 270] },
+            "transform": {
+                "pos": [0, 0, 0.0205],
+                "quat": [0.7071, -0.7071, 0, 0]
+            }
+        },
+        {
+            "id": "chassis_mount_2",
+            "body": "base",
+            "description": "Left mounting hole",
+            "mechanics": { "snap_angles": [0, 90, 180, 270] },
+            "transform": {
+                "pos": [0, -0.0190, 0.0205],
+                "quat": [0.7071, 0.7071, 0, 0]
+            }
+        }
+    ],
+
+    "io": {
+        "inputs": [
+            {
+                "name": "target_velocity",
+                "unit": "rad/s",
+                "data_type": "float",
+                "range": [-6.28, 6.28],
+                "target_joint": "dc_joint",
+                "actuator_type": "velocity",
+                "kv": 5.0,
+                "forcerange": [-0.15, 0.15],
+                "pin_required": ["motor_a", "motor_b"]
+            }
+        ],
+        "outputs": [
+            {
+                "name": "current_velocity",
+                "unit": "rad/s",
+                "data_type": "float",
+                "target_joint": "dc_joint",
+                "sensor_type": "jointvel",
+                "pin_required": ["motor_a", "motor_b"]
+            }
+        ]
+    },
+    "emulator":{
+        "type": "dc_gear_emulator",
+        "source": null,
+        "parameters": {
+            "max_rpm_at_12v": 60,
+            "deadband_pwm": 30,
+            "acceleration_delay_ms": 100
+        }
+    }
+}

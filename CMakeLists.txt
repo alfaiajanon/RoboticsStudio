@@ -23,6 +23,8 @@ file(GLOB_RECURSE SRC_FILES
     src/**/*.h 
     src/*.h
     src/UI/Resources/resources.qrc
+    extern/qcustomplot/*.h
+    extern/qcustomplot/*.cpp
     models/resources.qrc
 )
 add_executable(RoboticsStudio ${SRC_FILES})
@@ -43,5 +45,6 @@ target_link_libraries(RoboticsStudio
 )
 target_include_directories(RoboticsStudio PRIVATE
     ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/extern/qcustomplot
 )
 
