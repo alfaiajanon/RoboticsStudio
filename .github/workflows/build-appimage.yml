@@ -6,10 +6,8 @@ on:
     tags: [ "v*.*.*" ]
   workflow_dispatch:
 
-
 permissions:
   contents: write
-
 
 jobs:
   build:
@@ -82,3 +80,12 @@ jobs:
         files: "RoboticsStudio*.AppImage"
         generate_release_notes: true
         prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+
+    # --- NEW STEP: Deploy Models to GitHub Pages ---
+    - name: Deploy Models to GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./models
+        destination_dir: models
+        keep_files: true
