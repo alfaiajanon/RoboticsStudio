@@ -1,0 +1,66 @@
+{
+    "meta": {
+        "id": "joints_long_u_bracket",
+        "name": "Long U-Bracket",
+        "version": "1.0.0",
+        "author": "Anon",
+        "icon_path": "long_u_bracket.png"
+    },
+
+    "resources": {
+        "meshes": {
+            "mesh_body": "meshes/body.obj"
+        },
+        "materials": {
+            "mat_bracket": "textures/tex_tt_motor.png"
+        }
+    },
+    
+    "specs": {
+    },
+
+    "pins": [
+    ],
+
+    "kinematics": {
+        "bodies": [
+            {
+                "id": "base",
+                "mass": 0.030,
+                "transform": {
+                    "pos": [0, 0, 0],
+                    "quat": [1, 0, 0, 0]
+                },
+                "geoms": [
+                    { "type": "mesh", "mesh": "mesh_body" , "material": null }
+                ]
+            }
+        ],
+        "joints": [
+        ]
+    },
+    
+    "connectors": [
+        {
+            "id": "back_mount",
+            "body": "base",
+            "description": "",
+            "mechanics": { "snap_angles": [0, 180] },
+            "transform": {
+                "pos": [0, 0, 0],
+                "quat": [1, 0, 0, 0]
+            }
+        },
+        {
+            "id": "inside_mount",
+            "body": "base",
+            "description": "",
+            "mechanics": { "snap_angles": [0, 180] },
+            "transform": {
+                "pos": [0.0259, 0, -0.0500],
+                "quat": [0.7071, 0, -0.7071, 0]
+            }
+        }
+    ]
+
+}
