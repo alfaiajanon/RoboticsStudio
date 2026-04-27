@@ -2,6 +2,7 @@
 #include "Core/Log.h"
 #include "Simulation/Components/LibraryManager.h"
 #include <QFile>
+#include <QSettings>
 
 
 
@@ -41,19 +42,59 @@ Application::Application(int& argc, char** argv) : qtApp(argc, argv) {
     this->loadStyle(":/styles/dark.qss");
 
     Log::info("Application initialized.");
-    Log::info("Loading component catalog...");
 
-    LibraryManager::getInstance().load("./models/Catalog.json");
+    
+    
+    // LaucherWindow setup
+    connect(&launcher, &LauncherWindow::projectOpened, this, &Application::openProject);
+    
+    connect(&launcher, &LauncherWindow::fetchModelsRequested, this, [this]() {
+        Log::info("Fetch models requested via Launcher.");
+    });
 
-    Log::info("Loading project...");
-    QString lastProjectPath = loadLastProject();
-    if (lastProjectPath.isEmpty()) {
-        saveLastProject("./demo/demo1.rsproj");
-        lastProjectPath = "./demo/demo1.rsproj";
-        Log::info("No last project found, loading default demo.");
+    QSettings settings("RoboticsStudio", "RoboticsStudio");
+    bool autoOpen = settings.value("autoOpenEnabled", false).toBool();
+    QStringList recents = settings.value("recentProjects").toStringList();
+
+    if (autoOpen && !recents.isEmpty()) {
+        Log::info("Auto-open enabled. Skipping Launcher.");
+        openProject(recents.first());
+    } else {
+        Log::info("Showing Launcher Hub.");
+        launcher.show(); 
     }
-    currentProject.loadProject(lastProjectPath);
 
+}
+
+
+
+
+void Application::createProject(const QString& projectPath) {
+    // currentProject.createNewProject(projectPath);
+    // openProject(projectPath);
+}
+
+
+
+void Application::openProject(const QString& projectPath) {
+    launcher.hide();
+    
+    if (simManager) {
+        simManager->pause();
+        delete simManager;
+    }
+
+    QString catalogPath = getModelsDirectory() + "/Catalog.json";
+    if (QFile::exists(catalogPath)) {
+        LibraryManager::getInstance().load(catalogPath);
+    } else {
+        LibraryManager::getInstance().load("./models/Catalog.json");
+    }
+
+    currentProject.loadProject(projectPath);
+    saveLastProject(projectPath);
+
+    // make necessary simulation setup
     MujocoContext::getInstance()->loadModelFromString(
         currentProject.generateMujocoXML().toStdString()
     );
@@ -62,22 +103,21 @@ Application::Application(int& argc, char** argv) : qtApp(argc, argv) {
     editor.scriptPanel->loadScript(currentProject.getScriptPath());
 
     simManager = new SimulationManager();
-    
     ComponentInstance* root = currentProject.getRootComponent();
     simManager->cacheMujocoIds(root, MujocoContext::getInstance()->getModel());
     simManager->edit();
 
     editor.setupSimConn();
     editor.frameScene();
+    editor.refresh();
     editor.show();
 
+    Log::info("Project loaded: " + projectPath);
 
-    Log::info("Application setup complete.");
     Log::info("================================");
     Log::info("  Welcome to Robotics Studio!  ");
     Log::info("  version 0.1.0                 ");
     Log::info("================================");
-
 
     editor.selectComponent(0);
 }
@@ -132,7 +172,7 @@ void Application::saveLastProject(const QString& path) {
 }
 
 
-QString Application::loadLastProject() {
+QString Application::getLastProject() {
     QSettings settings("RoboticsStudio", "RoboticsStudio");
     return settings.value("lastOpenedProject", "").toString();
 }

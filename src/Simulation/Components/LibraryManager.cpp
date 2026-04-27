@@ -27,6 +27,13 @@ ComponentBlueprint* LibraryManager::getBlueprint(const QString& modelId) {
 
 
 
+void LibraryManager::fetchOnline() {
+    
+}
+
+
+
+
 /*
  * Parses the catalog JSON, populates categorical data, and loads all component blueprints.
  * Emits a signal once the entire library is successfully initialized.

@@ -2,15 +2,20 @@
 
 #include <QApplication>
 #include "Project.h"
+#include <QObject>
 #include "UI/EditorWindow.h"
+#include  "UI/LauncherWindow.h"
 #include "Simulation/SimulationManager.h"
 
-class Application {
+class Application : public QObject {
+    Q_OBJECT
+
     static Application* instance;
     
     QApplication qtApp;
+    LauncherWindow launcher;
     EditorWindow editor;
-    SimulationManager* simManager;
+    SimulationManager* simManager=nullptr;
 
     Application(int& argc, char** argv);
     ~Application();
@@ -26,8 +31,11 @@ class Application {
         static void destroy(); 
 
         void saveLastProject(const QString& path);
-        QString loadLastProject();
+        QString getLastProject();
         QString getModelsDirectory();
+
+        void createProject(const QString& projectPath);
+        void openProject(const QString& projectPath);
 
         Project* getProject();
         SimulationManager* getSimulationManager();

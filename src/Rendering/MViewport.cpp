@@ -56,6 +56,7 @@ void MViewport::renderLoop(){
         std::lock_guard<std::mutex> lock(simManager->physicsMutex);
         currentFrame = sim->render();
     } else {
+        return; 
         currentFrame = sim->render();
     }
 

@@ -5,15 +5,17 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-
 set(CMAKE_CXX_STANDARD 17)
 set(MUJOCO_DIR "${CMAKE_SOURCE_DIR}/extern/mujoco-3.3.7")
 
+set(APP_VERSION "0.1.0-alpha")
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Core/Version.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/Version.h"
+)
+
+
 find_package(Qt6 COMPONENTS Xml Widgets OpenGL OpenGLWidgets Qml PrintSupport REQUIRED)
-
-include_directories(${MUJOCO_DIR}/include)
-link_directories(${MUJOCO_DIR}/lib)
-
 
 file(GLOB_RECURSE SRC_FILES 
     src/**/**/*.cpp 
@@ -29,6 +31,8 @@ file(GLOB_RECURSE SRC_FILES
 )
 add_executable(RoboticsStudio ${SRC_FILES})
 
+
+
 target_link_libraries(RoboticsStudio 
     Qt6::Widgets 
     Qt6::Xml
@@ -43,8 +47,13 @@ target_link_libraries(RoboticsStudio
     pthread 
     m
 )
+
+target_link_directories(RoboticsStudio PRIVATE ${MUJOCO_DIR}/lib)
+
 target_include_directories(RoboticsStudio PRIVATE
+    ${MUJOCO_DIR}/include
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/extern/qcustomplot
+    "${CMAKE_CURRENT_BINARY_DIR}/generated"
 )
 

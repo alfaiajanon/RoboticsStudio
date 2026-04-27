@@ -27,6 +27,7 @@ class LibraryManager : public QObject {
     public:
         static LibraryManager& getInstance();
 
+        void fetchOnline();
         void load(const QString& catalogJsonPath);
         
         QString getCatalogPath() const { return path; }

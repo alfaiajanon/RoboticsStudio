@@ -70,7 +70,6 @@ class Project {
         Project();
         ~Project();
 
-        bool newProject();
         bool loadProject(const QString& path);
         void setProjectPath(const QString& path);
         bool saveProject();

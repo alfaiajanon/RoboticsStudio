@@ -104,21 +104,6 @@ void Project::reloadScript(){
  * Builds the macro-graph hierarchical tree in memory. 
  */
 
-bool Project::newProject() {
-    clear();
-    projectData = QJsonObject();
-    projectPath = "";
-    directoryPath = "";
-    currentScript = "";
-    currentScriptPath = "";
-    activePlots.clear();
-
-    nextComponentUid = 1;
-    rootComponent = nullptr;
-
-    return true;
-}
-
 
 
 bool Project::loadProject(const QString& path) {

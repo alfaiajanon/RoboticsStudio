@@ -17,6 +17,8 @@
 #include <limits>
 #include <cmath>
 #include "mujoco/mujoco.h"
+#include "Dialogs/NewProjectDialog.h"
+
 
 /*
  * Initializes the main Editor Window workspace.
@@ -131,40 +133,18 @@ void EditorWindow::setupMenuBar() {
     connect(frameSceneAct, &QAction::triggered, this, &EditorWindow::frameScene);
 
     connect(newAct, &QAction::triggered, this, [this]() {
-        if (QMessageBox::question(this, "Confirm New Project", "Are you sure you want to start a new project?") == QMessageBox::Yes) {
-            Application::getInstance()->getProject()->newProject();
-            Project* currentProject = Application::getInstance()->getProject();
-            sceneTree->buildFromProject(currentProject);
-            scriptPanel->loadScript(currentProject->getScriptPath());
-            frameScene();
-            refresh();
+        NewProjectDialog dialog(this);
+        if (dialog.exec() == QDialog::Accepted) {
+            QString newPath = dialog.getCreatedProjectPath();
+
+            Application::getInstance()->openProject(newPath);
         }
     });
 
     connect(openAct, &QAction::triggered, this, [this]() {
         QString path = QFileDialog::getOpenFileName(this, "Open Project", "", "Robotics Studio Project (*.rsproj);;All Files (*)");
         if (!path.isEmpty()) {
-
-            SimulationManager* simManager = Application::getInstance()->getSimulationManager();
-            simManager->pause();
-
-            Application::getInstance()->getProject()->loadProject(path);
-            Project* currentProject = Application::getInstance()->getProject();
-            MujocoContext::getInstance()->loadModelFromString(
-                currentProject->generateMujocoXML().toStdString()
-            );
-
-            sceneTree->buildFromProject(currentProject);
-            scriptPanel->loadScript(currentProject->getScriptPath());
-
-            ComponentInstance* root = currentProject->getRootComponent();
-            simManager->cacheMujocoIds(root, MujocoContext::getInstance()->getModel());
-            simManager->edit();
-
-            setupSimConn();
-            frameScene();
-            refresh();
-            
+            Application::getInstance()->openProject(path);
         }
     });
 

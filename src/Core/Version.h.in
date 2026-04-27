@@ -1,0 +1,3 @@
+#pragma once
+
+#define ROBOTICS_STUDIO_VERSION "@APP_VERSION@"
