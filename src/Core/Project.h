@@ -43,8 +43,9 @@ class Project {
         QList<Constraint*> constraintList;
 
         MicroController microcontroller;
-        QString currentScript;
-        QString currentScriptPath;
+        int currentScriptIdx=0;
+        QString currentScriptContent;
+        QJsonArray scriptPaths;
 
         QList<PlotTarget> activePlots;
 
@@ -76,7 +77,8 @@ class Project {
         void unloadProject();
         void refresh();
 
-        QJsonObject getProjectData() const;
+        QJsonObject getProjectData();
+        void setProjectData(QJsonObject data);
 
         QList<PlotTarget> getActivePlotsVal(){ return activePlots; } 
         QList<PlotTarget>* getActivePlots(){ return &activePlots; }
@@ -92,10 +94,13 @@ class Project {
         
         MicroController* getMicroController() { return &microcontroller; }
     
-        void setScript(QString path);
+        void setScript(int idx);
         void reloadScript();
-        QString getScriptPath() const {return currentScriptPath; }
-        QString getScript() const { return currentScript; }
+        QJsonArray getScriptPaths() const { return scriptPaths; }
+        QString getScriptPath() const {return scriptPaths[currentScriptIdx].toString(); }
+        QString getScript() const { return currentScriptContent; }
+
+        QString getProjectDirectory() const { return directoryPath; }
 
         
         QString generateMujocoXML();

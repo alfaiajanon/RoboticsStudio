@@ -10,8 +10,21 @@
 #include <QFrame>
 #include <QGridLayout>
 #include "UI/Toast/Toast.h"
+#include <QInputDialog>
+#include <QMessageBox>
+#include <QFile>
+#include <QDir>
+#include <QJsonArray>
+#include <QDebug>
 
 
+
+void fixComboBoxPolicy(QComboBox* combo) {
+    combo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    combo->setMinimumContentsLength(5); 
+    combo->setMinimumWidth(100); 
+    combo->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Fixed);
+}
 
 
 ConnectorDropTargetBtn::ConnectorDropTargetBtn(const QString& connectorId, const QString& text, QWidget* parent) 
@@ -252,6 +265,7 @@ void InspectorPanel::buildUI() {
             grid->addWidget(nameLabel, 0, 0, 1, 3);
 
             QComboBox* childUidCombo = new QComboBox(frame);
+            fixComboBoxPolicy(childUidCombo);
             childUidCombo->setFocusPolicy(Qt::StrongFocus); 
             childUidCombo->installEventFilter(this);
 
@@ -282,6 +296,7 @@ void InspectorPanel::buildUI() {
                     ComponentInstance* childComp = project->getComponentByUid(childUid);
     
                     QComboBox* childConnectorCombo = new QComboBox(frame);
+                    fixComboBoxPolicy(childConnectorCombo);
                     childConnectorCombo->setFocusPolicy(Qt::StrongFocus);
                     childConnectorCombo->installEventFilter(this);
                     grid->addWidget(childConnectorCombo, 2, 0, 1, 1);
@@ -458,32 +473,339 @@ void InspectorPanel::buildUI() {
 
 
 
-
-#pragma region buildUI helpers
+#pragma region build uid 0
 
 void InspectorPanel::build_UID_0() {
     Project* project = Application::getInstance()->getProject();
-    QJsonObject meta = project->getProjectData()["meta"].toObject();
+    if (!project) return;
+
+    QJsonObject projData = project->getProjectData();
+    QJsonObject meta = projData["meta"].toObject();
+    QJsonObject scriptObj = projData["script"].toObject();
+
+    // Reusable lambda to cleanly reload physics and UI when the root connection changes
+    auto reloadSimulation = [this, project]() {
+        QTimer::singleShot(0, this, [this, project]() {
+            SimulationManager* simManager = Application::getInstance()->getSimulationManager();
+            std::lock_guard<std::mutex> lock(simManager->physicsMutex);
+            MujocoContext::getInstance()->loadModelFromString(project->generateMujocoXML().toStdString());
+            simManager->cacheMujocoIds(project->getRootComponent(), MujocoContext::getInstance()->getModel());
+            Application::getInstance()->getEditor()->refresh();
+        });
+    };
 
     QGroupBox* globalBox = new QGroupBox("Global Robot Settings", this);
     QFormLayout* globalLayout = new QFormLayout(globalBox);
 
-    globalLayout->addRow("Robot Name:", new QLineEdit(meta["name"].toString(), globalBox));
+    // --- 1. Robot Name ---
+    QLineEdit* nameEdit = new QLineEdit(meta["name"].toString(), globalBox);
+    globalLayout->addRow("Robot Name:", nameEdit);
+    
+    connect(nameEdit, &QLineEdit::textChanged, this, [project](const QString& text) {
+        QJsonObject pData = project->getProjectData();
+        QJsonObject m = pData["meta"].toObject();
+        m["name"] = text;
+        pData["meta"] = m;
+        project->setProjectData(pData);
+    });
 
+    // --- 2. Advanced Scripting UI ---
     QWidget* scriptWidget = new QWidget(globalBox);
     QHBoxLayout* scriptLayout = new QHBoxLayout(scriptWidget);
     scriptLayout->setContentsMargins(0, 0, 0, 0);
-    scriptLayout->addWidget(new QLineEdit(meta["script_path"].toString(), scriptWidget));
-    scriptLayout->addWidget(new QPushButton("Browse...", scriptWidget));
+
+    QComboBox* scriptCombo = new QComboBox(scriptWidget);
+    fixComboBoxPolicy(scriptCombo);
+    QPushButton* btnAddScript = new QPushButton("Add", scriptWidget);
+    QPushButton* btnDelScript = new QPushButton("Delete", scriptWidget);
+    
+    scriptLayout->addWidget(scriptCombo);
+    scriptLayout->addWidget(btnAddScript);
+    scriptLayout->addWidget(btnDelScript);
     globalLayout->addRow("Control Script:", scriptWidget);
 
-    QListWidget* depList = new QListWidget(globalBox);
-    for (const QJsonValue& val : meta["dependencies"].toArray()) {
-        depList->addItem(val.toString());
+    int activeScriptIdx = scriptObj["current"].toInt();
+    QJsonArray allScriptsArr = scriptObj["paths"].toArray();
+
+    scriptCombo->blockSignals(true);
+    for (const QJsonValue& val : allScriptsArr) {
+        scriptCombo->addItem(val.toString());
     }
-    globalLayout->addRow("Dependencies:", depList);
+    if (activeScriptIdx >= 0 && activeScriptIdx < allScriptsArr.size()) {
+        scriptCombo->setCurrentIndex(activeScriptIdx);
+    } else {
+        scriptCombo->setCurrentIndex(-1);
+    }
+    scriptCombo->blockSignals(false);
+
+    // Signal: Switch Active Script
+    connect(scriptCombo, &QComboBox::currentTextChanged, this, [this, project](const QString& text) {
+        if (text.isEmpty()) return;
+        
+        QJsonObject pData = project->getProjectData();
+        QJsonObject sObj = pData["script"].toObject();
+        int oldActive = sObj["current"].toInt();
+        QJsonArray oArr = sObj["paths"].toArray();
+        
+        int index = -1;
+        for (int i = 0; i < oArr.size(); ++i) {
+            if (oArr[i].toString() == text) {
+                index = i;
+                break;
+            }
+        }
+        sObj["current"] = index;
+        pData["script"] = sObj;
+        project->setProjectData(pData);
+        
+        if (auto panel = Application::getInstance()->getEditor()->scriptPanel) {
+            Project* project = Application::getInstance()->getProject();
+            project->setScript(index);
+            panel->loadScript(project->getProjectDirectory() + "/" + text);
+        }
+    });
+
+    // Signal: Add New Script
+    connect(btnAddScript, &QPushButton::clicked, this, [this, project, scriptCombo]() {
+        bool ok;
+        QString name = QInputDialog::getText(this, "New Script", "Script File Name (e.g. custom.js):", QLineEdit::Normal, "", &ok);
+        
+        if (ok && !name.isEmpty()) {
+            if (!name.endsWith(".js")) name += ".js";
+            
+            QFile file(project->getProjectDirectory() + "/" + name);
+            if (!file.exists() && file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+                file.write("// New Script: " + name.toUtf8() + "\n\nfunction setup() {\n\n}\n\nfunction loop() {\n\n}\n");
+                file.close();
+            }
+
+            QJsonObject pData = project->getProjectData();
+            QJsonObject sObj = pData["script"].toObject();
+            QJsonArray oArr = sObj["paths"].toArray();
+            oArr.append(name);
+            sObj["paths"] = oArr;
+            pData["script"] = sObj;
+            project->setProjectData(pData);
+            
+            scriptCombo->addItem(name);
+        }
+    });
+
+    // Signal: Delete Script
+    connect(btnDelScript, &QPushButton::clicked, this, [this, project, scriptCombo]() {
+        QString toDelete = scriptCombo->currentText();
+        if (toDelete.isEmpty()) return;
+
+        if (QMessageBox::question(this, "Delete Script", "Delete " + toDelete + " from disk?", QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes) {
+            QFile file(project->getProjectDirectory() + "/" + toDelete);
+            if (file.exists()) file.remove();
+
+            QJsonObject pData = project->getProjectData();
+            QJsonObject sObj = pData["script"].toObject();
+            QJsonArray allScriptsArr = sObj["paths"].toArray();
+            QJsonArray newPaths;
+            
+            for (const QJsonValue& val : allScriptsArr) {
+                if (val.toString() != toDelete) newPaths.append(val);
+            }
+            
+            int deleteIndex = -1;
+            for (int i = 0; i < allScriptsArr.size(); ++i) {
+                if (allScriptsArr[i].toString() == toDelete) {
+                    deleteIndex = i;
+                    break;
+                }
+            }
+            if (sObj["current"].toInt() == deleteIndex) {
+                if (!newPaths.isEmpty()) {
+                    sObj["current"] = 0; 
+                } else {
+                    sObj["current"] = -1;
+                }
+            }
+            
+            sObj["paths"] = newPaths;
+            pData["script"] = sObj;
+            project->setProjectData(pData);
+            
+            scriptCombo->removeItem(scriptCombo->currentIndex());
+            
+            QString newActive = sObj["current"].toInt() >= 0 ? newPaths[sObj["current"].toInt()].toString() : "";
+            if(!newActive.isEmpty()) {
+                if (auto panel = Application::getInstance()->getEditor()->scriptPanel) {
+                    QJsonArray scriptPaths = project->getScriptPaths();
+                    int idx_from_paths = -1;
+                    for (int i = 0; i < scriptPaths.size(); ++i) {
+                        if (scriptPaths[i].toString() == newActive) {
+                            idx_from_paths = i;
+                            break;
+                        }
+                    }
+                    if (idx_from_paths != -1) {
+                        project->setScript(idx_from_paths);
+                        Log::info("Switched active script to: " + project->getProjectDirectory() + "/" + newActive);
+                        panel->loadScript(project->getProjectDirectory() + "/" + newActive);
+                    }
+                }
+            }
+        }
+    });
 
     mainLayout->addWidget(globalBox);
+
+
+    // --- 3. Base Component Attachment (Virtual Origin) ---
+    QGroupBox* connectorsBox = new QGroupBox("Base Component Attachment", this);
+    QVBoxLayout* connectorsLayout = new QVBoxLayout(connectorsBox);
+
+    QFrame* frame = new QFrame(connectorsBox);
+    frame->setFrameShape(QFrame::StyledPanel);
+    QGridLayout* grid = new QGridLayout(frame);
+    grid->setContentsMargins(5, 5, 5, 5);
+    grid->setSpacing(4);
+
+    QLabel* originLabel = new QLabel("root", frame);
+    QFont boldFont = originLabel->font();
+    boldFont.setBold(true);
+    originLabel->setFont(boldFont);
+    grid->addWidget(originLabel, 0, 0, 1, 3);
+
+    QComboBox* childUidCombo = new QComboBox(frame);
+    fixComboBoxPolicy(childUidCombo);
+    childUidCombo->setFocusPolicy(Qt::StrongFocus);
+    childUidCombo->installEventFilter(this);
+
+    // FIX: Check if an actual component is anchored to the virtual origin
+    ComponentInstance* rootComp = project->getRootComponent();
+    bool isConnected = (rootComp != nullptr);
+    QString connId = "root";
+
+    if (isConnected) {
+        grid->addWidget(childUidCombo, 1, 0, 1, 2);
+        populateAvailableComponents(childUidCombo); 
+
+        QComboBox* childConnectorCombo = new QComboBox(frame);
+        fixComboBoxPolicy(childConnectorCombo);
+        childConnectorCombo->setFocusPolicy(Qt::StrongFocus);
+        childConnectorCombo->installEventFilter(this);
+        grid->addWidget(childConnectorCombo, 2, 0, 1, 1);
+        
+        childUidCombo->addItem(QString("%1 (Active)").arg(rootComp->name), rootComp->uid);
+        childUidCombo->setCurrentIndex(childUidCombo->count() - 1); 
+
+        populateAvailableConnectors(childConnectorCombo, rootComp->uid);
+        QString activeConn = rootComp->selfConnector.isEmpty() ? "not found" : rootComp->selfConnector;
+        childConnectorCombo->addItem(activeConn + " (Active)", activeConn);
+        childConnectorCombo->setCurrentIndex(childConnectorCombo->count() - 1);
+
+        QDoubleSpinBox* snapSpinBox = new QDoubleSpinBox(frame);
+        snapSpinBox->setRange(-180.0, 180.0);
+        snapSpinBox->setSuffix("°");
+        snapSpinBox->setValue(rootComp->snapAngle); 
+        snapSpinBox->setFocusPolicy(Qt::StrongFocus);
+        snapSpinBox->installEventFilter(this);
+        grid->addWidget(snapSpinBox, 2, 1, 1, 1);
+
+        connect(snapSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [rootComp, reloadSimulation](double val) {
+            rootComp->snapAngle = val;
+            reloadSimulation();
+        });
+
+        connect(childConnectorCombo, &QComboBox::currentIndexChanged, this, [rootComp, childConnectorCombo, reloadSimulation]() {
+            rootComp->selfConnector = childConnectorCombo->currentText();
+            reloadSimulation();
+        });
+
+        connect(childUidCombo, &QComboBox::currentIndexChanged, this, [project, rootComp, connId, childUidCombo, reloadSimulation]() {
+            int newUid = childUidCombo->currentData().toInt();
+            if (newUid == rootComp->uid || newUid == -1) return;
+            
+            // Detach the old root
+            rootComp->parentUid = -1;
+            rootComp->parentConnector = "";
+            
+            // Anchor the new root to virtual UID 0
+            ComponentInstance* newChild = project->getComponentByUid(newUid);
+            if (newChild) {
+                newChild->parentUid = 0;
+                newChild->parentConnector = connId;
+                newChild->snapAngle = rootComp->snapAngle;  
+                
+                if (newChild->blueprint && !newChild->blueprint->connectors.isEmpty()) {
+                    newChild->selfConnector = newChild->blueprint->connectors.first().id;
+                } else {
+                    newChild->selfConnector = ""; 
+                }
+            }
+            reloadSimulation();
+        });
+
+        QPushButton* actionBtn = new QPushButton("X", frame);
+        actionBtn->setMaximumWidth(50);
+        actionBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
+        grid->addWidget(actionBtn, 1, 2, 2, 1);
+
+        connect(actionBtn, &QPushButton::clicked, this, [rootComp, reloadSimulation]() {
+            // Detach by clearing parent data (no longer calling comp->children.removeAll)
+            rootComp->parentUid = -1;
+            rootComp->parentConnector = "";
+            reloadSimulation();
+        });
+
+    } else {
+        // UI when NO component is anchored to the virtual Origin
+        childUidCombo->addItem("-", -1);
+        childUidCombo->setCurrentIndex(childUidCombo->count() - 1);
+
+        ConnectorDropTargetBtn* actionBtn = new ConnectorDropTargetBtn(connId, "+", frame);
+        actionBtn->setMaximumWidth(50);
+        actionBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
+        grid->addWidget(actionBtn, 1, 2, 1, 1);
+
+        EditorWindow* mainWindow = qobject_cast<EditorWindow*>(this->window());
+        if (mainWindow) {
+            connect(mainWindow, &EditorWindow::componentLibDragStart, actionBtn, [actionBtn](const QString& /*modelId*/) {
+                actionBtn->setStyleSheet("border: 1px solid #5fa4ff;"); 
+            });
+            connect(mainWindow, &EditorWindow::componentLibDragEnd, actionBtn, [actionBtn]() {
+                actionBtn->setStyleSheet(""); 
+            });
+        }
+
+        connect(childUidCombo, &QComboBox::currentIndexChanged, this, [childUidCombo, connId, reloadSimulation](int index) {
+            if (childUidCombo->currentData().toInt() != -1) {
+                int newUid = childUidCombo->currentData().toInt();
+                ComponentInstance* newChild = Application::getInstance()->getProject()->getComponentByUid(newUid);
+                if (newChild) {
+                    newChild->parentUid = 0; 
+                    newChild->parentConnector = connId;
+                    
+                    if (newChild->blueprint && !newChild->blueprint->connectors.isEmpty()) {
+                        newChild->selfConnector = newChild->blueprint->connectors.first().id;
+                    } else {
+                        newChild->selfConnector = "";
+                    }
+                    newChild->snapAngle = 0.0f;
+                    reloadSimulation();
+                }
+            }
+        });
+
+        connect(actionBtn, &QPushButton::clicked, this, [this]() {
+            Toast::showMessage(this, "Drag a component from the Component Library");
+        });
+        
+        connect(actionBtn, &ConnectorDropTargetBtn::componentDropped, this, [connId, reloadSimulation](const QString& targetConn, const QString& modelId) {
+            Project* project = Application::getInstance()->getProject();
+            // Pass 0 as the parentUid to anchor it to the absolute root
+            project->createComponentInstance(0, targetConn, modelId, "", 0.0f);
+            reloadSimulation();
+        });
+    }
+
+    connectorsLayout->addWidget(frame);
+    mainLayout->addWidget(connectorsBox);
+    
     mainLayout->addStretch();
 }
 
@@ -492,6 +814,9 @@ void InspectorPanel::build_UID_0() {
 
 
 
+
+
+#pragma region buildUI helpers
 
 void InspectorPanel::build_inputs(ComponentInstance* comp) {
     QGroupBox* inputBox = new QGroupBox("Inputs & Controls", this);

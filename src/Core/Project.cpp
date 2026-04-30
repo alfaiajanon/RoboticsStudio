@@ -38,8 +38,12 @@ QMap<int, ComponentInstance*>& Project::getComponentMap() {
 }
 
 
-QJsonObject Project::getProjectData() const {
+QJsonObject Project::getProjectData() {
     return projectData;
+}
+
+void Project::setProjectData(QJsonObject data) {
+    projectData = data;
 }
 
 
@@ -64,33 +68,40 @@ void Project::clear() {
 
 
 
-
-
  
-void Project::setScript(QString path){
-    QFile file(path);
+void Project::setScript(int idx){
+    if(idx < 0 || idx >= scriptPaths.size()) {
+        Log::error("Invalid script index: " + QString::number(idx));
+        return;
+    }
+    QString path = scriptPaths.at(idx).toString();
+    QString fullPath=directoryPath + "/" + path;
+    QFile file(fullPath);
     if (!file.open(QFile::ReadOnly)) {
         Log::error("Failed to open script file: " + path);
         return;
     }   
 
-    currentScriptPath = path;
+    currentScriptIdx = idx;
 
-    currentScript = QString::fromUtf8(file.readAll());
+    currentScriptContent = QString::fromUtf8(file.readAll());
     file.close();
+
+    Log::info("Loaded script: " + fullPath);
 }
 
 
 
 
 void Project::reloadScript(){
-    QFile file(currentScriptPath);
+    QString fullpath=directoryPath + "/" + getScriptPath();
+    QFile file(fullpath);
     if (!file.open(QFile::ReadOnly)) {
-        Log::error("Failed to open script file: " + currentScriptPath);
+        Log::error("Failed to open script file (reload): " + fullpath);
         return;
     }   
 
-    currentScript = QString::fromUtf8(file.readAll());
+    currentScriptContent = QString::fromUtf8(file.readAll());
     file.close();
 }
 
@@ -120,13 +131,14 @@ bool Project::loadProject(const QString& path) {
     file.close();
     
     directoryPath = QFileInfo(path).absolutePath();
-    currentScriptPath = projectData["script"].toObject()["path"].toString();
+    currentScriptIdx = projectData["script"].toObject()["current"].toInt();
+    scriptPaths = projectData["script"].toObject()["paths"].toArray();
     
     parseAssembly();
     buildHierarchy();
     applyDefaults();
     
-    // setScript("/home/anon/Documents/Code Projects/Mixed Projects/RoboticsStudio/demo/demoScript.js");
+    // setScript(c0);
     // microcontroller.compile(getScript(), getRootComponent());
     
     Application::getInstance()->saveLastProject(path);
@@ -140,7 +152,8 @@ void Project::unloadProject() {
     projectData = QJsonObject();
     projectPath = "";
     directoryPath = "";
-    currentScript = "";
+    currentScriptContent = "";
+    scriptPaths = QJsonArray();
 }
 
 
@@ -205,7 +218,8 @@ bool Project::saveProject() {
     projectData["assembly"] = assemblyObj;
 
     projectData["script"] = QJsonObject{
-        {"path", currentScriptPath}
+        {"current", currentScriptIdx},
+        {"paths", scriptPaths}
     };
 
     QFile file(projectPath);
@@ -263,8 +277,9 @@ void Project::saveDefaults() {
 void Project::parseAssembly() {
     // load script path from script->path
     QJsonObject scriptObj = projectData["script"].toObject();
-    QString scriptPath = scriptObj["path"].toString();
-    setScript(scriptPath);
+    QJsonArray scriptPaths = scriptObj["paths"].toArray();
+    int scriptIdx=scriptObj["current"].toInt();
+    setScript(scriptIdx);
 
 
     QJsonObject assemblyObj = projectData["assembly"].toObject();
@@ -487,23 +502,23 @@ ComponentInstance* Project::createComponentInstance(const int parentUid,
         newComp->emulator = EmulatorFactory::create(emulatorType, newComp);
     }
 
-    if (componentMap.contains(parentUid)) {
-        ComponentInstance* parent = componentMap[parentUid];
-        newComp->parentUid = parentUid;
-        newComp->parentConnector = parentConnector;
-        
-        Transform pConnRelTrans = parent->blueprint->getConnectorRelativeTransform(newComp->parentConnector);
-        Rotation mateRot(0, 1, 0, 0); 
-        double halfAngle = newComp->snapAngle * 0.5 * (M_PI / 180.0);
-        Rotation snapRot(std::cos(halfAngle), 0, 0, std::sin(halfAngle)); 
-        Transform alignTransform(Position(0,0,0), mateRot * snapRot);
-        newComp->transform = pConnRelTrans * alignTransform; 
-
-        parent->children.append(newComp);
-        
-    } else {
-        newComp->parentUid = -1; 
+    if(parentUid == 0){
+        rootComponent = newComp;
+        newComp->parentUid = 0;
+        newComp->parentConnector = "root";
+    }else{
+        if (componentMap.contains(parentUid)) {
+            ComponentInstance* parent = componentMap[parentUid];
+            newComp->parentUid = parentUid;
+            newComp->parentConnector = parentConnector;
+            parent->children.append(newComp);
+            
+        } else {
+            newComp->parentUid = -1; 
+        }
     }
+    applyTransforms();
+
 
     componentMap.insert(newComp->uid, newComp);
     return newComp;

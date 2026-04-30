@@ -100,7 +100,9 @@ void Application::openProject(const QString& projectPath) {
     );
     
     editor.sceneTree->buildFromProject(&currentProject);
-    editor.scriptPanel->loadScript(currentProject.getScriptPath());
+    editor.scriptPanel->loadScript(
+        currentProject.getProjectDirectory() + "/" + currentProject.getScriptPath()
+    );
 
     simManager = new SimulationManager();
     ComponentInstance* root = currentProject.getRootComponent();

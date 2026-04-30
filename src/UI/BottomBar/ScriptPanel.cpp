@@ -61,16 +61,16 @@ void ScriptPanel::setupUI() {
     mainLayout->addWidget(textEditor);
 }
 
-void ScriptPanel::loadScript(const QString& path) {
-    if (path.isEmpty()) return;
+void ScriptPanel::loadScript(const QString& fullpath) {
+    if (fullpath.isEmpty()) return;
 
     if (!currentFilePath.isEmpty()) {
         fileWatcher->removePath(currentFilePath);
     }
 
-    QFile file(path);
+    QFile file(fullpath);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        Log::error("ScriptPanel could not open file: " + path);
+        Log::error("ScriptPanel could not open file: " + fullpath);
         return;
     }
 
@@ -82,13 +82,13 @@ void ScriptPanel::loadScript(const QString& path) {
     textEditor->setPlainText(content);
     textEditor->blockSignals(false);
 
-    currentFilePath = path;
+    currentFilePath = fullpath;
     fileWatcher->addPath(currentFilePath);
     
     hasUnsavedChanges = false;
     saveButton->setEnabled(false);
     
-    QFileInfo fileInfo(path);
+    QFileInfo fileInfo(fullpath);
     statusLabel->setText(fileInfo.fileName() + " (External Editor Preferred)");
 }
 
@@ -133,14 +133,14 @@ void ScriptPanel::onEditorTextChanged() {
     }
 }
 
-void ScriptPanel::onExternalFileChanged(const QString& path) {
+void ScriptPanel::onExternalFileChanged(const QString& fullpath) {
     if (isInternalSave) return;
 
-    if (!fileWatcher->files().contains(path)) {
-        fileWatcher->addPath(path);
+    if (!fileWatcher->files().contains(fullpath)) {
+        fileWatcher->addPath(fullpath);
     }
 
-    QFile file(path);
+    QFile file(fullpath);
     if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         QTextStream in(&file);
         QString content = in.readAll();
@@ -157,10 +157,10 @@ void ScriptPanel::onExternalFileChanged(const QString& path) {
         hasUnsavedChanges = false;
         saveButton->setEnabled(false);
         
-        QFileInfo fileInfo(path);
+        QFileInfo fileInfo(fullpath);
         statusLabel->setText(fileInfo.fileName() + " (External Editor Preferred)");
 
         Toast::showMessage(this->window(), "Reloaded external changes");
-        Log::info("Script externally modified and reloaded: " + path);
+        Log::info("Script externally modified and reloaded: " + fullpath);
     }
 }

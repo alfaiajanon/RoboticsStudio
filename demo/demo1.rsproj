@@ -141,7 +141,10 @@
         "version": "1.0.0"
     },
     "script": {
-        "path": "/home/anon/Documents/Code Projects/Mixed Projects/RoboticsStudio/demo/demo1.js"
+        "current":0,
+        "paths": [
+            "demo1.js"
+        ]
     },
     "simulation": {
     },
