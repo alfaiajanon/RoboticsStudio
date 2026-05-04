@@ -15,7 +15,7 @@ configure_file(
 )
 
 
-find_package(Qt6 COMPONENTS Xml Widgets OpenGL OpenGLWidgets Qml PrintSupport REQUIRED)
+find_package(Qt6 COMPONENTS Xml Widgets OpenGL OpenGLWidgets Qml PrintSupport Network REQUIRED)
 
 file(GLOB_RECURSE SRC_FILES 
     src/**/**/*.cpp 
@@ -40,6 +40,7 @@ target_link_libraries(RoboticsStudio
     Qt6::OpenGLWidgets 
     Qt6::PrintSupport
     Qt6::Qml
+    Qt6::Network
     mujoco 
     glfw 
     GL 

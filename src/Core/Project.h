@@ -85,6 +85,10 @@ class Project {
         ComponentInstance* getRootComponent();
         ComponentInstance* getComponentByUid(int uid);
         QMap<int, ComponentInstance*>& getComponentMap();
+        MicroController* getMicroController() { return &microcontroller; }
+
+        void setRootComponent(ComponentInstance* comp);
+        void resetRootComponent();
 
         ComponentInstance* createComponentInstance( const int parentUid, 
                                                     const QString& parentConnector, 
@@ -92,7 +96,6 @@ class Project {
                                                     const QString& selfConnector,
                                                     const float snapAngle);
         
-        MicroController* getMicroController() { return &microcontroller; }
     
         void setScript(int idx);
         void reloadScript();

@@ -6,7 +6,7 @@
             "name":"DC Motors",
             "keys":["actuator","dc","motor","gear"],
             "items":[
-                "./models/motor/dc_gear_60rpm/dc_gear_60rpm.rsdef"
+                "/motor/dc_gear_60rpm/dc_gear_60rpm.rsdef"
             ]
         },
         {
@@ -14,8 +14,8 @@
             "name":"Servo Motors",
             "keys":["actuator","servo","motor","sg90","mg996r"],
             "items":[
-                "./models/servo/servo_sg90/servo_sg90.rsdef",
-                "./models/servo/servo_mg996r/servo_mg996r.rsdef"
+                "/servo/servo_sg90/servo_sg90.rsdef",
+                "/servo/servo_mg996r/servo_mg996r.rsdef"
             ]
         },
         {
@@ -23,7 +23,7 @@
             "name":"Stepper Motors",
             "keys":["actuator","stepper","motor","nema17"],
             "items":[
-                "./models/stepper/nema17/stepper_nema17.rsdef"
+                "/stepper/nema17/stepper_nema17.rsdef"
             ]
         },
         {
@@ -31,7 +31,7 @@
             "name":"IMU Sensors",
             "keys":["sensor","mpu6050","imu"],
             "items":[
-                "./models/imu/imu_mpu6050/imu_mpu6050.rsdef"
+                "/imu/imu_mpu6050/imu_mpu6050.rsdef"
             ]
         },
         {
@@ -39,8 +39,8 @@
             "name":"Joints",
             "keys":["joint","bracket","u-bracket"],
             "items":[
-                "./models/joints/long_u_bracket/long_u_bracket.rsdef",
-                "./models/joints/multipurpose_bracket/multipurpose_bracket.rsdef"
+                "/joints/long_u_bracket/long_u_bracket.rsdef",
+                "/joints/multipurpose_bracket/multipurpose_bracket.rsdef"
             ]
         },
         {
@@ -48,7 +48,7 @@
             "name":"Dummy/Placeholder Models",
             "keys":["dummy","placeholder"],
             "items":[
-                "./models/dummy/base_rect/base_rect.rsdef"
+                "/dummy/base_rect/base_rect.rsdef"
             ]
         }
     ]

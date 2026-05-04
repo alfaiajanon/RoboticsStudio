@@ -4,6 +4,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QFileInfo>
+#include <QDir>
 #include "Core/Log.h"
 #include "Simulation/Components/ComponentBlueprint.h"
 
@@ -36,11 +37,11 @@ void LibraryManager::fetchOnline() {
 
 /*
  * Parses the catalog JSON, populates categorical data, and loads all component blueprints.
- * Emits a signal once the entire library is successfully initialized.
+ * Dynamically resolves relative component paths based on the catalog's base directory.
  */
-
 void LibraryManager::load(const QString& catalogJsonPath) {
     path = QFileInfo(catalogJsonPath).absoluteFilePath();
+    QString baseModelsDir = QFileInfo(path).absolutePath();
     
     QFile file(path);
     if (!file.open(QFile::ReadOnly)) {
@@ -70,19 +71,20 @@ void LibraryManager::load(const QString& catalogJsonPath) {
         QJsonArray itemsPathArray = categoryObj["items"].toArray();
 
         for (const QJsonValue& itemPathVal : itemsPathArray) {
-            QString itemPath = itemPathVal.toString();
+            QString relativeItemPath = itemPathVal.toString();
+            QString absoluteItemPath = QDir(baseModelsDir).absoluteFilePath(relativeItemPath);
             
-            QFile itemFile(itemPath);
+            QFile itemFile(absoluteItemPath);
             if (!itemFile.open(QFile::ReadOnly)) {
-                Log::error("Failed to open component rsdef file: " + itemPath);
+                Log::error("Failed to open component rsdef file: " + absoluteItemPath);
                 continue;
             }
             itemFile.close();
 
-            ComponentBlueprint* blueprint = new ComponentBlueprint(itemPath);
+            ComponentBlueprint* blueprint = new ComponentBlueprint(absoluteItemPath);
             
             if (!blueprint->meta.iconPath.isEmpty()) {
-                QString rsdefDir = QFileInfo(itemPath).absolutePath();
+                QString rsdefDir = QFileInfo(absoluteItemPath).absolutePath();
                 blueprint->meta.iconPath = QFileInfo(rsdefDir + "/" + blueprint->meta.iconPath).absoluteFilePath();
             }
 
@@ -96,4 +98,4 @@ void LibraryManager::load(const QString& catalogJsonPath) {
     }
 
     emit catalogLoaded(path);
-}   
+}

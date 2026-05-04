@@ -3,7 +3,7 @@
 #include "Simulation/Components/LibraryManager.h"
 #include <QFile>
 #include <QSettings>
-
+#include "UI/Dialogs/ModelDownloaderDialog.h"
 
 
 
@@ -49,7 +49,11 @@ Application::Application(int& argc, char** argv) : qtApp(argc, argv) {
     connect(&launcher, &LauncherWindow::projectOpened, this, &Application::openProject);
     
     connect(&launcher, &LauncherWindow::fetchModelsRequested, this, [this]() {
-        Log::info("Fetch models requested via Launcher.");
+        Log::info("Fetch models requested via Launcher....");
+        ModelDownloaderDialog dialog(nullptr);
+        dialog.startSync(); 
+        dialog.exec();
+        Log::info("Models downloaded to: " + getModelsDirectory());
     });
 
     QSettings settings("RoboticsStudio", "RoboticsStudio");
@@ -86,6 +90,7 @@ void Application::openProject(const QString& projectPath) {
 
     QString catalogPath = getModelsDirectory() + "/Catalog.json";
     if (QFile::exists(catalogPath)) {
+        Log::info("Loading from downloaded Catalog: " + catalogPath);
         LibraryManager::getInstance().load(catalogPath);
     } else {
         LibraryManager::getInstance().load("./models/Catalog.json");

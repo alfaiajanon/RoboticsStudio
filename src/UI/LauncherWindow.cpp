@@ -165,14 +165,14 @@ void LauncherWindow::onImportProjectClicked() {
 void LauncherWindow::onDeleteProjectClicked() {
     QListWidgetItem* currentItem = m_recentList->currentItem();
     if (!currentItem) return;
-
+    
     QString path = currentItem->data(Qt::UserRole).toString();
 
     QMessageBox msgBox(this);
     msgBox.setWindowTitle("Remove Project");
     msgBox.setText("Remove '" + currentItem->text() + "' from recent projects?");
     
-    QCheckBox* deleteDiskCheck = new QCheckBox("Also delete files from disk (Cannot be undone)");
+    QCheckBox* deleteDiskCheck = new QCheckBox("Also delete project folder from disk (Cannot be undone)");
     msgBox.setCheckBox(deleteDiskCheck);
     msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::Cancel);
 
@@ -180,9 +180,12 @@ void LauncherWindow::onDeleteProjectClicked() {
         m_recentPaths.removeAll(path);
         
         if (deleteDiskCheck->isChecked()) {
-            QDir dir(path);
-            dir.removeRecursively();    
-            // [critical]: doesnt work
+            QFileInfo fileInfo(path);
+            QDir projectDir = fileInfo.absoluteDir(); 
+            
+            if (!projectDir.removeRecursively()) {
+                QMessageBox::warning(this, "Deletion Failed", "Could not delete all files from disk. They might be in use or lack permissions.");
+            }
         }
         
         refreshProjectList();

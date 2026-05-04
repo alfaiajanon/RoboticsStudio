@@ -91,7 +91,6 @@ void NewProjectDialog::generateProjectScaffolding(const QString& folderPath, con
     // 1. Create the .js file template
     QString jsFileName = projectName + ".js";
     QFile jsFile(dir.absoluteFilePath(jsFileName));
-    QString jsFileFullPath = jsFile.fileName();
     if (jsFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
         QString jsTemplate = 
             "// RoboticsStudio Controller Script\n\n"
@@ -120,13 +119,14 @@ void NewProjectDialog::generateProjectScaffolding(const QString& folderPath, con
             "    \"version\": \"1.0.0\"\n"
             "  },\n"
             "  \"script\": {\n"
-            "    \"path\": \"%3\"\n"
+            "    \"current\": 0,\n"
+            "    \"paths\": [ \"%3\" ]\n"
             "  },\n"
             "  \"assembly\": {\n"
             "    \"components\": []\n"
             "  }\n"
             "}\n"
-        ).arg(appVersion, projectName, jsFileFullPath);
+        ).arg(appVersion, projectName, jsFileName);
         
         projFile.write(projTemplate.toUtf8());
         projFile.close();

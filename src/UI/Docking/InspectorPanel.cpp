@@ -488,8 +488,15 @@ void InspectorPanel::build_UID_0() {
         QTimer::singleShot(0, this, [this, project]() {
             SimulationManager* simManager = Application::getInstance()->getSimulationManager();
             std::lock_guard<std::mutex> lock(simManager->physicsMutex);
-            MujocoContext::getInstance()->loadModelFromString(project->generateMujocoXML().toStdString());
-            simManager->cacheMujocoIds(project->getRootComponent(), MujocoContext::getInstance()->getModel());
+
+            project->refresh();
+            MujocoContext::getInstance()->loadModelFromString(
+                project->generateMujocoXML().toStdString()
+            );
+            simManager->cacheMujocoIds(
+                project->getRootComponent(), 
+                MujocoContext::getInstance()->getModel()
+            );
             Application::getInstance()->getEditor()->refresh();
         });
     };
@@ -654,7 +661,7 @@ void InspectorPanel::build_UID_0() {
     mainLayout->addWidget(globalBox);
 
 
-    // --- 3. Base Component Attachment (Virtual Origin) ---
+    // --- Base Component Attachment (Virtual Origin) ---
     QGroupBox* connectorsBox = new QGroupBox("Base Component Attachment", this);
     QVBoxLayout* connectorsLayout = new QVBoxLayout(connectorsBox);
 
@@ -680,9 +687,10 @@ void InspectorPanel::build_UID_0() {
     bool isConnected = (rootComp != nullptr);
     QString connId = "root";
 
+    populateAvailableComponents(childUidCombo);
+
     if (isConnected) {
         grid->addWidget(childUidCombo, 1, 0, 1, 2);
-        populateAvailableComponents(childUidCombo); 
 
         QComboBox* childConnectorCombo = new QComboBox(frame);
         fixComboBoxPolicy(childConnectorCombo);
@@ -721,8 +729,7 @@ void InspectorPanel::build_UID_0() {
             if (newUid == rootComp->uid || newUid == -1) return;
             
             // Detach the old root
-            rootComp->parentUid = -1;
-            rootComp->parentConnector = "";
+            project->resetRootComponent();
             
             // Anchor the new root to virtual UID 0
             ComponentInstance* newChild = project->getComponentByUid(newUid);
@@ -736,6 +743,7 @@ void InspectorPanel::build_UID_0() {
                 } else {
                     newChild->selfConnector = ""; 
                 }
+                project->setRootComponent(newChild);
             }
             reloadSimulation();
         });
@@ -745,10 +753,11 @@ void InspectorPanel::build_UID_0() {
         actionBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
         grid->addWidget(actionBtn, 1, 2, 2, 1);
 
-        connect(actionBtn, &QPushButton::clicked, this, [rootComp, reloadSimulation]() {
+        connect(actionBtn, &QPushButton::clicked, this, [project, rootComp, reloadSimulation]() {
             // Detach by clearing parent data (no longer calling comp->children.removeAll)
             rootComp->parentUid = -1;
             rootComp->parentConnector = "";
+            project->resetRootComponent();
             reloadSimulation();
         });
 
@@ -772,9 +781,10 @@ void InspectorPanel::build_UID_0() {
             });
         }
 
-        connect(childUidCombo, &QComboBox::currentIndexChanged, this, [childUidCombo, connId, reloadSimulation](int index) {
+        connect(childUidCombo, &QComboBox::currentIndexChanged, this, [project, childUidCombo, connId, reloadSimulation](int index) {
             if (childUidCombo->currentData().toInt() != -1) {
                 int newUid = childUidCombo->currentData().toInt();
+
                 ComponentInstance* newChild = Application::getInstance()->getProject()->getComponentByUid(newUid);
                 if (newChild) {
                     newChild->parentUid = 0; 
@@ -785,6 +795,7 @@ void InspectorPanel::build_UID_0() {
                     } else {
                         newChild->selfConnector = "";
                     }
+                    project->setRootComponent(newChild);
                     newChild->snapAngle = 0.0f;
                     reloadSimulation();
                 }

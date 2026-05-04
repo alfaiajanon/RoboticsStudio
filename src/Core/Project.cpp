@@ -32,6 +32,13 @@ ComponentInstance* Project::getRootComponent() {
     return rootComponent;
 }
 
+void Project::setRootComponent(ComponentInstance* comp)  {
+    Log::info("Root component set: " + comp->name);
+    rootComponent = comp;
+    rootComponent->parentConnector = "root";
+    rootComponent->parentUid = 0;
+}
+
 
 QMap<int, ComponentInstance*>& Project::getComponentMap() {
     return componentMap;
@@ -41,6 +48,19 @@ QMap<int, ComponentInstance*>& Project::getComponentMap() {
 QJsonObject Project::getProjectData() {
     return projectData;
 }
+
+
+
+void Project::resetRootComponent() {
+    if (rootComponent) {
+        rootComponent->parentUid = -1;
+        rootComponent->parentConnector = "";
+    }
+    rootComponent = nullptr;
+}
+
+
+
 
 void Project::setProjectData(QJsonObject data) {
     projectData = data;
