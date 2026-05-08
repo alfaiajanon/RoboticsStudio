@@ -44,6 +44,14 @@
             ]
         },
         {
+            "id":"wheel",
+            "name":"Wheels",
+            "keys":["wheel","tire"],
+            "items":[
+                "wheel/wheel_D_65_25/wheel_D_65_25.rsdef"
+            ]
+        },
+        {
             "id":"dummy",
             "name":"Dummy/Placeholder Models",
             "keys":["dummy","placeholder"],

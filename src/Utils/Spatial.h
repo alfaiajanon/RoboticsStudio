@@ -26,7 +26,11 @@ public:
 
     Rotation();
     Rotation(double w_, double x_, double y_, double z_);
+    Rotation(double roll, double pitch, double yaw); // from Euler angles in degrees
 
+    double roll() const;
+    double pitch() const;
+    double yaw() const;
     Rotation operator*(const Rotation& other) const;
     Rotation inverse() const;
     Position rotate(const Position& pos) const;

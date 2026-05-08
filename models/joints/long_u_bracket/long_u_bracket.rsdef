@@ -23,6 +23,7 @@
     ],
 
     "kinematics": {
+        "default_body": "base",
         "bodies": [
             {
                 "id": "base",
@@ -32,7 +33,7 @@
                     "quat": [1, 0, 0, 0]
                 },
                 "geoms": [
-                    { "type": "mesh", "mesh": "mesh_body" , "material": null }
+                    { "type": "mesh", "mesh": "mesh_body" , "color": [0.6, 0.6, 0.6, 1.0] }
                 ]
             }
         ],

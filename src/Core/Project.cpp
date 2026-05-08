@@ -151,9 +151,12 @@ bool Project::loadProject(const QString& path) {
     file.close();
     
     directoryPath = QFileInfo(path).absolutePath();
-    currentScriptIdx = projectData["script"].toObject()["current"].toInt();
-    scriptPaths = projectData["script"].toObject()["paths"].toArray();
-    
+
+    QJsonObject scriptObj = projectData["script"].toObject();
+    scriptPaths   = scriptObj["paths"].toArray();
+    int scriptIdx = scriptObj["current"].toInt();
+    setScript(scriptIdx);
+
     parseAssembly();
     buildHierarchy();
     applyDefaults();
@@ -234,6 +237,9 @@ bool Project::saveProject() {
     QJsonObject assemblyObj;
     assemblyObj["components"] = componentsArray;
     assemblyObj["constraints"] = constraintsArray;
+    assemblyObj["transform"] = QJsonObject{
+        {"rotation", QJsonArray{rootRotation.roll(), rootRotation.pitch(), rootRotation.yaw()}}
+    };
 
     projectData["assembly"] = assemblyObj;
 
@@ -295,17 +301,11 @@ void Project::saveDefaults() {
  */
 
 void Project::parseAssembly() {
-    // load script path from script->path
-    QJsonObject scriptObj = projectData["script"].toObject();
-    QJsonArray scriptPaths = scriptObj["paths"].toArray();
-    int scriptIdx=scriptObj["current"].toInt();
-    setScript(scriptIdx);
-
-
     QJsonObject assemblyObj = projectData["assembly"].toObject();
     QJsonArray componentsArray = assemblyObj["components"].toArray();
     QJsonArray constraintsArray = assemblyObj["constraints"].toArray();
 
+    // components
     for (const auto val : componentsArray) {
         QJsonObject obj = val.toObject();
         ComponentInstance* component = new ComponentInstance();
@@ -354,6 +354,7 @@ void Project::parseAssembly() {
         }
     }
 
+    // constraints
     for (const auto val : constraintsArray) {
         QJsonObject obj = val.toObject();
         Constraint* constraint = new Constraint();
@@ -365,6 +366,17 @@ void Project::parseAssembly() {
         constraint->snapAngle = static_cast<float>(obj["snap_angle"].toDouble(0.0));
 
         constraintList.append(constraint);
+    }
+
+    // root transform
+    QJsonObject rootTransformObj = assemblyObj["transform"].toObject();
+    if (!rootTransformObj.isEmpty()) {
+        QJsonArray rotArray = rootTransformObj["rotation"].toArray();
+        if (rotArray.size() == 3) {
+            rootRotation = Rotation(rotArray[0].toDouble(), 
+                                    rotArray[1].toDouble(), 
+                                    rotArray[2].toDouble());
+        }
     }
 }
 
@@ -409,7 +421,7 @@ void Project::applyTransforms() {
         q.pop();
 
         if (current->parentUid == 0) {
-            Transform pConnRelTrans; 
+            Transform pConnRelTrans(Position(0, 0, 0), rootRotation); 
             Rotation mateRot(0, 1, 0, 0); 
             double halfAngle = current->snapAngle * 0.5 * (M_PI / 180.0);
             Rotation snapRot(std::cos(halfAngle), 0, 0, std::sin(halfAngle)); 
@@ -562,37 +574,40 @@ ComponentInstance* Project::createComponentInstance(const int parentUid,
  * Injects procedural skybox, a solid color floor, and dynamically scaled coordinate axes.
  */
 
-QString Project::generateMujocoXML() {
+QString Project::generateMujocoXML(bool isSimulation) {
     QString worldbody, constraints, contacts, assets, actuators, sensors;
     QSet<QString> processedModels;
     QSet<int> visitedComps; 
 
-    double axisScale = 0.5; 
-    double halfLen = axisScale / 2.0;
-    double radius = axisScale * 0.025;
+    QString baseAssets = "";
+    QString baseWorldBody = "";
 
-    QString baseAssets = 
-    "    <texture type=\"skybox\" builtin=\"gradient\" rgb1=\"0.07 0.08 0.10\" rgb2=\"0.05 0.04 0.045\" width=\"512\" height=\"512\"/>\n";
-    // "";
+    if (isSimulation) {
+        // SIMULATION MODE 
+        baseAssets = 
+            "    <texture type=\"skybox\" builtin=\"gradient\" rgb1=\"0.4 0.6 0.8\" rgb2=\"0 0 0\" width=\"512\" height=\"512\"/>\n"
+            "    <texture name=\"texplane\" type=\"2d\" builtin=\"checker\" rgb1=\"0.2 0.3 0.4\" rgb2=\"0.1 0.15 0.2\" width=\"512\" height=\"512\" mark=\"cross\" markrgb=\"0.8 0.8 0.8\"/>\n"
+            "    <material name=\"matplane\" reflectance=\"0.0\" texture=\"texplane\" texrepeat=\"10 10\" texuniform=\"true\"/>\n";
 
-    QString baseWorldBody = QString(
-        "    <light directional=\"true\" diffuse=\"0.6 0.6 0.6\" specular=\"0.2 0.2 0.2\" pos=\"-0.5 -.5 .5\" dir=\"1 1 -1\"/>\n"
-    );
+        baseWorldBody = 
+            "    <light directional=\"true\" diffuse=\"0.8 0.8 0.8\" specular=\"0.2 0.2 0.2\" pos=\"0 0 5\" dir=\"0 0 -1\"/>\n"
+            "    <geom name=\"floor\" type=\"plane\" pos=\"0 0 0\" size=\"0 0 1\" material=\"matplane\" condim=\"3\"/>\n";
+    } else {
+        // EDIT MODE 
+        baseAssets = 
+            "    <texture type=\"skybox\" builtin=\"gradient\" rgb1=\"0.07 0.08 0.10\" rgb2=\"0.05 0.04 0.045\" width=\"512\" height=\"512\"/>\n";
+        
+        baseWorldBody = 
+            "    <light directional=\"true\" diffuse=\"0.6 0.6 0.6\" specular=\"0.2 0.2 0.2\" pos=\"-0.5 -.5 .5\" dir=\"1 1 -1\"/>\n";
+    }
 
     if (rootComponent) {
-        worldbody = writeWorldBodyXML(rootComponent, visitedComps);
+        worldbody = writeWorldBodyXML(rootComponent, visitedComps, isSimulation);
+        visitedComps.clear();
+        writeContactXML(rootComponent, contacts, visitedComps);
         writeAssetsXML(rootComponent, assets, processedModels);
         writeActuatorsXML(rootComponent, actuators);
         writeSensorsXML(rootComponent, sensors);
-    }
-
-    for (Constraint* constraint : constraintList) {
-        ComponentInstance* compA = getComponentByUid(constraint->componentAUid);
-        ComponentInstance* compB = getComponentByUid(constraint->componentBUid);
-        
-        if (compA && compB) {
-            writeConstraintXML(compA, constraint->connectorA, compB, constraint->connectorB, constraints, contacts);
-        }
     }
 
     QString xml = QString(
@@ -606,18 +621,14 @@ QString Project::generateMujocoXML() {
         "</mujoco>"
     ).arg(
         projectData["meta"].toObject()["name"].toString(), 
-        baseAssets,
-        assets, 
-        baseWorldBody,
-        worldbody, 
-        constraints,
-        contacts,
-        actuators,
-        sensors
+        baseAssets, assets, 
+        baseWorldBody, worldbody, 
+        constraints, contacts, actuators, sensors
     );
 
     Log::info("Generated internal Mujoco XML successfully");
     // Log::info("Generated Mujoco XML successfully : \n" + xml);
+
     return xml;
 }
 
@@ -626,7 +637,7 @@ QString Project::generateMujocoXML() {
 
 
 
-QString Project::writeWorldBodyXML(ComponentInstance* comp, QSet<int>& visitedComponents) {
+QString Project::writeWorldBodyXML(ComponentInstance* comp, QSet<int>& visitedComponents, bool isSimulation) {
     if (!comp || !comp->blueprint) return "";
     
     if (visitedComponents.contains(comp->uid)) {
@@ -635,7 +646,16 @@ QString Project::writeWorldBodyXML(ComponentInstance* comp, QSet<int>& visitedCo
     }
     visitedComponents.insert(comp->uid);
     
-    QString xml = comp->blueprint->generateTreeXML(comp->uid, comp->selfConnector, comp->transform);
+    int uid=comp->uid;
+    QString selfConnector = (comp->parentUid==0) ? QString() : comp->selfConnector;
+    QString xml = comp->blueprint->generateTreeXML(comp->uid, selfConnector, comp->transform);
+
+    if (comp->parentUid == 0 && isSimulation) {
+        int insertPos = xml.indexOf(">"); // Finds the end of the first <body ...> tag
+        if (insertPos != -1) {
+            xml.insert(insertPos + 1, "\n      <freejoint name=\"robot_freejoint\"/>");
+        }
+    }
     
     for (ComponentInstance* child : comp->children) {
         QString childXML = writeWorldBodyXML(child, visitedComponents);
@@ -655,6 +675,23 @@ QString Project::writeWorldBodyXML(ComponentInstance* comp, QSet<int>& visitedCo
 
 
 
+
+
+void Project::writeContactXML(ComponentInstance* comp, QString& contacts, QSet<int>& visitedComponents) {
+    if (!comp || !comp->blueprint) return;
+    
+    if (visitedComponents.contains(comp->uid)) {
+        Log::error("Macro-graph cycle detected during contact generation! UID " + QString::number(comp->uid) + " is looping.");
+        return;
+    }
+    visitedComponents.insert(comp->uid);
+
+    contacts += comp->blueprint->generateContactsXML(comp->uid);
+    
+    for (ComponentInstance* child : comp->children) {
+        writeContactXML(child, contacts, visitedComponents);
+    }
+}
 
 
 

@@ -81,19 +81,27 @@ void Application::createProject(const QString& projectPath) {
 
 
 void Application::openProject(const QString& projectPath) {
+    bool dev_flag = false;
+    QString catalogPath = getModelsDirectory() + "/Catalog.json";
+
+    if(dev_flag){
+        LibraryManager::getInstance().load("./models/Catalog.json");
+    }else{
+        if (QFile::exists(catalogPath)) {
+            Log::info("Loading from downloaded Catalog: " + catalogPath);
+            LibraryManager::getInstance().load(catalogPath);
+        } else {
+            QMessageBox::critical(nullptr, "Error", "Download/Fetch the component library before opening a project.");
+            return;
+        }
+    }
+
+
     launcher.hide();
     
     if (simManager) {
         simManager->pause();
         delete simManager;
-    }
-
-    QString catalogPath = getModelsDirectory() + "/Catalog.json";
-    if (QFile::exists(catalogPath)) {
-        Log::info("Loading from downloaded Catalog: " + catalogPath);
-        LibraryManager::getInstance().load(catalogPath);
-    } else {
-        LibraryManager::getInstance().load("./models/Catalog.json");
     }
 
     currentProject.loadProject(projectPath);

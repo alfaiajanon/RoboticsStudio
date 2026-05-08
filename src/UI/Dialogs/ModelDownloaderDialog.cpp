@@ -1,4 +1,5 @@
 #include "ModelDownloaderDialog.h"
+#include "Core/Application.h" 
 #include <QVBoxLayout>
 #include <QJsonDocument>
 #include <QJsonArray>
@@ -6,7 +7,6 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QMessageBox>
-#include <QStandardPaths>
 
 ModelDownloaderDialog::ModelDownloaderDialog(QWidget* parent) : QDialog(parent) {
     setWindowTitle("Syncing RoboticsStudio Models");
@@ -30,12 +30,12 @@ ModelDownloaderDialog::ModelDownloaderDialog(QWidget* parent) : QDialog(parent) 
 
     m_networkManager = new QNetworkAccessManager(this);
     
-    // Set our safe, cross-platform AppData directory
-    m_localBaseDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    // Let Application handle the exact AppData directory logic
+    m_localBaseDir = Application::getInstance()->getModelsDirectory();
 }
 
 void ModelDownloaderDialog::startSync() {
-    // 1. Fetch remote Catalog.json
+    // Fetch remote Catalog.json
     QUrl catalogUrl(m_remoteBaseUrl + "models/Catalog.json");
     QNetworkRequest request(catalogUrl);
     
@@ -57,13 +57,8 @@ void ModelDownloaderDialog::onCatalogDownloaded(QNetworkReply* reply) {
     QJsonObject remoteCatalog = doc.object();
     QString remoteVersion = remoteCatalog["version"].toString();
 
-    // --- VERSION CHECK LOGIC HERE ---
-    // Read your local Catalog.json. If local version == remoteVersion, return early.
-    // For this example, we assume an update is needed and proceed.
-    
     m_statusLabel->setText("Preparing update block to v" + remoteVersion + "...");
     
-    // Parse the Catalog to fill the component queue
     m_componentQueue.clear();
     QJsonArray categories = remoteCatalog["Categories"].toArray();
     for (const QJsonValue& catVal : categories) {
@@ -88,23 +83,18 @@ void ModelDownloaderDialog::processNextComponent() {
         return;
     }
 
+    // Path is now strictly "motor/dc_gear/..."
     QString rsdefPath = m_componentQueue.takeFirst();
     
-    // Clean the path by removing "./" if it exists so URLs and local dirs map perfectly
-    QString cleanPath = rsdefPath;
-    if (cleanPath.startsWith("./")) {
-        cleanPath = cleanPath.mid(2);
-    }
-    
-    // Compute paths using the AppData directory
-    m_currentRsdefLocalPath = m_localBaseDir + "/" + cleanPath; 
-    m_currentRelativeDir = QFileInfo(cleanPath).path(); // e.g., "models/servo/servo_sg90"
+    // m_localBaseDir already ends in /models, so we just append
+    m_currentRsdefLocalPath = m_localBaseDir + "/" + rsdefPath; 
+    m_currentRelativeDir = QFileInfo(rsdefPath).path(); // e.g., "motor/dc_gear_60rpm"
     
     m_statusLabel->setText("Processing Component: " + QFileInfo(rsdefPath).fileName());
     m_fileLabel->setText("Fetching definition file...");
 
-    // Download the .rsdef file first
-    QUrl url(m_remoteBaseUrl + cleanPath);
+    // The remote GitHub server still needs "models/" injected into the URL
+    QUrl url(m_remoteBaseUrl + "models/" + rsdefPath);
     QNetworkReply* reply = m_networkManager->get(QNetworkRequest(url));
     connect(reply, &QNetworkReply::finished, this, [this, reply]() { onRsdefDownloaded(reply); });
 }
@@ -119,7 +109,6 @@ void ModelDownloaderDialog::onRsdefDownloaded(QNetworkReply* reply) {
     QByteArray data = reply->readAll();
     reply->deleteLater();
 
-    // Save the .rsdef to disk in AppData
     QFileInfo fileInfo(m_currentRsdefLocalPath);
     fileInfo.absoluteDir().mkpath("."); 
     QFile file(m_currentRsdefLocalPath);
@@ -135,18 +124,18 @@ void ModelDownloaderDialog::onRsdefDownloaded(QNetworkReply* reply) {
 void ModelDownloaderDialog::extractResourcesFromRsdef(const QJsonObject& rsdefObj, const QString& baseLocalPath) {
     m_resourceQueue.clear();
     
-    // 1. Icon
+    // Inject "models/" for all remote URLs, keep local paths as is
+
     if (rsdefObj.contains("meta")) {
         QString iconName = rsdefObj["meta"].toObject()["icon_path"].toString();
         if (!iconName.isEmpty()) {
             m_resourceQueue.append({ 
-                m_remoteBaseUrl + m_currentRelativeDir + "/" + iconName, 
+                m_remoteBaseUrl + "models/" + m_currentRelativeDir + "/" + iconName, 
                 baseLocalPath + "/" + iconName 
             });
         }
     }
 
-    // 2. Meshes & Materials
     if (rsdefObj.contains("resources")) {
         QJsonObject resObj = rsdefObj["resources"].toObject();
         
@@ -154,7 +143,7 @@ void ModelDownloaderDialog::extractResourcesFromRsdef(const QJsonObject& rsdefOb
         for (const QString& key : meshes.keys()) {
             QString meshPath = meshes[key].toString();
             m_resourceQueue.append({ 
-                m_remoteBaseUrl + m_currentRelativeDir + "/" + meshPath, 
+                m_remoteBaseUrl + "models/" + m_currentRelativeDir + "/" + meshPath, 
                 baseLocalPath + "/" + meshPath 
             });
         }
@@ -163,7 +152,7 @@ void ModelDownloaderDialog::extractResourcesFromRsdef(const QJsonObject& rsdefOb
         for (const QString& key : materials.keys()) {
             QString matPath = materials[key].toString();
             m_resourceQueue.append({ 
-                m_remoteBaseUrl + m_currentRelativeDir + "/" + matPath, 
+                m_remoteBaseUrl + "models/" + m_currentRelativeDir + "/" + matPath, 
                 baseLocalPath + "/" + matPath 
             });
         }
@@ -221,8 +210,7 @@ void ModelDownloaderDialog::finishSync() {
     m_fileLabel->setText("All files up to date.");
     m_bottomProgressBar->setValue(m_bottomProgressBar->maximum());
     
-    // Save the new Catalog.json to local disk so LibraryManager can read it
-    QString localCatalogPath = m_localBaseDir + "/models/Catalog.json";
+    QString localCatalogPath = m_localBaseDir + "/Catalog.json";
     QFileInfo fi(localCatalogPath);
     fi.absoluteDir().mkpath(".");
     QFile catalogFile(localCatalogPath);

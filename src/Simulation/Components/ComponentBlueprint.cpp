@@ -144,6 +144,7 @@ void ComponentBlueprint::parseResources(const QJsonObject& resourcesObj) {
  */
 void ComponentBlueprint::parseKinematics(const QJsonObject& kinematicsObj) {
     kinematics.clear();
+    kinematics.setDefaultNode(kinematicsObj["default_body"].toString());    
 
     QJsonArray bodiesArr = kinematicsObj["bodies"].toArray();
     for (const auto& val : bodiesArr) {
@@ -162,6 +163,10 @@ void ComponentBlueprint::parseKinematics(const QJsonObject& kinematicsObj) {
             
             if (gObj.contains("mesh")) geom.mesh = modelId + "_" + gObj["mesh"].toString();
             if (gObj.contains("material")) geom.material = "mat_" + modelId + "_" + gObj["material"].toString();
+            if (gObj.contains("color") and gObj["material"].toString().isEmpty()) {
+                QJsonArray colorArr = gObj["color"].toArray();
+                for (int i = 0; i < colorArr.size(); ++i) geom.color.append(colorArr[i].toDouble());
+            }
             
             if (gObj.contains("size")) {
                 QJsonArray sizeArr = gObj["size"].toArray();
@@ -194,6 +199,7 @@ void ComponentBlueprint::parseKinematics(const QJsonObject& kinematicsObj) {
         edge.damping = jObj["damping"].toDouble(0.0);
         edge.armature = jObj["armature"].toDouble(0.0);
         edge.frictionloss = jObj["frictionloss"].toDouble(0.0);
+        edge.collision = jObj["collision"].toBool(true);
         
         if (jObj.contains("range")) {
             QJsonArray rangeArr = jObj["range"].toArray();
@@ -262,6 +268,13 @@ void ComponentBlueprint::parseIO(const QJsonObject& ioObj) {
             }
         }
 
+        if(inObj.contains("ctrlrange")) {
+            QJsonArray ctrlRangeArr = inObj["ctrlrange"].toArray();
+            if (ctrlRangeArr.size() == 2) {
+                def.ctrlrange = qMakePair(static_cast<float>(ctrlRangeArr[0].toDouble()), static_cast<float>(ctrlRangeArr[1].toDouble()));
+            }
+        }
+
         if (inObj.contains("forcerange")) {
             QJsonArray frArr = inObj["forcerange"].toArray();
             if (frArr.size() == 2) {
@@ -322,14 +335,9 @@ QString ComponentBlueprint::generateTreeXML(const int uid, const QString& rootCo
         Transform nodeLocalTransform = kinematics.getNode(rootNodeId).localTransform;
         rootRelTransform = baseTransform * nodeLocalTransform;
     } else {
-        // Fallback
-        QList<QString> availableNodes = kinematics.getNodes().keys();
-        if (!availableNodes.isEmpty()) {
-            rootNodeId = availableNodes.first();
-        } else {
-            Log::error("Component blueprint has no bodies to render! UID: " + QString::number(uid));
-            return xml;
-        }
+        // Fallback (needed for root node)
+        Node defaultNode = kinematics.getDefaultNode();
+        rootNodeId = defaultNode.id;
     }
 
     QSet<QString> visited;
@@ -374,6 +382,8 @@ void ComponentBlueprint::traverseGraph(QString& outXML, const QString& currentNo
             }
             if(!geom.material.isEmpty() && geom.material != ("mat_" + modelId + "_")) {
                 outXML += QString(" material=\"%1\"").arg(geom.material);
+            }else if(!geom.color.isEmpty()){
+                outXML += QString(" rgba=\"%1 %2 %3 %4\"").arg(geom.color[0]).arg(geom.color[1]).arg(geom.color[2]).arg(geom.color.size() > 3 ? geom.color[3] : 1.0);
             }
         } else if ((geom.type == "box" || geom.type == "cylinder" || geom.type == "capsule") && geom.size.size() > 0) {
             outXML += " size=\"";
@@ -453,14 +463,24 @@ QString ComponentBlueprint::generateActuatorXML(const int uid) const {
     for (const IODef& def : inputDefs) {
         if (!def.actuatorType.isEmpty() && !def.targetJoint.isEmpty()) {
             
-            // 1. Base tag with name and joint
+            // Base tag with name and joint
             QString actuatorOut = QString("    <%1 name=\"%2%3\" joint=\"%2%4\"")
                                     .arg(def.actuatorType)
                                     .arg(prefix)
                                     .arg(def.name)
                                     .arg(def.targetJoint);
 
-            // 2. Add force limits if they exist
+            // Add control range if it exists
+            if (def.range.first != 0.0 || def.range.second != 0.0) {
+                actuatorOut += QString(" range=\"%1 %2\"").arg(def.range.first).arg(def.range.second);
+            }
+
+            if(def.ctrlrange.first != 0.0 || def.ctrlrange.second != 0.0) {
+                actuatorOut += QString(" ctrlrange=\"%1 %2\"").arg(def.ctrlrange.first).arg(def.ctrlrange.second);
+                actuatorOut += QString(" ctrllimited=\"true\"");
+            }
+
+            // Add force limits if they exist
             if (def.forceRange.size() == 2) {
                 actuatorOut += QString(" forcerange=\"%1 %2\"")
                                 .arg(def.forceRange[0])
@@ -475,11 +495,10 @@ QString ComponentBlueprint::generateActuatorXML(const int uid) const {
                 actuatorOut += QString(" kv=\"%1\"").arg(def.kv);
             }
             else if (def.actuatorType == "motor") {
-                // Direct torque motors usually just need a gear ratio
                 actuatorOut += QString(" gear=\"1\""); 
             }
 
-            // 4. Close the tag and append
+            
             actuatorOut += "/>\n";
             xml += actuatorOut;
         }
@@ -487,6 +506,24 @@ QString ComponentBlueprint::generateActuatorXML(const int uid) const {
     return xml;
 }
 
+
+
+
+QString ComponentBlueprint::generateContactsXML(const int uid) const {
+    QString exclude_xml = "";
+    QString prefix = "comp_" + QString::number(uid) + "_";
+    
+    QList<Edge> edges = kinematics.getEdges();
+    for (const Edge& edge : edges) {
+        if(edge.collision == false){
+            exclude_xml += QString("    <exclude body1=\"%1%2\" body2=\"%1%3\"/>\n")
+                            .arg(prefix)
+                            .arg(edge.bodyA)
+                            .arg(edge.bodyB);
+        }
+    }
+    return exclude_xml;
+}
 
 
 

@@ -114,16 +114,16 @@ void EditorWindow::setupMenuBar() {
     prefsAct->setShortcut(QKeySequence::Preferences);
 
     QMenu* viewMenu = topMenu->addMenu("View");
-    QAction* toggleGridAct = viewMenu->addAction("Toggle Grid");
-    toggleGridAct->setCheckable(true); 
-    toggleGridAct->setChecked(true);   
-    viewMenu->addSeparator();
-    QAction* resetLayoutAct = viewMenu->addAction("Reset Layout");
     QAction* frameSceneAct = viewMenu->addAction("Frame Scene");
     frameSceneAct->setShortcut(QKeySequence(Qt::Key_F));
 
+    QMenu* debugMenu = topMenu->addMenu("Debug");
+    QAction* dumpXMLAct = debugMenu->addAction("Dump Mujoco XML (Edit Mode)");
+    QAction* dumpXMLActSim = debugMenu->addAction("Dump Mujoco XML (Simulation Mode)");
+
     QMenu* helpMenu = topMenu->addMenu("Help");
     QAction* shortcutsAct = helpMenu->addAction("Keyboard Shortcuts");
+    QAction* rsDocsAct  = helpMenu->addAction("Robotics Studio Documentation");
     QAction* docsAct = helpMenu->addAction("MuJoCo Documentation");
     helpMenu->addSeparator();
     QAction* aboutAct = helpMenu->addAction("About RoboticsStudio");
@@ -173,6 +173,62 @@ void EditorWindow::setupMenuBar() {
             Toast::showMessage(this, "Project saved successfully!");
         }
     });
+
+    connect(dumpXMLActSim, &QAction::triggered, this, []() {
+        Project* project = Application::getInstance()->getProject();
+        QString xml = project->generateMujocoXML(true);
+        Log::info("Current Mujoco XML (Simulation Mode):\n" + xml);
+    });
+
+    connect(dumpXMLAct, &QAction::triggered, this, []() {
+        Project* project = Application::getInstance()->getProject();
+        QString xml = project->generateMujocoXML(false);
+        Log::info("Current Mujoco XML (Edit Mode):\n" + xml);
+    });
+
+
+    connect(rsDocsAct, &QAction::triggered, this, []() {
+        QMessageBox::information(nullptr, "Robotics Studio Documentation", 
+            "For documentation and tutorials, please visit our GitHub repository:\n\n"
+            "https://github.com/robotics-studio/robotics-studio"
+        );
+    });
+
+    connect(docsAct, &QAction::triggered, this, []() {
+        QDesktopServices::openUrl(QUrl("https://mujoco.org/book/index.html"));
+    });
+
+    connect(aboutAct, &QAction::triggered, this, [this]() {
+        QMessageBox::about(this, "About Robotics Studio", 
+            "Robotics Studio v1.0\n\n"
+            "A robotics simulation and design tool built on top of MuJoCo.\n"
+            "Developed by the Robotics Studio Team.\n\n"
+            "For documentation and source code, visit our GitHub repository."
+        );
+    });
+
+    connect(shortcutsAct, &QAction::triggered, this, [this]() {
+        QString shortcutsInfo = 
+            "Keyboard Shortcuts:\n\n"
+            "File Operations:\n"
+            "  Ctrl+N: New Project\n"
+            "  Ctrl+O: Open Project\n"
+            "  Ctrl+S: Save Project\n"
+            "  Ctrl+Shift+S: Save Project As\n"
+            "  Ctrl+Q: Exit Application\n\n"
+            "Edit Operations:\n"
+            "  Ctrl+Z: Undo\n"
+            "  Ctrl+Y: Redo\n"
+            "  Ctrl+, : Preferences\n\n"
+            "View Operations:\n"
+            "  F: Frame Scene\n\n"
+            "Simulation Controls:\n"
+            "  Space: Play/Pause Simulation (when viewport is focused)\n";
+
+        QMessageBox::information(this, "Keyboard Shortcuts", shortcutsInfo);
+    });
+
+
 }
 
 
@@ -271,12 +327,26 @@ void EditorWindow::setupMainViewport() {
     playBtn->setStyleSheet("background-color: #2E7D32; color: white; padding: 8px 15px; border-radius: 4px; font-size: 14px;");
     hudLayout->addWidget(playBtn, 0, Qt::AlignBottom | Qt::AlignLeft);
 
-    connect(playBtn, &QPushButton::clicked, this, [this]() {
+    Project* project = Application::getInstance()->getProject();
+    auto reloadSimulation = [this](Project* project, SimulationManager* simManager, bool isSimulation) {
+        std::lock_guard<std::mutex> lock(simManager->physicsMutex);
+        
+        MujocoContext::getInstance()->loadModelFromString(
+            project->generateMujocoXML(isSimulation).toStdString()
+        );
+        simManager->cacheMujocoIds(
+            project->getRootComponent(), 
+            MujocoContext::getInstance()->getModel()
+        );
+    };
+
+    connect(playBtn, &QPushButton::clicked, this, [this, reloadSimulation]() {
         SimulationManager* sim = Application::getInstance()->getSimulationManager();
         
         if (sim->getState() == SimulationState::EDITING) {
             Project* project = Application::getInstance()->getProject();
             project->reloadScript();
+            reloadSimulation(project, sim, true);
             
             if (this->plotPanel) {
                 this->plotPanel->clearAllGraphs();
@@ -291,6 +361,11 @@ void EditorWindow::setupMainViewport() {
             
         } else {
             sim->edit();
+            Project* project = Application::getInstance()->getProject();
+            reloadSimulation(project, sim, false);
+
+            frameScene();
+
             playBtn->setText("▶ PLAY");
             playBtn->setStyleSheet("background-color: #2E7D32; color: white; padding: 8px 15px; border-radius: 4px; font-weight: bold; font-size: 14px;");
             

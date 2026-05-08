@@ -52,6 +52,41 @@ Rotation::Rotation() : w(1), x(0), y(0), z(0) {}
 Rotation::Rotation(double w_, double x_, double y_, double z_) : w(w_), x(x_), y(y_), z(z_) {}
 
 
+Rotation::Rotation(double roll, double pitch, double yaw) {
+    double halfRoll = roll * 0.5 * (M_PI / 180.0);
+    double halfPitch = pitch * 0.5 * (M_PI / 180.0);
+    double halfYaw = yaw * 0.5 * (M_PI / 180.0);
+
+    double cr = std::cos(halfRoll);
+    double sr = std::sin(halfRoll);
+    double cp = std::cos(halfPitch);
+    double sp = std::sin(halfPitch);
+    double cy = std::cos(halfYaw);
+    double sy = std::sin(halfYaw);
+
+    w = cr * cp * cy + sr * sp * sy;
+    x = sr * cp * cy - cr * sp * sy;
+    y = cr * sp * cy + sr * cp * sy;
+    z = cr * cp * sy - sr * sp * cy;
+}
+
+
+double Rotation::roll() const {
+    return std::atan2(2.0 * (w * x + y * z), 1.0 - 2.0 * (x * x + y * y)) * (180.0 / M_PI);
+}
+
+double Rotation::pitch() const {
+    double sinp = 2.0 * (w * y - z * x);
+    if (std::abs(sinp) >= 1)
+        return std::copysign(90.0, sinp); // use 90 degrees if out of range
+    else
+        return std::asin(sinp) * (180.0 / M_PI);
+}
+
+double Rotation::yaw() const {
+    return std::atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)) * (180.0 / M_PI);
+}
+
 
 
 /*

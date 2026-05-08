@@ -4,7 +4,6 @@
             "name": "Linux",
             "includePath": [
                 "${workspaceFolder}/**",
-
                 "/usr/include/qt6",
                 "/usr/include/qt6/QtCore",
                 "/usr/include/qt6/QtGui",
@@ -13,13 +12,15 @@
                 "/usr/include/qt6/QtOpenGLWidgets",
                 "/usr/include/qt6/QtOpenGL",
                 "/usr/include/qt6/QtQml"
-                // "/usr/include/qt6/QtOpenGLFunctions"
             ],
             "defines": [],
             "compilerPath": "/usr/bin/g++",
             "cStandard": "gnu17",
             "cppStandard": "gnu++20",
-            "intelliSenseMode": "linux-gcc-x64"
+            "intelliSenseMode": "linux-gcc-x64",
+            "compileCommands": [
+                "${workspaceFolder}/build/compile_commands.json"
+            ]
         }
     ],
     "version": 4

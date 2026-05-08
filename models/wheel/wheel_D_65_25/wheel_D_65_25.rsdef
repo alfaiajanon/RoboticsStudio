@@ -1,0 +1,67 @@
+{
+    "meta": {
+        "id": "wheel_D_65_25",
+        "name": "Wheel D_65_25",
+        "version": "1.0.0",
+        "author": "Anon",
+        "icon_path": "wheel_D_65_25.png"
+    },
+
+    "resources": {
+        "meshes": {
+            "main_body": "meshes/main_body.obj",
+            "tire": "meshes/tire.obj"
+        },
+        "materials": {
+        }
+    },
+    
+    "specs": {
+    },
+
+    "pins": [
+    ],
+
+    "kinematics": {
+        "default_body": "base",
+        "bodies": [
+            {
+                "id": "base",
+                "mass": 0.1, 
+                "transform": {
+                    "pos": [0, 0, 0.03],
+                    "quat": [1, 0, 0, 0]
+                },
+                "geoms": [
+                    { 
+                        "type": "mesh", 
+                        "mesh": "main_body", 
+                        "color": [0.8, 0.7, 0.2, 1.0] 
+                    },
+                    { 
+                        "type": "mesh", 
+                        "mesh": "tire", 
+                        "color": [0.1, 0.1, 0.1, 1.0],
+                        "friction": [1.0, 0.005, 0.0001] 
+                    }
+                ]
+            }
+        ],
+        "joints": [
+        ]
+    },
+    
+    "connectors": [
+        {
+            "id": "center_mount",
+            "body": "base",
+            "description": "",
+            "mechanics": { "snap_angles": [0, 180] },
+            "transform": {
+                "pos": [0, 0, 0],
+                "quat": [0, 1, 0, 0]
+            }
+        }
+    ]
+
+}

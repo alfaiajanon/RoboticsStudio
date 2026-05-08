@@ -21,6 +21,10 @@ void KinematicGraph::addNode(const Node& node) {
 }
 
 
+void KinematicGraph::setDefaultNode(const QString& nodeId) {
+    defaultNodeId = nodeId;
+}
+
 
 
 /*
@@ -42,6 +46,10 @@ Node KinematicGraph::getNode(const QString& id) const {
     return nodes.value(id, Node());
 }
 
+
+Node KinematicGraph::getDefaultNode() const {
+    return nodes.value(defaultNodeId, Node());
+}
 
 
 
@@ -70,6 +78,10 @@ QList<Edge> KinematicGraph::getEdgesForNode(const QString& nodeId) const {
     return connectedEdges;
 }
 
+
+QList<Edge> KinematicGraph::getEdges() const {
+    return edges;
+}
 
 
 

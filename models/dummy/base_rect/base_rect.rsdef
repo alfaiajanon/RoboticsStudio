@@ -21,6 +21,7 @@
     ],
 
     "kinematics": {
+        "default_body": "base",
         "bodies": [
             {
                 "id": "base",

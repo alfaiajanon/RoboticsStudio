@@ -37,8 +37,11 @@ class Project {
         QString directoryPath;
         QJsonObject projectData;
         
-        int nextComponentUid = 1; 
+        int nextComponentUid = 1; // for auto-assigning UIDs to new components
+
         ComponentInstance* rootComponent = nullptr;
+        Rotation rootRotation; 
+
         QMap<int, ComponentInstance*> componentMap;
         QList<Constraint*> constraintList;
 
@@ -58,7 +61,8 @@ class Project {
         void applyDefaults();
         void saveDefaults();
 
-        QString writeWorldBodyXML(ComponentInstance* comp, QSet<int>& visitedComponents);
+        QString writeWorldBodyXML(ComponentInstance* comp, QSet<int>& visitedComponents, bool isSimulation = false);
+        void writeContactXML(ComponentInstance* comp, QString& contacts, QSet<int>& visitedComponents);
         void writeAssetsXML(ComponentInstance* comp, QString& assetsOut, QSet<QString>& processedModels);
         void writeActuatorsXML(ComponentInstance* comp, QString& actuatorsOut);
         void writeSensorsXML(ComponentInstance* comp, QString& sensorsOut);
@@ -84,6 +88,8 @@ class Project {
         QList<PlotTarget>* getActivePlots(){ return &activePlots; }
         ComponentInstance* getRootComponent();
         ComponentInstance* getComponentByUid(int uid);
+        Rotation getRootRotation() const { return rootRotation; }
+        void setRootRotation(const Rotation& rot) { rootRotation = rot; }
         QMap<int, ComponentInstance*>& getComponentMap();
         MicroController* getMicroController() { return &microcontroller; }
 
@@ -97,8 +103,10 @@ class Project {
                                                     const float snapAngle);
         
     
-        void setScript(int idx);
+        
         void reloadScript();
+        void setScript(int idx);
+        void setScriptPaths(QJsonArray newarr){ scriptPaths = newarr; };
         QJsonArray getScriptPaths() const { return scriptPaths; }
         QString getScriptPath() const {return scriptPaths[currentScriptIdx].toString(); }
         QString getScript() const { return currentScriptContent; }
@@ -106,5 +114,5 @@ class Project {
         QString getProjectDirectory() const { return directoryPath; }
 
         
-        QString generateMujocoXML();
+        QString generateMujocoXML(bool forSimulation = false);
 };

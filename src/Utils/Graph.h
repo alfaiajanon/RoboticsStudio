@@ -45,6 +45,7 @@ struct Edge {
     double damping = 0.0;
     double armature = 0.0;
     double frictionloss = 0.0;
+    bool collision = true;
 };
 
 
@@ -55,16 +56,20 @@ public:
     KinematicGraph();
     ~KinematicGraph();
 
+    void setDefaultNode(const QString& nodeId);
     void addNode(const Node& node);
     void addEdge(const Edge& edge);
 
+    Node getDefaultNode() const;
     Node getNode(const QString& id) const;
     QMap<QString, Node> getNodes() const;
+    QList<Edge> getEdges() const;
     QList<Edge> getEdgesForNode(const QString& nodeId) const;
     bool containsNode(const QString& id) const;
     void clear();
 
 private:
+    QString defaultNodeId;
     QMap<QString, Node> nodes;
     QList<Edge> edges;
 };

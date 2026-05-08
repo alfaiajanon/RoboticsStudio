@@ -19,28 +19,30 @@ class DcGearEmulatorCpp : public Emulator {
 
         
         void update() override {
-            if (component->blueprint) {
-                auto params = component->blueprint->emulatorDef.parameters;
-                if (params.contains("max_rpm_at_12v")) maxRpm = params["max_rpm_at_12v"].toDouble();
-                if (params.contains("deadband_pwm")) deadbandPwm = params["deadband_pwm"].toInt();
-                if (params.contains("acceleration_delay_ms")) accelDelayMs = params["acceleration_delay_ms"].toDouble();
-            }
+            // if (component->blueprint) {
+            //     auto params = component->blueprint->emulatorDef.parameters;
+            //     if (params.contains("max_rpm_at_12v")) maxRpm = params["max_rpm_at_12v"].toDouble();
+            //     if (params.contains("deadband_pwm")) deadbandPwm = params["deadband_pwm"].toInt();
+            //     if (params.contains("acceleration_delay_ms")) accelDelayMs = params["acceleration_delay_ms"].toDouble();
+            // }
 
-            double targetVelocity = 0.0;
-            if (std::abs(currentPwm) >= deadbandPwm) {
-                double targetRpm = (static_cast<double>(currentPwm) / 255.0) * maxRpm;
-                targetVelocity = targetRpm * (M_PI / 30.0);
-            }
+            // double targetVelocity = 0.0;
+            // if (std::abs(currentPwm) >= deadbandPwm) {
+            //     double targetRpm = (static_cast<double>(currentPwm) / 255.0) * maxRpm;
+            //     targetVelocity = targetRpm * (M_PI / 30.0);
+            // }
 
-            if (accelDelayMs > 0) {
-                double dt = 16.0; 
-                double alpha = std::clamp(dt / accelDelayMs, 0.0, 1.0);
-                currentVelocityRadS += alpha * (targetVelocity - currentVelocityRadS);
-            } else {
-                currentVelocityRadS = targetVelocity;
-            }
+            // if (accelDelayMs > 0) {
+            //     double dt = 16.0; 
+            //     double alpha = std::clamp(dt / accelDelayMs, 0.0, 1.0);
+            //     currentVelocityRadS += alpha * (targetVelocity - currentVelocityRadS);
+            // } else {
+            //     currentVelocityRadS = targetVelocity;
+            // }
 
-            component->setActuatorTarget("target_velocity", currentVelocityRadS);
+            // component->setActuatorTarget("target_velocity", currentVelocityRadS);
+
+            component->setActuatorTarget("target_velocity", currentPwm);
         }
 
 
