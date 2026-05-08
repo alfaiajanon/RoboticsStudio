@@ -39,6 +39,7 @@
     ],
 
     "kinematics": {
+        "default_body": "base",
         "bodies": [
             {
                 "id": "base",
@@ -73,9 +74,10 @@
                     "pos": [0, 0.0, 0],
                     "quat": [0.7071, 0.7071, 0, 0] 
                 },
-                "damping": 0.1,
-                "armature": 0.02,
-                "frictionloss": 0.05
+                "damping": 0.005,
+                "armature": 0.01,
+                "frictionloss": 0.01,
+                "collision": false
             }
         ]
     },
@@ -129,11 +131,11 @@
                 "name": "target_velocity",
                 "unit": "rad/s",
                 "data_type": "float",
-                "range": [-6.28, 6.28],
+                "ctrlrange": [-6.28, 6.28],
                 "target_joint": "dc_joint",
                 "actuator_type": "velocity",
-                "kv": 5.0,
-                "forcerange": [-0.15, 0.15],
+                "kv": 10.0,
+                "forcerange": [-0.35, 0.35],
                 "pin_required": ["motor_a", "motor_b"]
             }
         ],

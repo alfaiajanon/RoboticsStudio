@@ -41,6 +41,7 @@
     ],
 
     "kinematics": {
+        "default_body": "base",
         "bodies": [
             {
                 "id": "base",
@@ -78,7 +79,8 @@
                 "range": [-90, 90],
                 "damping": 0.05,
                 "armature": 0.01,
-                "frictionloss": 0.05
+                "frictionloss": 0.05,
+                "collision": false
             }
         ]
     },
@@ -152,7 +154,7 @@
                 "name": "target_angle",
                 "unit": "degrees",
                 "data_type": "float",
-                "range": [-90, 90],
+                "ctrlrange": [-90, 90],
                 "target_joint": "servo_joint",
                 "actuator_type": "position",
                 "kp": 25.0,
