@@ -26,7 +26,7 @@
  */
 EditorWindow::EditorWindow(QWidget* parent) : QMainWindow(parent){
     this->setWindowTitle("Robotics Studio");
-    this->resize(1400, 850);
+    this->resize(1600, 950);
 
     topDownSplitter=nullptr;
     viewport=nullptr;

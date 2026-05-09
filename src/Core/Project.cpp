@@ -595,7 +595,7 @@ QString Project::generateMujocoXML(bool isSimulation) {
     } else {
         // EDIT MODE 
         baseAssets = 
-            "    <texture type=\"skybox\" builtin=\"gradient\" rgb1=\"0.07 0.08 0.10\" rgb2=\"0.05 0.04 0.045\" width=\"512\" height=\"512\"/>\n";
+            "    <texture type=\"skybox\" builtin=\"gradient\" rgb1=\"0.07 0.08 0.10\" rgb2=\"0.06 0.065 0.07\" width=\"512\" height=\"512\"/>\n";
         
         baseWorldBody = 
             "    <light directional=\"true\" diffuse=\"0.6 0.6 0.6\" specular=\"0.2 0.2 0.2\" pos=\"-0.5 -.5 .5\" dir=\"1 1 -1\"/>\n";
