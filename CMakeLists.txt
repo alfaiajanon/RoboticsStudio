@@ -10,7 +10,7 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_CXX_STANDARD 17)
 set(MUJOCO_DIR "${CMAKE_SOURCE_DIR}/extern/mujoco-3.3.7")
 
-set(APP_VERSION "0.1.0-alpha")
+set(APP_VERSION "0.2.0-alpha")
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Core/Version.h.in"
     "${CMAKE_CURRENT_BINARY_DIR}/generated/Version.h"
