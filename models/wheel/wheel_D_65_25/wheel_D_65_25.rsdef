@@ -4,7 +4,7 @@
         "name": "Wheel D_65_25",
         "version": "1.0.0",
         "author": "Anon",
-        "icon_path": "wheel_D_65_25.png"
+        "icon_path": "wheel.png"
     },
 
     "resources": {
