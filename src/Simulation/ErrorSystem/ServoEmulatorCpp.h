@@ -1,6 +1,7 @@
 #include "Emulator.h"
-#include "Simulation/Components/ComponentInstance.h"
-#include "Core/Log.h"
+
+#include "Document/Components/ComponentInstance.h"
+#include "Utils/Log.h"
 
 
 class ServoEmulatorCpp : public Emulator {
@@ -12,7 +13,8 @@ class ServoEmulatorCpp : public Emulator {
         using Emulator::Emulator;
 
         void update() override {
-            component->setActuatorTarget("target_angle", logicalTarget);
+            IOData targetData = logicalTarget;
+            component->setActuatorTarget("target_angle", targetData);
         }
 
         void reset() override {
@@ -27,6 +29,10 @@ class ServoEmulatorCpp : public Emulator {
         }
         
         Q_INVOKABLE double read_angle() {
-            return component->getSensorCurrent("target_angle");
+            if(std::holds_alternative<double>(component->getSensorCurrent("target_angle"))) {
+                return std::get<double>(component->getSensorCurrent("target_angle"));
+            } else {
+                return 0.0;
+            }
         }
 };

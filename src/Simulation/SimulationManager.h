@@ -4,8 +4,12 @@
 #include <mutex>
 #include <atomic>
 #include <QElapsedTimer>
+#include "Utils/Global.h"
 #include "mujoco/mujoco.h"
-#include "Simulation/Components/ComponentInstance.h"
+
+class ComponentInstance;
+class Project;
+
 
 enum class SimulationState {
     PAUSED,
@@ -15,8 +19,12 @@ enum class SimulationState {
 
 
 
+
+
 class SimulationManager : public QObject {
     Q_OBJECT
+
+    Project* project;
 
     int frameCount = 0;
     QElapsedTimer fpsTimer;
@@ -34,7 +42,7 @@ class SimulationManager : public QObject {
     public:
         std::mutex physicsMutex;
 
-        SimulationManager();
+        SimulationManager(Project* project);
         ~SimulationManager();
         
         void play();
@@ -42,7 +50,8 @@ class SimulationManager : public QObject {
         void pause();
         void trackFps();
         void setTimeScale(float scale);
-        void storePlotData(mjData* d);
+        
+        void pushTelemetry(ComponentInstance* comp, double time);
         void processEmulators(ComponentInstance* comp);
         void resetEmulators(ComponentInstance* comp);
         SimulationState getState() const;

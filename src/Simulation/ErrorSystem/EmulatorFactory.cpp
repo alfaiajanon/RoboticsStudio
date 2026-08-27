@@ -1,12 +1,12 @@
 #include "EmulatorFactory.h"
-#include "Simulation/Components/ComponentInstance.h"
-#include "Simulation/ErrorSystem/Emulator.h"
+
+#include "Utils/Log.h"
+#include "Document/Components/ComponentInstance.h"
 #include "Simulation/ErrorSystem/DefaultEmulatorCpp.h"
 #include "Simulation/ErrorSystem/IMUEmulatorCpp.h"
 #include "Simulation/ErrorSystem/ServoEmulatorCpp.h"
 #include "Simulation/ErrorSystem/StepperEmulatorCpp.h"
 #include "Simulation/ErrorSystem/DcGearEmulatorCpp.h"
-#include "Core/Log.h"
 
 Emulator* EmulatorFactory::create(const QString& type, ComponentInstance* comp) {
     if (type == "servo_emulator") {

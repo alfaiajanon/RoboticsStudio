@@ -1,10 +1,13 @@
 #pragma once
 
-#include <QJSEngine>
-#include <QString>
 #include <atomic>
-#include "Simulation/Components/ComponentInstance.h"
-#include "Core/Log.h"
+#include <QJSEngine>
+#include "Utils/Log.h"
+
+
+class ComponentInstance;
+
+
 
 class JSConsoleProxy : public QObject {
     Q_OBJECT

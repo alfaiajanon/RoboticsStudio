@@ -1,6 +1,9 @@
 #include "MicroController.h"
+
 #include <thread>
 #include <chrono>
+#include "Document/Components/ComponentInstance.h"
+#include "Simulation/ErrorSystem/Emulator.h"
 
 
 

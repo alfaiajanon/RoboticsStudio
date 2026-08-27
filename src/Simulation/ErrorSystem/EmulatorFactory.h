@@ -1,9 +1,9 @@
 #pragma once
 
 #include <QString>
+#include "Emulator.h"
 
 class ComponentInstance;
-class Emulator; 
 
 
 class EmulatorFactory {

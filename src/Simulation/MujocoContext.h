@@ -1,7 +1,7 @@
 #pragma once
 
 #include "mujoco/mujoco.h"
-#include "Core/Log.h"
+#include "Utils/Log.h"
 
 class MujocoContext {
     private:

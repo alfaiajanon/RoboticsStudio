@@ -2,22 +2,34 @@
 
 KinematicGraph::KinematicGraph() {}
 
-
-
-
 KinematicGraph::~KinematicGraph() {
     clear();
 }
 
 
 
-
-/*
- * Inserts a new node into the graph dictionary.
- * Nodes represent physical bodies with mass and collision geometries.
- */
 void KinematicGraph::addNode(const Node& node) {
     nodes.insert(node.id, node);
+}
+
+
+void KinematicGraph::removeNode(const QString& id) {
+    nodes.remove(id);
+}
+
+
+void KinematicGraph::addEdge(const Edge& edge) {
+    edges.append(edge);
+}
+
+
+void KinematicGraph::removeEdge(const QString& id) {
+    for (int i = 0; i < edges.size(); ++i) {
+        if (edges[i].id == id) {
+            edges.removeAt(i);
+            return;
+        }
+    }
 }
 
 
@@ -27,21 +39,7 @@ void KinematicGraph::setDefaultNode(const QString& nodeId) {
 
 
 
-/*
- * Appends a new edge to the graph's edge list.
- * Edges represent the mechanical joints connecting two specific nodes.
- */
-void KinematicGraph::addEdge(const Edge& edge) {
-    edges.append(edge);
-}
 
-
-
-
-/*
- * Retrieves a copy of a specific node by its string ID.
- * Returns an empty node if the ID does not exist in the graph.
- */
 Node KinematicGraph::getNode(const QString& id) const {
     return nodes.value(id, Node());
 }
@@ -52,22 +50,11 @@ Node KinematicGraph::getDefaultNode() const {
 }
 
 
-
-/*
- * Retrieves a copy of the entire node dictionary.
- * Useful for iterating over all bodies in the kinematic graph.
- */
 QMap<QString, Node> KinematicGraph::getNodes() const {
     return nodes;
 }
 
 
-
-
-/*
- * Finds all edges connected to a specific node.
- * Checks both bodyA and bodyB to ensure bidirectional traversal is possible.
- */
 QList<Edge> KinematicGraph::getEdgesForNode(const QString& nodeId) const {
     QList<Edge> connectedEdges;
     for (const Edge& edge : edges) {
@@ -84,12 +71,19 @@ QList<Edge> KinematicGraph::getEdges() const {
 }
 
 
+Edge KinematicGraph::getEdge(const QString& id) const {
+    for (const Edge& edge : edges) {
+        if (edge.id == id) return edge;
+    }
+    return Edge();
+}
+
+
+
 
 bool KinematicGraph::containsNode(const QString& id) const {
     return nodes.contains(id);
 }
-
-
 
 
 void KinematicGraph::clear() {

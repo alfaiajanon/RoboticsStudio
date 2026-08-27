@@ -1,6 +1,6 @@
 #include "Emulator.h"
-#include "Simulation/Components/ComponentInstance.h"
-#include "Core/Log.h"
+#include "Document/Components/ComponentInstance.h"
+#include "Utils/Log.h"
 #include <cmath>
 #include <algorithm>
 
@@ -42,7 +42,8 @@ class DcGearEmulatorCpp : public Emulator {
 
             // component->setActuatorTarget("target_velocity", currentVelocityRadS);
 
-            component->setActuatorTarget("target_velocity", currentPwm);
+            IOData val = (double)currentPwm;
+            component->setActuatorTarget("target_velocity", val);
         }
 
 
@@ -65,6 +66,11 @@ class DcGearEmulatorCpp : public Emulator {
         }
 
         Q_INVOKABLE double read_velocity() {
-            return component->getSensorCurrent("current_velocity");
+            // return component->getSensorCurrent("current_velocity");
+            if(std::holds_alternative<double>(component->getSensorCurrent("current_velocity"))) {
+                return std::get<double>(component->getSensorCurrent("current_velocity"));
+            } else {
+                return 0.0;
+            }
         }
 };

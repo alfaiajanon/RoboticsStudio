@@ -1,6 +1,6 @@
 #include "Emulator.h"
-#include "Simulation/Components/ComponentInstance.h"
-#include "Core/Log.h"
+#include "Document/Components/ComponentInstance.h"
+#include "Utils/Log.h"
 
 
 class DefaultEmulatorCpp : public Emulator {

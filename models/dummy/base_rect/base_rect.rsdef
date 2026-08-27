@@ -1,6 +1,6 @@
 {
+    "id": "dummy_base_rect",
     "meta": {
-        "id": "dummy_base_rect",
         "name": "Dummy Base for fixed robots",
         "version": "1.0.0",
         "author": "Anon",
@@ -13,7 +13,7 @@
         "materials": {
         }
     },
-    
+
     "specs": {
     },
 
@@ -38,7 +38,7 @@
         "joints": [
         ]
     },
-    
+
     "connectors": [
         {
             "id": "back",

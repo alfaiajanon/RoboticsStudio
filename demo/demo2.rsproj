@@ -132,7 +132,14 @@
             }
         ],
         "constraints": [
-        ]
+        ],
+        "transform": {
+            "rotation": [
+                180,
+                0,
+                0
+            ]
+        }
     },
     "meta": {
         "author": "Anon",
@@ -141,8 +148,10 @@
         "version": "1.0.0"
     },
     "script": {
-        "current":0,
-        "paths":[ "demo2.js" ]
+        "current": 0,
+        "paths": [
+            "demo2.js"
+        ]
     },
     "simulation": {
     },

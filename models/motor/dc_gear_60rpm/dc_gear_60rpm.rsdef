@@ -1,6 +1,6 @@
 {
+    "id": "motor_dc_gear_60rpm",
     "meta": {
-        "id": "motor_dc_gear_60rpm",
         "name": "12V 60RPM DC Gear BO Motor (Dual Shaft)",
         "version": "1.0.0",
         "author": "Anon",
@@ -16,12 +16,12 @@
             "mat_motor": "textures/tex_tt_motor.png"
         }
     },
-    
+
     "specs": {
         "voltage_max": 12.0,
         "voltage_min": 3.0,
-        "max_torque_nm": 0.15,  
-        "max_speed_rad": 6.28,   
+        "max_torque_nm": 0.15,
+        "max_speed_rad": 6.28,
         "weight_kg": 0.035
     },
 
@@ -72,16 +72,25 @@
                 "type": "hinge",
                 "transform": {
                     "pos": [0, 0.0, 0],
-                    "quat": [0.7071, 0.7071, 0, 0] 
+                    "quat": [0.7071, 0.7071, 0, 0]
                 },
                 "damping": 0.005,
                 "armature": 0.01,
                 "frictionloss": 0.01,
-                "collision": false
+                "collision": false,
+                "actuator": {
+                    "type": "velocity",
+                    "ctrlrange": [-6.28, 6.28],
+                    "kv": 10.0,
+                    "forcerange": [-0.35, 0.35]
+                },
+                "sensor": {
+                    "type": "jointvel"
+                }
             }
         ]
     },
-    
+
     "connectors": [
         {
             "id": "shaft_left",
@@ -131,11 +140,9 @@
                 "name": "target_velocity",
                 "unit": "rad/s",
                 "data_type": "float",
-                "ctrlrange": [-6.28, 6.28],
+                "channel_type": "scalar",
+                "physical": true,
                 "target_joint": "dc_joint",
-                "actuator_type": "velocity",
-                "kv": 10.0,
-                "forcerange": [-0.35, 0.35],
                 "pin_required": ["motor_a", "motor_b"]
             }
         ],
@@ -144,8 +151,9 @@
                 "name": "current_velocity",
                 "unit": "rad/s",
                 "data_type": "float",
+                "channel_type": "scalar",
+                "physical": false,
                 "target_joint": "dc_joint",
-                "sensor_type": "jointvel",
                 "pin_required": ["motor_a", "motor_b"]
             }
         ]

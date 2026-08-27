@@ -1,7 +1,9 @@
 #include "Emulator.h"
-#include "Simulation/Components/ComponentInstance.h"
-#include "Core/Log.h"
+
 #include <cmath>
+#include "Utils/Log.h"
+#include "Document/Components/ComponentInstance.h"
+#include "Document/Components/ComponentBlueprint.h"
 
 class StepperEmulatorCpp : public Emulator {
     Q_OBJECT
@@ -26,7 +28,8 @@ class StepperEmulatorCpp : public Emulator {
             // In a highly advanced emulator, you would use stepAngleDeg and the current simulation 
             // delta-time to calculate discrete position steps and create a "choppy" velocity profile. 
             // For now, we smoothly pass the requested target velocity to the MuJoCo actuator.
-            component->setActuatorTarget("target_velocity", logicalTargetVelocity);
+            IOData val = logicalTargetVelocity;
+            component->setActuatorTarget("target_velocity", val);
         }
 
         void reset() override {
@@ -52,10 +55,20 @@ class StepperEmulatorCpp : public Emulator {
         }
         
         Q_INVOKABLE double read_position() {
-            return component->getSensorCurrent("current_position");
+            // return component->getSensorCurrent("current_position");
+            if(std::holds_alternative<double>(component->getSensorCurrent("current_position"))) {
+                return std::get<double>(component->getSensorCurrent("current_position"));
+            } else {
+                return 0.0;
+            }
         }
 
         Q_INVOKABLE double read_velocity() {
-            return component->getSensorCurrent("current_velocity");
+            // return component->getSensorCurrent("current_velocity");
+            if(std::holds_alternative<double>(component->getSensorCurrent("current_velocity"))) {
+                return std::get<double>(component->getSensorCurrent("current_velocity"));
+            } else {
+                return 0.0;
+            }
         }
 };

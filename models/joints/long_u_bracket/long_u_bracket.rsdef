@@ -1,6 +1,6 @@
 {
+    "id": "joints_long_u_bracket",
     "meta": {
-        "id": "joints_long_u_bracket",
         "name": "Long U-Bracket",
         "version": "1.0.0",
         "author": "Anon",
@@ -15,7 +15,7 @@
             "mat_bracket": "textures/tex_tt_motor.png"
         }
     },
-    
+
     "specs": {
     },
 
@@ -40,7 +40,7 @@
         "joints": [
         ]
     },
-    
+
     "connectors": [
         {
             "id": "back_mount",
