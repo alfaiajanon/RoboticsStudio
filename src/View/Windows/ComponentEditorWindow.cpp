@@ -221,6 +221,9 @@ void ComponentEditorWindow::clearAndRebuild() {
 
 
 void ComponentEditorWindow::schedulePreviewReload() {
+    // Markers redraw from the data immediately (next frame); the model
+    // reload stays debounced since it's expensive.
+    if (preview) preview->setOverlayData(data);
     if (previewReloadTimer) previewReloadTimer->start(); // restarts the debounce
 }
 
@@ -818,6 +821,7 @@ void ComponentEditorWindow::build_connectors() {
                 if (ok) c.mechanics.snapAngles.append(val);
             }
             data.connectors[connKey] = c;
+            schedulePreviewReload();
         };
         connect(bodyCombo, &QComboBox::currentTextChanged, this, commit);
         connect(descEdit, &QLineEdit::editingFinished, this, commit);
@@ -841,8 +845,17 @@ void ComponentEditorWindow::build_connectors() {
     layout->addWidget(addBtn, 0, Qt::AlignLeft);
 
     connect(addBtn, &QPushButton::clicked, this, [this]() {
+        if (data.bodies.isEmpty()) {
+            Toast::showMessage(this, "Add a body before creating a connector.");
+            return;
+        }
         ConnectorDef def;
         def.id = QString("connector_%1").arg(data.connectors.size() + 1);
+        // Must reference a real body: the combo can't display an empty body
+        // (it would silently show the first one while the data stays empty),
+        // and a connector without a body has no marker in the preview.
+        def.body = data.bodies.contains(data.defaultBodyId) ? data.defaultBodyId
+                                                            : data.bodies.firstKey();
         data.connectors[def.id] = def;
         clearAndRebuild();
     });

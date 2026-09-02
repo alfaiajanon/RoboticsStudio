@@ -5,8 +5,58 @@
 #include <QWheelEvent>
 #include <QResizeEvent>
 #include <QtMath>
+#include <QFrame>
+#include <QCheckBox>
+#include <QVBoxLayout>
 
 #include "Document/Components/ComponentBlueprint.h"
+
+
+
+#pragma region Overlay helpers
+
+namespace {
+
+// World pose of a preview-model body (names are prefixed "comp_0_").
+// Returns false when the body is absent from the currently loaded model
+// (e.g. stale model after a failed mid-edit reload).
+bool bodyWorldPose(const mjModel* m, const mjData* d, const QString& bodyId,
+                   Position& pos, Rotation& rot) {
+    QByteArray name = ("comp_0_" + bodyId).toUtf8();
+    int id = mj_name2id(m, mjOBJ_BODY, name.constData());
+    if (id < 0) return false;
+    pos = Position(d->xpos[3 * id], d->xpos[3 * id + 1], d->xpos[3 * id + 2]);
+    rot = Rotation(d->xquat[4 * id], d->xquat[4 * id + 1], d->xquat[4 * id + 2], d->xquat[4 * id + 3]);
+    return true;
+}
+
+void addDecorGeom(mjvScene* scn, const mjvGeom& geom) {
+    if (scn->ngeom < scn->maxgeom) scn->geoms[scn->ngeom++] = geom;
+}
+
+// Connector-type geom (line / arrow) between two world-space points.
+// mjGEOM_LINE width is in pixels; mjGEOM_ARROW width is in meters.
+void addConnectorGeom(mjvScene* scn, int type, double width,
+                      const Position& a, const Position& b, const float rgba[4]) {
+    mjvGeom geom;
+    mjv_initGeom(&geom, type, nullptr, nullptr, nullptr, rgba);
+    mjtNum from[3] = {a.x, a.y, a.z};
+    mjtNum to[3] = {b.x, b.y, b.z};
+    mjv_connector(&geom, type, width, from, to);
+    addDecorGeom(scn, geom);
+}
+
+void addSphereGeom(mjvScene* scn, const Position& center, double radius, const float rgba[4]) {
+    mjvGeom geom;
+    mjtNum size[3] = {radius, 0.0, 0.0};
+    mjtNum pos[3] = {center.x, center.y, center.z};
+    mjv_initGeom(&geom, mjGEOM_SPHERE, size, pos, nullptr, rgba);
+    addDecorGeom(scn, geom);
+}
+
+} // namespace
+
+#pragma endregion
 
 
 
@@ -18,9 +68,36 @@ ComponentPreviewViewport::ComponentPreviewViewport(QWidget* parent) : QLabel(par
 
     sim = new OffscreenSim(&mujocoContext);
     sim->init(width(), height());
+    sim->decorHook = [this](mjModel* m, mjData* d, mjvScene* scn) { drawOverlays(m, d, scn); };
 
     camera = new Camera(mujocoContext.getCamera());
     applyCamera();
+
+    // Floating HUD: visibility toggles for the overlay layers.
+    hud = new QFrame(this);
+    hud->setObjectName("previewHud");
+    hud->setStyleSheet(
+        "QFrame#previewHud { background-color: rgba(20, 20, 24, 190);"
+        " border: 1px solid rgba(255, 255, 255, 40); border-radius: 6px; }"
+        "QCheckBox { color: #dddddd; background: transparent; spacing: 6px; }");
+    QVBoxLayout* hudLayout = new QVBoxLayout(hud);
+    hudLayout->setContentsMargins(10, 6, 10, 6);
+    hudLayout->setSpacing(2);
+
+    QCheckBox* connectorsBox = new QCheckBox("Connectors", hud);
+    connectorsBox->setChecked(showConnectors);
+    QCheckBox* jointsBox = new QCheckBox("Joints", hud);
+    jointsBox->setChecked(showJoints);
+    hudLayout->addWidget(connectorsBox);
+    hudLayout->addWidget(jointsBox);
+
+    connect(connectorsBox, &QCheckBox::toggled, this, [this](bool on) { showConnectors = on; });
+    connect(jointsBox, &QCheckBox::toggled, this, [this](bool on) { showJoints = on; });
+
+    hud->adjustSize();
+    positionHud();
+    hud->raise();
+    hud->show();
 
     connect(&timer, &QTimer::timeout, this, &ComponentPreviewViewport::renderLoop);
     timer.start(16);
@@ -40,6 +117,14 @@ ComponentPreviewViewport::~ComponentPreviewViewport() {
 
 void ComponentPreviewViewport::resizeEvent(QResizeEvent* event) {
     sim->setSize(event->size().width(), event->size().height());
+    positionHud();
+}
+
+
+
+
+void ComponentPreviewViewport::positionHud() {
+    if (hud) hud->move(width() - hud->width() - 8, 8);
 }
 
 
@@ -52,6 +137,8 @@ void ComponentPreviewViewport::resizeEvent(QResizeEvent* event) {
  * edit-mode branch, minus everything assembly-related.
  */
 void ComponentPreviewViewport::loadComponentData(const ComponentData& data) {
+    currentData = data;
+
     if (data.bodies.isEmpty() || !data.bodies.contains(data.defaultBodyId)) {
         statusMessage = "Add a body and set a default body to preview.";
         return;
@@ -189,3 +276,91 @@ void ComponentPreviewViewport::paintEvent(QPaintEvent* event) {
         p.drawText(rect().adjusted(8, 4, -8, -4), Qt::AlignTop | Qt::AlignLeft, statusMessage);
     }
 }
+
+
+
+
+#pragma region Overlays
+
+/*
+ * Appends the visualization overlays (decor geoms) to the scene, called
+ * every frame by OffscreenSim between mjv_updateScene and mjr_render.
+ *
+ * Connector: 3-arrow axis frame at the connector pose (X red, Y green,
+ * Z blue). Joint: hollow square in the joint frame's XY plane (joint axis
+ * is Z) plus a line to each connected body's origin with a filled circle
+ * at the body end.
+ *
+ * Marker world poses are composed from the EDITED data (currentData) and
+ * the preview model's body poses: connectors/joints are stored in the
+ * component root frame, so world = bodyWorld * (bodyLocal^-1 * transform).
+ * Markers whose body is missing from the loaded model are skipped.
+ */
+void ComponentPreviewViewport::drawOverlays(mjModel* m, mjData* d, mjvScene* scn) {
+    if (!m || !d || !scn) return;
+
+    if (showConnectors) {
+        const double axisLen = 0.02;    // 2 cm
+        const float rgbaX[4] = {1.0f, 0.25f, 0.25f, 1.0f};
+        const float rgbaY[4] = {0.25f, 1.0f, 0.25f, 1.0f};
+        const float rgbaZ[4] = {0.35f, 0.55f, 1.0f, 1.0f};
+
+        for (const ConnectorDef& conn : currentData.connectors) {
+            if (!currentData.bodies.contains(conn.body)) continue;
+
+            Position bodyPos;
+            Rotation bodyRot;
+            if (!bodyWorldPose(m, d, conn.body, bodyPos, bodyRot)) continue;
+
+            Transform rel = currentData.bodies[conn.body].localTransform.inverse() * conn.transform;
+            Transform world = Transform(bodyPos, bodyRot) * rel;
+
+            addConnectorGeom(scn, mjGEOM_ARROW, 0.0015, world.position,
+                             world.position + world.rotation.rotate(Position(axisLen, 0, 0)), rgbaX);
+            addConnectorGeom(scn, mjGEOM_ARROW, 0.0015, world.position,
+                             world.position + world.rotation.rotate(Position(0, axisLen, 0)), rgbaY);
+            addConnectorGeom(scn, mjGEOM_ARROW, 0.0015, world.position,
+                             world.position + world.rotation.rotate(Position(0, 0, axisLen)), rgbaZ);
+        }
+    }
+
+    if (showJoints) {
+        const double halfSize = 0.008;  // square half-extent, 8 mm
+        const float rgbaJoint[4] = {1.0f, 0.7f, 0.15f, 1.0f};
+        const float rgbaLink[4] = {1.0f, 0.7f, 0.15f, 0.8f};
+
+        for (const Edge& edge : currentData.joints) {
+            if (!currentData.bodies.contains(edge.bodyA) || !currentData.bodies.contains(edge.bodyB)) {
+                continue;
+            }
+
+            Position posA, posB;
+            Rotation rotA, rotB;
+            if (!bodyWorldPose(m, d, edge.bodyA, posA, rotA)) continue;
+            if (!bodyWorldPose(m, d, edge.bodyB, posB, rotB)) continue;
+
+            Transform rel = currentData.bodies[edge.bodyA].localTransform.inverse() * edge.localTransform;
+            Transform jointWorld = Transform(posA, rotA) * rel;
+
+            // Hollow square in the joint frame's XY plane (joint axis = Z).
+            Position corners[4] = {
+                jointWorld.position + jointWorld.rotation.rotate(Position(halfSize, halfSize, 0)),
+                jointWorld.position + jointWorld.rotation.rotate(Position(-halfSize, halfSize, 0)),
+                jointWorld.position + jointWorld.rotation.rotate(Position(-halfSize, -halfSize, 0)),
+                jointWorld.position + jointWorld.rotation.rotate(Position(halfSize, -halfSize, 0)),
+            };
+            for (int i = 0; i < 4; ++i) {
+                addConnectorGeom(scn, mjGEOM_LINE, 2.0, corners[i], corners[(i + 1) % 4], rgbaJoint);
+            }
+
+            // Lines from the joint anchor to each body origin + filled
+            // circle at each body end.
+            addConnectorGeom(scn, mjGEOM_LINE, 1.5, jointWorld.position, posA, rgbaLink);
+            addConnectorGeom(scn, mjGEOM_LINE, 1.5, jointWorld.position, posB, rgbaLink);
+            addSphereGeom(scn, posA, 0.0025, rgbaJoint);
+            addSphereGeom(scn, posB, 0.0025, rgbaJoint);
+        }
+    }
+}
+
+#pragma endregion

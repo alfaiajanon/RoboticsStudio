@@ -76,6 +76,7 @@ QImage OffscreenSim::render(){
     glfwMakeContextCurrent(hiddenWindow);
 
     ctx->updateScene();
+    if (decorHook) decorHook(ctx->getModel(), ctx->getData(), ctx->getScene());
     mjrRect viewport = {0, 0, width, height};
     ctx->render(viewport);
 

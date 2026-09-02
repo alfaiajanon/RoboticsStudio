@@ -7,6 +7,7 @@
 #include <QImage>
 #include <iostream>
 #include <vector>
+#include <functional>
 
 #include "mujoco/mujoco.h"
 #include "Utils/Log.h"
@@ -52,4 +53,10 @@ class OffscreenSim {
         void setSize(int w, int h);
 
         QImage render();
+
+        // Optional hook invoked every frame between mjv_updateScene and
+        // mjr_render -- lets a viewer append decor mjvGeoms (visualization
+        // overlays) to the scene. Null by default; the main-app viewports
+        // never set it.
+        std::function<void(mjModel*, mjData*, mjvScene*)> decorHook;
 };

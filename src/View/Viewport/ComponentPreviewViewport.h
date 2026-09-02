@@ -9,6 +9,9 @@
 #include "Document/Components/ComponentData.h"
 
 
+class QFrame;
+
+
 
 /*
  * Standalone 3D preview for the ComponentEditorWindow. Renders the
@@ -45,8 +48,18 @@ class ComponentPreviewViewport : public QLabel {
         double elevationDeg = 20.0;
         Position target{0, 0, 0};
 
+        // Visualization overlays: the last data handed to loadComponentData
+        // (markers are computed from it + the preview model's body poses each
+        // frame -- nothing is baked into the MJCF) and the HUD toggle states.
+        ComponentData currentData;
+        QFrame* hud = nullptr;
+        bool showConnectors = true;
+        bool showJoints = true;
+
         void applyCamera();
         void renderLoop();
+        void positionHud();
+        void drawOverlays(mjModel* m, mjData* d, mjvScene* scn);
 
     protected:
         void resizeEvent(QResizeEvent* event) override;
@@ -64,4 +77,9 @@ class ComponentPreviewViewport : public QLabel {
         // On failure the previous model stays on screen and statusMessage
         // is set; safe to call with invalid mid-edit states.
         void loadComponentData(const ComponentData& data);
+
+        // Updates only the overlay markers' source data (cheap, no model
+        // reload) so connector/joint markers react instantly; the 3D model
+        // itself still refreshes through the debounced loadComponentData.
+        void setOverlayData(const ComponentData& data) { currentData = data; }
 };
