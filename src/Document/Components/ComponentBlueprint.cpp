@@ -69,6 +69,16 @@ ComponentBlueprint::ComponentBlueprint(const QString& rsdefFile)
 
 
 
+ComponentBlueprint::ComponentBlueprint(const ComponentData& data)
+                    : ComponentData(data){
+
+    generateAssetXML();
+    parseKinematics();
+}
+
+
+
+
 
 void ComponentBlueprint::generateAssetXML() {
     assetXML = "";

@@ -17,10 +17,10 @@
  * Initializes the simulation manager and spawns the background physics thread.
  * Starts in a stopped state with a default 1.0x real-time scale.
  */
-SimulationManager::SimulationManager(Project* project): project(project), 
-                                                        isAlive(true), 
-                                                        currentState(SimulationState::PAUSED), 
-                                                        timeScale(1.0f), 
+SimulationManager::SimulationManager(Project* project): project(project),
+                                                        isAlive(true),
+                                                        currentState(SimulationState::PAUSED),
+                                                        timeScale(1.0f),
                                                         stepAccumulator(0.0f) {}
 
 
@@ -33,7 +33,7 @@ SimulationManager::SimulationManager(Project* project): project(project),
  */
 SimulationManager::~SimulationManager() {
     isAlive = false;
-    
+
     MicroController* mcu = project->getMicroController();
     mcu->stop();
 
@@ -55,6 +55,10 @@ SimulationManager::~SimulationManager() {
 #pragma region play/edit
 
 void SimulationManager::play() {
+
+    ComponentInstance* root = project->getRootComponent();
+    initEmulators(root);
+
     if (currentState == SimulationState::PAUSED) {
         if(!physicsThread.joinable()) {
             physicsThread = std::thread(&SimulationManager::physicsLoop, this);
@@ -85,9 +89,9 @@ void SimulationManager::edit() {
         }
     }
 
-    MujocoContext* mj = MujocoContext::getInstance();
+    MujocoContext* mj = &mujocoContext;
     MicroController* mcu = project->getMicroController();
-    mcu->stop(); 
+    mcu->stop();
 
     ComponentInstance* root = project->getRootComponent();
     resetEmulators(root);
@@ -139,7 +143,7 @@ void SimulationManager::trackFps() {
     if (fpsTimer.elapsed() >= 400) {
         int currentFps = static_cast<int>((frameCount*1000.0 / fpsTimer.elapsed()));
         emit fpsUpdated(currentFps);
-        
+
         frameCount = 0;
         fpsTimer.restart();
     }
@@ -160,13 +164,13 @@ void SimulationManager::mcuLoop() {
     while (isAlive) {
         if (currentState == SimulationState::PLAYING) {
 
-            mcu->run(); 
-    
+            mcu->run();
+
             // Throttle the MCU to simulate a cheap processor
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }else{
             // Sleep to avoid busy-waiting
-            std::this_thread::sleep_for(std::chrono::milliseconds(16)); 
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
         }
     }
 }
@@ -187,47 +191,46 @@ void SimulationManager::mcuLoop() {
 void SimulationManager::physicsLoop() {
     while (isAlive) {
         if (currentState == SimulationState::PLAYING) {
-            
+
             stepAccumulator += (8.0f * timeScale.load());
             int stepsToTake = static_cast<int>(stepAccumulator);
             stepAccumulator -= stepsToTake;
 
             if (stepsToTake > 0) {
-                MujocoContext* mj = MujocoContext::getInstance();
+                MujocoContext* mj = &mujocoContext;
                 ComponentInstance* root = project->getRootComponent();
-
-                processEmulators(root);
-
                 {
                     std::lock_guard<std::mutex> lock(physicsMutex);
-                    
+
                     syncToMujocoActuator(root, mj->getModel(), mj->getData());
                     for(int i = 0; i < stepsToTake; ++i) {
                         mj->step();
                     }
                     syncFromMujocoSensor(root, mj->getModel(), mj->getData());
-                    
+
+                    processEmulators(root);
+
                     pushTelemetry(root, mj->getData()->time);
                     TelemetryRegistry::getInstance().captureAll(mj->getModel(), mj->getData(), mj->getData()->time);
-                } 
+                }
             }
-        } 
-        
+        }
+
         else if (currentState == SimulationState::EDITING) {
             // In editing mode, we sync joint positions to allow dragging components
             std::lock_guard<std::mutex> lock(physicsMutex);
-            
-            MujocoContext* mj = MujocoContext::getInstance();
+
+            MujocoContext* mj = &mujocoContext;
             ComponentInstance* root = project->getRootComponent();
 
             syncToMujocoJoint(root, mj->getModel(), mj->getData());
-            mj->forward(); 
+            mj->forward();
 
             syncFromMujocoSensor(root, mj->getModel(), mj->getData());
         }
 
-        trackFps(); 
-        
+        trackFps();
+
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
 }
@@ -238,10 +241,22 @@ void SimulationManager::physicsLoop() {
 
 
 
+void SimulationManager::initEmulators(ComponentInstance* comp) {
+    if (!comp) return;
+    if (comp->emulator) {
+        comp->emulator->init();
+    }
+    for (ComponentInstance* child : comp->children) {
+        initEmulators(child);
+    }
+}
+
+
+
 void SimulationManager::processEmulators(ComponentInstance* comp) {
     if (!comp) return;
     if (comp->emulator) {
-        comp->emulator->update(); 
+        comp->emulator->update();
     }
     for (ComponentInstance* child : comp->children) {
         processEmulators(child);
@@ -261,7 +276,7 @@ void SimulationManager::pushTelemetry(ComponentInstance* comp, double time) {
         if (channelId != -1) {
             IOData data = comp->getActuatorTarget(key);
             QString cType = comp->blueprint->inputDefs[key].channelType;
-            
+
             if (cType == "vector" && std::holds_alternative<std::vector<double>>(data)) {
                 if (auto channel = registry.getVector(channelId)) {
                     channel->push(time, std::get<std::vector<double>>(data));
@@ -279,7 +294,7 @@ void SimulationManager::pushTelemetry(ComponentInstance* comp, double time) {
         if (channelId != -1) {
             IOData data = comp->getSensorCurrent(key);
             QString cType = comp->blueprint->outputDefs[key].channelType;
-            
+
             if (cType == "vector" && std::holds_alternative<std::vector<double>>(data)) {
                 if (auto channel = registry.getVector(channelId)) {
                     channel->push(time, std::get<std::vector<double>>(data));
@@ -303,7 +318,7 @@ void SimulationManager::pushTelemetry(ComponentInstance* comp, double time) {
 void SimulationManager::resetEmulators(ComponentInstance* comp) {
     if (!comp) return;
     if (comp->emulator) {
-        comp->emulator->reset(); 
+        comp->emulator->reset();
     }
     for (ComponentInstance* child : comp->children) {
         resetEmulators(child);
@@ -327,7 +342,7 @@ void SimulationManager::cacheMujocoIds(ComponentInstance* root, mjModel* m) {
     if (!m || !root) return;
 
     QString prefix = "comp_" + QString::number(root->uid) + "_";
-    
+
     if (root->blueprint) {
         for (const QString& key : root->blueprint->inputDefs.keys()) {
             QString targetJoint = root->blueprint->inputDefs[key].targetJoint;
@@ -342,7 +357,7 @@ void SimulationManager::cacheMujocoIds(ComponentInstance* root, mjModel* m) {
             int id = mj_name2id(m, mjOBJ_JOINT, jointName.toStdString().c_str());
             root->setMujocoJointId(jkey, id);
         }
-        
+
         for (const QString& key : root->blueprint->outputDefs.keys()) {
             // FIXED: Fallback to targetSite if targetJoint is empty (Crucial for IMU)
             const IODef& def = root->blueprint->outputDefs[key];
@@ -352,7 +367,7 @@ void SimulationManager::cacheMujocoIds(ComponentInstance* root, mjModel* m) {
             root->setMujocoSensorId(key, id);
         }
     }
-    
+
     for (ComponentInstance* child : root->children) {
         cacheMujocoIds(child, m);
     }
@@ -372,10 +387,10 @@ void SimulationManager::syncToMujocoActuator(ComponentInstance* root, mjModel* m
         for (const QString& key : root->blueprint->inputDefs.keys()) {
             int mujocoId = root->getMujocoActuatorId(key);
             if (mujocoId >= 0 && mujocoId < m->nu) {
-                
+
                 IOData data = root->getActuatorTarget(key);
                 double val = std::holds_alternative<double>(data) ? std::get<double>(data) : 0.0;
-                
+
                 QString unit = root->blueprint->inputDefs[key].unit.toLower();
                 if (unit == "degree" || unit == "deg" || unit == "degrees") {
                     val = val * (M_PI / 180.0);
@@ -385,7 +400,7 @@ void SimulationManager::syncToMujocoActuator(ComponentInstance* root, mjModel* m
             }
         }
     }
-    
+
     for (ComponentInstance* child : root->children) {
         syncToMujocoActuator(child, m, d);
     }
@@ -403,12 +418,12 @@ void SimulationManager::syncToMujocoJoint(ComponentInstance* root, mjModel* m, m
         for (const QString& key : root->blueprint->inputDefs.keys()) {
             QString jkey = root->blueprint->inputDefs[key].targetJoint;
             int mujocoId = root->getMujocoJointId(jkey);
-            
+
             if (mujocoId >= 0 && mujocoId < m->njnt) {
-                
+
                 IOData data = root->getJointTarget(jkey);
                 double targetVal = std::holds_alternative<double>(data) ? std::get<double>(data) : 0.0;
-                
+
                 QString unit = root->blueprint->inputDefs[key].unit.toLower();
                 if (unit == "degree" || unit == "deg" || unit == "degrees") {
                     targetVal = targetVal * (M_PI / 180.0);
@@ -416,16 +431,16 @@ void SimulationManager::syncToMujocoJoint(ComponentInstance* root, mjModel* m, m
 
                 int qposIndex = m->jnt_qposadr[mujocoId];
                 double currentPos = d->qpos[qposIndex];
-                
-                double smoothSpeed = 0.3; 
+
+                double smoothSpeed = 0.3;
                 if (std::abs(targetVal - currentPos) > 0.0001) {
-                    double newPos = currentPos + (targetVal - currentPos) * smoothSpeed; 
-                    d->qpos[qposIndex] = newPos; 
+                    double newPos = currentPos + (targetVal - currentPos) * smoothSpeed;
+                    d->qpos[qposIndex] = newPos;
                 }
             }
         }
     }
-    
+
     for (ComponentInstance* child : root->children) {
         syncToMujocoJoint(child, m, d);
     }
@@ -445,12 +460,12 @@ void SimulationManager::syncFromMujocoSensor(ComponentInstance* root, mjModel* m
     if (root->blueprint) {
         for (const QString& key : root->blueprint->outputDefs.keys()) {
             int sensorId = root->getMujocoSensorId(key);
-            
+
             if (sensorId >= 0 && sensorId < m->nsensor) {
                 int adr = m->sensor_adr[sensorId];
                 int dim = root->blueprint->outputDefs[key].dim;
                 QString channelType = root->blueprint->outputDefs[key].channelType;
-                
+
                 if (adr + dim <= m->nsensordata) {
                     QString unit = root->blueprint->outputDefs[key].unit.toLower();
                     bool isDegree = (unit == "degree" || unit == "deg" || unit == "degrees");
@@ -467,7 +482,7 @@ void SimulationManager::syncFromMujocoSensor(ComponentInstance* root, mjModel* m
                     } else {
                         double val = d->sensordata[adr];
                         if (isDegree) val *= (180.0 / M_PI);
-                        
+
                         IOData data = val;
                         root->setSensorCurrent(key, data);
                     }
@@ -475,7 +490,7 @@ void SimulationManager::syncFromMujocoSensor(ComponentInstance* root, mjModel* m
             }
         }
     }
-    
+
     for (ComponentInstance* child : root->children) {
         syncFromMujocoSensor(child, m, d);
     }

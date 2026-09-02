@@ -88,27 +88,34 @@ void Application::openProject(const QString& projectPath) {
 
     launcher.hide();
 
-    if (simManager) {
-        simManager->pause();
-        delete simManager;
+    // One SimulationManager for the whole app lifetime: it owns the
+    // MujocoContext, and the viewport camera holds a pointer into that
+    // context -- recreating the manager per project would dangle it.
+    if (!simManager) {
+        simManager = new SimulationManager(&currentProject);
     }
+    simManager->pause();
 
     currentProject.loadProject(projectPath);
     saveLastProject(projectPath);
 
     // make necessary simulation setup
-    MujocoContext::getInstance()->loadModelFromString(
-        currentProject.generateMujocoXML().toStdString()
-    );
+    {
+        // The physics thread may still be live from a previously opened
+        // project -- don't swap the model out from under it.
+        std::lock_guard<std::mutex> lock(simManager->physicsMutex);
+        simManager->getMujocoContext()->loadModelFromString(
+            currentProject.generateMujocoXML().toStdString()
+        );
+    }
 
     editor.sceneTree->buildFromProject(&currentProject);
     editor.scriptPanel->loadScript(
         currentProject.getProjectDirectory() + "/" + currentProject.getScriptPath()
     );
 
-    simManager = new SimulationManager(&currentProject);
     ComponentInstance* root = currentProject.getRootComponent();
-    simManager->cacheMujocoIds(root, MujocoContext::getInstance()->getModel());
+    simManager->cacheMujocoIds(root, simManager->getMujocoContext()->getModel());
     simManager->edit();
 
     editor.setupSimConn();
@@ -172,12 +179,12 @@ void Application::reloadSimulation() {
         std::lock_guard<std::mutex> lock(simManager->physicsMutex);
 
         project->refresh();
-        MujocoContext::getInstance()->loadModelFromString(
+        simManager->getMujocoContext()->loadModelFromString(
             project->generateMujocoXML().toStdString()
         );
         simManager->cacheMujocoIds(
             project->getRootComponent(),
-            MujocoContext::getInstance()->getModel()
+            simManager->getMujocoContext()->getModel()
         );
         Application::getInstance()->getEditor()->refresh();
     });

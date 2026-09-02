@@ -13,14 +13,20 @@ class MujocoContext {
         mjvCamera cam;
 
         bool isGPUInitialized = false;
-
-        MujocoContext();
+        // Set by loadModelFromString instead of freeing the mjrContext
+        // immediately: GL object IDs are only valid in the GL context that
+        // created them, and at load time the WRONG GLFW window may be
+        // current (e.g. the main viewport's, while the component preview
+        // reloads) -- freeing then would delete the other viewer's GPU
+        // resources. render() performs the free once the owning window is
+        // current (OffscreenSim always makes it current before rendering).
+        bool pendingContextFree = false;
 
     public:
-        static MujocoContext* getInstance();
+        MujocoContext();
 
         void loadModel(const char* model_path);
-        void loadModelFromString(const std::string& model_xml);
+        bool loadModelFromString(const std::string& model_xml);
         void setControl(int index, double value);
         void render(mjrRect viewport);
         void updateScene();

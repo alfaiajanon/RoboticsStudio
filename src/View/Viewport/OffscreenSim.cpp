@@ -1,14 +1,24 @@
 #include "OffscreenSim.h"
 #include "Simulation/MujocoContext.h"
+#include "Simulation/SimulationManager.h"
+#include "Application/Application.h"
 
+
+// Number of live OffscreenSim instances sharing the process-global GLFW state.
+static int liveInstances = 0;
+
+
+OffscreenSim::OffscreenSim(MujocoContext* ctx) : mujocoContext(ctx) {}
 
 
 OffscreenSim::~OffscreenSim() {
     if (hiddenWindow) {
         glfwMakeContextCurrent(hiddenWindow);
         glfwDestroyWindow(hiddenWindow);
-        glfwTerminate();
         hiddenWindow = nullptr;
+    }
+    if (--liveInstances == 0) {
+        glfwTerminate();
     }
 }
 
@@ -16,9 +26,11 @@ void OffscreenSim::init(int w, int h){
     width = w;
     height = h;
 
-    if (!glfwInit()){
-        Log::error("Failed to initialize GLFW");
-        exit(1);
+    if (liveInstances++ == 0) {
+        if (!glfwInit()){
+            Log::error("Failed to initialize GLFW");
+            exit(1);
+        }
     }
 
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
@@ -27,18 +39,14 @@ void OffscreenSim::init(int w, int h){
     hiddenWindow = glfwCreateWindow(MAX_WIDTH, MAX_HEIGHT, "Hidden MuJoCo", nullptr, nullptr);
     if (!hiddenWindow){
         Log::error("Failed to create GLFW hidden window");
-        glfwTerminate();
+        if (--liveInstances == 0) glfwTerminate();
         exit(1);
     }
 
     glfwMakeContextCurrent(hiddenWindow);
 
-    mujocoContext = MujocoContext::getInstance();
-    // mujocoContext->loadModel("../models/servo.xml");
-
     pixelBuffer.resize(w * h * 3);
 }
-
 
 
 
@@ -55,16 +63,25 @@ void OffscreenSim::setSize(int w, int h) {
 
 
 QImage OffscreenSim::render(){
+    MujocoContext* ctx = mujocoContext;
+    if (!ctx) {
+        // No injected context: render the app's simulation, if one exists yet.
+        Application* app = Application::getInstance();
+        SimulationManager* simManager = app ? app->getSimulationManager() : nullptr;
+        if (!simManager) return QImage();
+        ctx = simManager->getMujocoContext();
+    }
+    if (!ctx->getModel()) return QImage();
+
     glfwMakeContextCurrent(hiddenWindow);
 
-    mujocoContext->updateScene();
+    ctx->updateScene();
     mjrRect viewport = {0, 0, width, height};
-    mujocoContext->render(viewport);
+    ctx->render(viewport);
 
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
 
-    mjr_readPixels(pixelBuffer.data(), nullptr, viewport, mujocoContext->getContext());
-    // QImage img(pixelBuffer.data(), width, height, QImage::Format_RGB888);
+    mjr_readPixels(pixelBuffer.data(), nullptr, viewport, ctx->getContext());
     QImage img(pixelBuffer.data(), width, height, width * 3, QImage::Format_RGB888);
 
     return img.flipped(Qt::Vertical);

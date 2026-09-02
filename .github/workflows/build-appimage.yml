@@ -46,21 +46,21 @@ jobs:
       run: |
         wget -c "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
         wget -c "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage"
-        chmod +x linuxdeploy*.AppImage 
+        chmod +x linuxdeploy*.AppImage
 
     - name: Package AppImage
       run: |
         mkdir -p AppDir/usr/lib
-        
+
         cp -a extern/mujoco-3.3.7/lib/libmujoco.so* AppDir/usr/lib/
 
         export QMAKE=$(which qmake)
-        
+
         ./linuxdeploy-x86_64.AppImage \
           --appdir AppDir \
           -e build/RoboticsStudio \
-          -d src/UI/Resources/RoboticsStudio.desktop \
-          -i src/UI/Resources/icon.png \
+          -d src/View/Resources/RoboticsStudio.desktop \
+          -i src/View/Resources/icon.png \
           --plugin qt
 
         patchelf --set-rpath '$ORIGIN/../lib' AppDir/usr/bin/RoboticsStudio

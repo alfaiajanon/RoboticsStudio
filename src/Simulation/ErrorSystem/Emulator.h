@@ -3,7 +3,7 @@
 #include <QObject>
 
 
-class ComponentInstance; 
+class ComponentInstance;
 
 
 
@@ -12,13 +12,14 @@ class Emulator : public QObject {
     Q_OBJECT
 
     protected:
-        ComponentInstance* component; 
+        ComponentInstance* component;
 
     public:
-        explicit Emulator(ComponentInstance* comp, QObject* parent = nullptr) 
+        explicit Emulator(ComponentInstance* comp, QObject* parent = nullptr)
             : QObject(parent), component(comp) {}
 
         virtual ~Emulator() = default;
-        virtual void update() = 0; 
+        virtual void init() = 0;
+        virtual void update() = 0;
         virtual void reset() = 0;
 };

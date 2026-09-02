@@ -4,17 +4,15 @@
 
 
 
-MujocoContext* MujocoContext::getInstance() {
-    static MujocoContext instance;
-    return &instance;
-}
-
-
-
-
 /*
  * Initializes default MuJoCo options, scene, context, and camera.
  * Explicitly enables rendering for site tags and group 3 gizmos.
+ *
+ * No longer a singleton: SimulationManager owns the app's instance, and
+ * auxiliary viewers (e.g. the component editor preview) own their own --
+ * sharing one model across an editor and a live simulation meant an
+ * editor reload would mj_deleteModel the running sim out from under the
+ * physics thread.
  */
 MujocoContext::MujocoContext() {
     mjv_defaultOption(&opt);
@@ -53,13 +51,12 @@ void MujocoContext::loadModel(const char* model_path) {
 
 /*
  * Loads a MuJoCo model directly from a raw XML string using a Virtual File System.
- * Cleans up any existing model and data before allocating the new ones.
+ * Swap-on-success: the new model is fully parsed before the old one is
+ * released, so a failed load (e.g. a component editor's invalid mid-edit
+ * state) leaves the previous model on screen instead of a null context.
+ * Returns false when the XML failed to load.
  */
-void MujocoContext::loadModelFromString(const std::string& xml_content) {
-    if(isGPUInitialized){
-        mjr_freeContext(&con);
-        isGPUInitialized = false;
-    }
+bool MujocoContext::loadModelFromString(const std::string& xml_content) {
     char error[1000] = "";
 
     mjVFS vfs;
@@ -67,20 +64,28 @@ void MujocoContext::loadModelFromString(const std::string& xml_content) {
 
     mj_addBufferVFS(&vfs, "robot.xml", xml_content.c_str(), xml_content.length());
 
-    if (m) mj_deleteModel(m);
-    m = mj_loadXML("robot.xml", &vfs, error, 1000);
+    mjModel* newModel = mj_loadXML("robot.xml", &vfs, error, 1000);
 
     mj_deleteVFS(&vfs);
 
-    if (!m) {
+    if (!newModel) {
         Log::error(error);
-        return;
+        return false;
     }
+
+    // Don't mjr_freeContext here -- see pendingContextFree in the header.
+    if (isGPUInitialized) {
+        pendingContextFree = true;
+    }
+
+    if (m) mj_deleteModel(m);
+    m = newModel;
 
     if (d) mj_deleteData(d);
     d = mj_makeData(m);
     mj_forward(m, d);
     mjv_makeScene(m, &scn, 2000);
+    return true;
 }
 
 
@@ -181,10 +186,21 @@ void MujocoContext::updateScene() {
 
 /*
  * Renders the updated scene to the specified OpenGL viewport.
- * Initializes the GPU context on the first run.
+ * Initializes the GPU context on the first run, and performs any
+ * context free deferred by loadModelFromString -- at this point the
+ * caller (OffscreenSim::render) has made this context's own GLFW
+ * window current, so GL deletes hit the right context.
  */
 void MujocoContext::render(mjrRect viewport) {
     if (!m || !d) return;
+
+    if (pendingContextFree) {
+        pendingContextFree = false;
+        if (isGPUInitialized) {
+            mjr_freeContext(&con);
+            isGPUInitialized = false;
+        }
+    }
 
     if (!isGPUInitialized) {
         isGPUInitialized = true;

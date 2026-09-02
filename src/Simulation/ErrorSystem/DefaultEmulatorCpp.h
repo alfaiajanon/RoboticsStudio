@@ -9,9 +9,7 @@ class DefaultEmulatorCpp : public Emulator {
     public:
         using Emulator::Emulator;
 
-        void update() override {
-        }
-
-        void reset() override {
-        }
+        void init() override {}
+        void update() override {}
+        void reset() override {}
 };

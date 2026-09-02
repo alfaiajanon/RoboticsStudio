@@ -39,6 +39,7 @@ EditorWindow::EditorWindow(QWidget* parent) : QMainWindow(parent){
     topDownSplitter=nullptr;
     viewport=nullptr;
     bottomTabs=nullptr;
+    camera=nullptr;
 
     setupMenuBar();
     setupSplitting();
@@ -51,6 +52,9 @@ EditorWindow::EditorWindow(QWidget* parent) : QMainWindow(parent){
 
 
 void EditorWindow::setupSimConn(){
+    if (simConnInitialized) return; // simManager persists across project opens now
+    simConnInitialized = true;
+
     SimulationManager* simManager = Application::getInstance()->getSimulationManager();
     connect(simManager, &SimulationManager::fpsUpdated, this, [this](int fps) {
         fpsLabel->setText(QString("FPS: %1").arg(fps));
@@ -60,6 +64,8 @@ void EditorWindow::setupSimConn(){
             fpsLabel->setStyleSheet("color: #cccccc; background-color: #2d2d2d; padding: 4px; border-radius: 4px;");
         }
     });
+
+    setupCameraControls();
 }
 
 
@@ -349,12 +355,12 @@ void EditorWindow::setupMainViewport() {
     auto reloadSimulation = [this](Project* project, SimulationManager* simManager, bool isSimulation) {
         std::lock_guard<std::mutex> lock(simManager->physicsMutex);
 
-        MujocoContext::getInstance()->loadModelFromString(
+        simManager->getMujocoContext()->loadModelFromString(
             project->generateMujocoXML(isSimulation).toStdString()
         );
         simManager->cacheMujocoIds(
             project->getRootComponent(),
-            MujocoContext::getInstance()->getModel()
+            simManager->getMujocoContext()->getModel()
         );
     };
 
@@ -393,8 +399,23 @@ void EditorWindow::setupMainViewport() {
     });
 
 
+    topDownSplitter->addWidget(viewport);
+}
+
+
+
+
+/*
+ * Camera + input binding for the main viewport. Deferred out of
+ * setupMainViewport: the MujocoContext (and its mjvCamera) is owned by
+ * SimulationManager, which doesn't exist yet when the EditorWindow is
+ * first constructed -- called from setupSimConn() once a project is open.
+ */
+void EditorWindow::setupCameraControls() {
+    if (camera) return; // one-time setup; the context outlives project reloads
+
     CameraController* controller = new OrbitCameraController();
-    camera = new Camera(MujocoContext::getInstance()->getCamera());
+    camera = new Camera(Application::getInstance()->getSimulationManager()->getMujocoContext()->getCamera());
     controller->setCamera(camera);
     camera->setPosition(Position(0.0, -0.20, 0.05));
     camera->setTarget(Position(0.0, 0.0, 0.0));
@@ -425,8 +446,6 @@ void EditorWindow::setupMainViewport() {
             controller->onMouseScroll(yoffset);
         }
     );
-
-    topDownSplitter->addWidget(viewport);
 }
 
 
@@ -539,7 +558,9 @@ void EditorWindow::clearSelection() {
 
 // Assuming your wrapper is accessible, e.g., 'camera' is a member variable of ViewportPanel
 void EditorWindow::frameScene() {
-    MujocoContext* mj = MujocoContext::getInstance();
+    SimulationManager* simManager = Application::getInstance()->getSimulationManager();
+    if (!simManager) return;
+    MujocoContext* mj = simManager->getMujocoContext();
     mjModel* m = mj->getModel();
     mjData* d = mj->getData();
 

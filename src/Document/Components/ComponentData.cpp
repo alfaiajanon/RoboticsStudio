@@ -79,6 +79,13 @@ static QMap<QString, Node> parseBodies(const QJsonArray& bodiesArr) {
                 QJsonArray sizeArr = gObj["size"].toArray();
                 for (int i = 0; i < sizeArr.size(); ++i) geom.size.append(sizeArr[i].toDouble());
             }
+
+            if (gObj.contains("pos")) {
+                QJsonArray posArr = gObj["pos"].toArray();
+                if (posArr.size() == 3) {
+                    geom.pos = Position(posArr[0].toDouble(), posArr[1].toDouble(), posArr[2].toDouble());
+                }
+            }
             node.geoms.append(geom);
         }
 
@@ -351,6 +358,43 @@ static QJsonObject ioDefToJson(const IODef& def) {
 
 
 
+static QList<PinDef> parsePins(const QJsonArray& pinsArr) {
+    QList<PinDef> pins;
+    for (const auto& val : pinsArr) {
+        QJsonObject pObj = val.toObject();
+        PinDef pin;
+        pin.id = pObj["id"].toString();
+        pin.description = pObj["description"].toString();
+        pin.voltageRange = qMakePair(0.0f, 0.0f);
+        if (pObj.contains("voltage_range")) {
+            QJsonArray rangeArr = pObj["voltage_range"].toArray();
+            if (rangeArr.size() == 2) {
+                pin.voltageRange = qMakePair(static_cast<float>(rangeArr[0].toDouble()),
+                                             static_cast<float>(rangeArr[1].toDouble()));
+            }
+        }
+        pins.append(pin);
+    }
+    return pins;
+}
+
+static QJsonArray pinsToJson(const QList<PinDef>& pins) {
+    QJsonArray arr;
+    for (const PinDef& pin : pins) {
+        QJsonObject obj;
+        obj["id"] = pin.id;
+        if (!pin.description.isEmpty()) obj["description"] = pin.description;
+        if (pin.voltageRange.first != 0.0f || pin.voltageRange.second != 0.0f) {
+            obj["voltage_range"] = QJsonArray{pin.voltageRange.first, pin.voltageRange.second};
+        }
+        arr.append(obj);
+    }
+    return arr;
+}
+
+
+
+
 ComponentData ComponentData::fromJson(const QJsonObject& mainJson, const QString& basePath) {
     ComponentData data;
 
@@ -365,7 +409,7 @@ ComponentData ComponentData::fromJson(const QJsonObject& mainJson, const QString
                                 ? QString()
                                 : QDir(data.basePath).filePath(metaObj["icon_path"].toString());
 
-    data.pins = mainJson["pins"].toObject();
+    data.pins = parsePins(mainJson["pins"].toArray());
     data.specs = mainJson["specs"].toObject();
 
     QJsonObject resourcesObj = mainJson["resources"].toObject();
@@ -431,7 +475,7 @@ QJsonObject ComponentData::toJson() const {
     root["meta"] = metaObj;
 
     root["specs"] = specs;
-    root["pins"] = pins;
+    root["pins"] = pinsToJson(pins);
 
     // Resource paths are stored absolute in memory (resolved against
     // basePath on load) -- converted back to relative here so a saved

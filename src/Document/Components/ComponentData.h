@@ -69,7 +69,7 @@ struct ComponentData {
     QString modelId;
     MetaDef meta;
     QJsonObject specs;
-    QJsonObject pins;
+    QList<PinDef> pins;
 
     QMap<QString, QString> meshResources;
     QMap<QString, QString> materialResources;

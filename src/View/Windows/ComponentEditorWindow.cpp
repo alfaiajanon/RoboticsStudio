@@ -144,16 +144,16 @@ ComponentEditorWindow::ComponentEditorWindow(const QString& rsdefPath, bool over
     scrollArea->setWidget(leftContent);
     body->addWidget(scrollArea);
 
-    // ---- right: preview viewport ----
-    // TODO: swap for ComponentPreviewViewport once built.
-    viewportPlaceholder = new QWidget(this);
-    viewportPlaceholder->setStyleSheet("background-color: #1a1a1a;");
-    QVBoxLayout* vpLayout = new QVBoxLayout(viewportPlaceholder);
-    QLabel* vpLabel = new QLabel("3D preview (not yet implemented)", viewportPlaceholder);
-    vpLabel->setAlignment(Qt::AlignCenter);
-    vpLabel->setStyleSheet("color: gray; font-style: italic;");
-    vpLayout->addWidget(vpLabel);
-    body->addWidget(viewportPlaceholder, 1);
+    // ---- right: live 3D preview of the component being edited ----
+    preview = new ComponentPreviewViewport(this);
+    body->addWidget(preview, 1);
+
+    previewReloadTimer = new QTimer(this);
+    previewReloadTimer->setSingleShot(true);
+    previewReloadTimer->setInterval(500);
+    connect(previewReloadTimer, &QTimer::timeout, this, [this]() {
+        preview->loadComponentData(data);
+    });
 
     // ---- bottom: pinned Save bar, outside the scroll area ----
     QWidget* bottomBar = new QWidget(this);
@@ -213,6 +213,15 @@ void ComponentEditorWindow::clearAndRebuild() {
     build_emulator();
     build_data();
     leftLayout->addStretch();
+
+    schedulePreviewReload();
+}
+
+
+
+
+void ComponentEditorWindow::schedulePreviewReload() {
+    if (previewReloadTimer) previewReloadTimer->start(); // restarts the debounce
 }
 
 
@@ -327,7 +336,10 @@ void ComponentEditorWindow::build_resource_list(QVBoxLayout* parent, const QStri
 
     QString filter = (title == "Meshes") ? "Meshes (*.obj)" : "Images (*.png *.jpg)";
     connect(addBtn, &QPushButton::clicked, this, [this, &target, filter]() {
-        QString path = QFileDialog::getOpenFileName(this, "Import", QString(), filter);
+        // DontUseNativeDialog: the native GTK dialog competes with the
+        // 60 FPS GL render loops and can lag/freeze the whole app.
+        QString path = QFileDialog::getOpenFileName(this, "Import", QString(), filter,
+                                                    nullptr, QFileDialog::DontUseNativeDialog);
         if (path.isEmpty()) return;
         QString key = QFileInfo(path).completeBaseName();
         target[key] = path; // absolute source path -- copied at Save time
@@ -345,6 +357,23 @@ void ComponentEditorWindow::build_resource_list(QVBoxLayout* parent, const QStri
 void ComponentEditorWindow::build_construction() {
     QGroupBox* box = new QGroupBox("Construction", this);
     QVBoxLayout* layout = new QVBoxLayout(box);
+
+    // Root of the kinematic tree -- ComponentBlueprint::parseKinematics
+    // needs this, and without it the preview has nothing to render.
+    QWidget* defaultBodyRow = new QWidget(box);
+    QHBoxLayout* defaultBodyLayout = new QHBoxLayout(defaultBodyRow);
+    defaultBodyLayout->setContentsMargins(0, 0, 0, 0);
+    QLabel* defaultBodyLabel = new QLabel("Default body:", defaultBodyRow);
+    QComboBox* defaultBodyCombo = new QComboBox(defaultBodyRow);
+    refreshBodyDropdown(defaultBodyCombo);
+    defaultBodyCombo->setCurrentText(data.defaultBodyId);
+    defaultBodyLayout->addWidget(defaultBodyLabel);
+    defaultBodyLayout->addWidget(defaultBodyCombo, 1);
+    layout->addWidget(defaultBodyRow);
+    connect(defaultBodyCombo, &QComboBox::currentTextChanged, this, [this](const QString& id) {
+        data.defaultBodyId = id;
+        schedulePreviewReload();
+    });
 
     build_bodies(layout);
     build_joints(layout);
@@ -380,6 +409,7 @@ void ComponentEditorWindow::build_bodies(QVBoxLayout* parent) {
         form->addRow("Mass (kg):", massSpin);
         connect(massSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this, nodeId](double val) {
             if (data.bodies.contains(nodeId)) data.bodies[nodeId].mass = val;
+            schedulePreviewReload();
         });
 
         TransformFieldRefs xform = addTransformFields(form, node.localTransform);
@@ -387,11 +417,13 @@ void ComponentEditorWindow::build_bodies(QVBoxLayout* parent) {
             if (!data.bodies.contains(nodeId)) return;
             data.bodies[nodeId].localTransform.position =
                 stringToPos(xform.posEdit->text(), data.bodies[nodeId].localTransform.position);
+            schedulePreviewReload();
         });
         connect(xform.rotEdit, &QLineEdit::editingFinished, this, [this, nodeId, xform]() {
             if (!data.bodies.contains(nodeId)) return;
             data.bodies[nodeId].localTransform.rotation =
                 stringToRot(xform.rotEdit->text(), data.bodies[nodeId].localTransform.rotation);
+            schedulePreviewReload();
         });
 
         build_geoms(form, nodeId);
@@ -427,6 +459,7 @@ void ComponentEditorWindow::build_bodies(QVBoxLayout* parent) {
         Node n;
         n.id = QString("body_%1").arg(data.bodies.size() + 1);
         data.bodies[n.id] = n;
+        if (data.defaultBodyId.isEmpty()) data.defaultBodyId = n.id;
         clearAndRebuild();
     });
 
@@ -493,6 +526,8 @@ void ComponentEditorWindow::build_geoms(QFormLayout* bodyForm, const QString& bo
             geom.size = stringToDoubleList(sizeEdit->text());
             geom.pos = stringToPos(posEdit->text(), geom.pos);
             geom.color = stringToDoubleList(colorEdit->text());
+
+            schedulePreviewReload();
         };
         connect(typeCombo, &QComboBox::currentTextChanged, this, commit);
         connect(meshCombo, &QComboBox::currentTextChanged, this, commit);
@@ -649,6 +684,7 @@ void ComponentEditorWindow::build_joints(QVBoxLayout* parent) {
             e.actuator.forceRange = stringToDoubleList(forceRangeEdit->text());
             e.sensor.type = (sensorTypeCombo->currentText() == "(none)") ? "" : sensorTypeCombo->currentText();
             upsertEdge(data.joints, e);
+            schedulePreviewReload();
         };
         connect(bodyACombo, &QComboBox::currentTextChanged, this, commit);
         connect(bodyBCombo, &QComboBox::currentTextChanged, this, commit);
@@ -845,6 +881,14 @@ void ComponentEditorWindow::build_io_list(QVBoxLayout* parent, const QString& ti
 
         QLineEdit* nameEdit = new QLineEdit(def.name, row);
         form->addRow("Name:", nameEdit);
+        connect(nameEdit, &QLineEdit::editingFinished, this, [this, &target, key, nameEdit]() {
+            QString newName = nameEdit->text().trimmed();
+            if (newName.isEmpty() || newName == key || target.contains(newName)) return;
+            IODef d = target.take(key);
+            d.name = newName;
+            target[newName] = d;
+            clearAndRebuild();
+        });
 
         QLineEdit* unitEdit = new QLineEdit(def.unit, row);
         form->addRow("Unit:", unitEdit);
@@ -978,7 +1022,8 @@ void ComponentEditorWindow::build_data() {
     iconLayout->addWidget(iconBrowseBtn);
     metaForm->addRow("Icon:", iconRow);
     connect(iconBrowseBtn, &QPushButton::clicked, this, [this, iconEdit]() {
-        QString path = QFileDialog::getOpenFileName(this, "Select Icon", QString(), "Images (*.png *.jpg)");
+        QString path = QFileDialog::getOpenFileName(this, "Select Icon", QString(), "Images (*.png *.jpg)",
+                                                    nullptr, QFileDialog::DontUseNativeDialog);
         if (!path.isEmpty()) { iconEdit->setText(path); data.meta.iconPath = path; }
     });
     connect(iconEdit, &QLineEdit::editingFinished, this, [this, iconEdit]() { data.meta.iconPath = iconEdit->text(); });
@@ -995,14 +1040,68 @@ void ComponentEditorWindow::build_data() {
     layout->addWidget(specsBox);
 
     // ---- pins ----
-    // Freeform for now, per the earlier decision to defer the structured
-    // Pin form until vision-sensor work forces a more robust shape.
-    QGroupBox* pinsBox = new QGroupBox("Pins (freeform for now)", box);
+    // Structured list matching the real .rsdef pins format (array of
+    // {id, description, voltage_range}) -- see ComponentData::parsePins.
+    QGroupBox* pinsBox = new QGroupBox("Pins", box);
     QVBoxLayout* pinsLayout = new QVBoxLayout(pinsBox);
-    KeyValueListWidget* pinsWidget = new KeyValueListWidget(pinsBox);
-    pinsWidget->setValue(data.pins);
-    pinsLayout->addWidget(pinsWidget);
-    connect(pinsWidget, &KeyValueListWidget::changed, this, [this, pinsWidget]() { data.pins = pinsWidget->value(); });
+
+    for (int i = 0; i < data.pins.size(); ++i) {
+        const PinDef& pin = data.pins[i];
+        int pinIdx = i;
+
+        QFrame* row = new QFrame(pinsBox);
+        row->setFrameShape(QFrame::StyledPanel);
+        QFormLayout* form = new QFormLayout(row);
+
+        QLineEdit* idEdit = new QLineEdit(pin.id, row);
+        form->addRow("Id:", idEdit);
+
+        QLineEdit* descEdit = new QLineEdit(pin.description, row);
+        form->addRow("Description:", descEdit);
+
+        QLineEdit* voltageEdit = new QLineEdit(
+            (pin.voltageRange.first != 0.0f || pin.voltageRange.second != 0.0f)
+                ? QString("%1, %2").arg(pin.voltageRange.first).arg(pin.voltageRange.second)
+                : QString(), row);
+        voltageEdit->setPlaceholderText("min, max volts -- blank if unspecified");
+        form->addRow("Voltage range:", voltageEdit);
+
+        auto commit = [this, pinIdx, idEdit, descEdit, voltageEdit]() {
+            if (pinIdx >= data.pins.size()) return;
+            PinDef& p = data.pins[pinIdx];
+            p.id = idEdit->text().trimmed();
+            p.description = descEdit->text();
+            QList<double> range = stringToDoubleList(voltageEdit->text());
+            p.voltageRange = (range.size() == 2)
+                ? qMakePair(static_cast<float>(range[0]), static_cast<float>(range[1]))
+                : qMakePair(0.0f, 0.0f);
+        };
+        connect(idEdit, &QLineEdit::editingFinished, this, commit);
+        connect(descEdit, &QLineEdit::editingFinished, this, commit);
+        connect(voltageEdit, &QLineEdit::editingFinished, this, commit);
+
+        QPushButton* removeBtn = new QPushButton("Remove Pin", row);
+        form->addRow(removeBtn);
+        connect(removeBtn, &QPushButton::clicked, this, [this, pinIdx]() {
+            if (pinIdx < data.pins.size()) {
+                data.pins.removeAt(pinIdx);
+                clearAndRebuild();
+            }
+        });
+
+        pinsLayout->addWidget(row);
+    }
+
+    QPushButton* addPinBtn = new QPushButton("+ Add Pin", pinsBox);
+    addPinBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    pinsLayout->addWidget(addPinBtn, 0, Qt::AlignLeft);
+    connect(addPinBtn, &QPushButton::clicked, this, [this]() {
+        PinDef pin;
+        pin.id = QString("pin_%1").arg(data.pins.size() + 1);
+        data.pins.append(pin);
+        clearAndRebuild();
+    });
+
     layout->addWidget(pinsBox);
 
     leftLayout->addWidget(box);

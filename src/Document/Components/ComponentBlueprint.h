@@ -28,6 +28,10 @@ class ComponentBlueprint : public ComponentData {
     public:
         KinematicGraph kinematics;
         ComponentBlueprint(const QString& rsdefFile);
+        // Seeds from in-memory data instead of a file -- used by the
+        // component editor preview, which edits a ComponentData that has
+        // no on-disk .rsdef (yet). Resource paths must already be absolute.
+        ComponentBlueprint(const ComponentData& data);
 
         QString getModelId() const { return modelId; }
         QString getAssetXML() const;

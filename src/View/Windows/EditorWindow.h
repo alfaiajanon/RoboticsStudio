@@ -29,6 +29,8 @@ class EditorWindow : public QMainWindow{
         void setupSplitting();
         void setupRightDocking();
         void setupMainViewport();
+        void setupCameraControls();
+        bool simConnInitialized = false;
 
     public:
         Camera *camera;

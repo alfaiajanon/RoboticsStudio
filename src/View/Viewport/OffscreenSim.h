@@ -18,6 +18,20 @@ class MujocoContext;
 
 using namespace std;
 
+/*
+ * Offscreen MuJoCo renderer backed by a hidden GLFW window.
+ *
+ * ctx == nullptr -> renders the app's simulation context, resolved lazily
+ *                   via Application::getSimulationManager() at render time
+ *                   (a SimulationManager doesn't exist yet when the main
+ *                   viewport is constructed).
+ * ctx != nullptr -> renders that context (used by standalone viewers like
+ *                   the component editor preview, which own their context).
+ *
+ * GLFW init/terminate is process-global, so it's reference-counted across
+ * all OffscreenSim instances -- terminating on every destruction would kill
+ * GLFW out from under any other live viewport.
+ */
 class OffscreenSim {
     private:
         MujocoContext* mujocoContext;
@@ -31,6 +45,7 @@ class OffscreenSim {
 
     public:
 
+        explicit OffscreenSim(MujocoContext* ctx = nullptr);
         ~OffscreenSim();
 
         void init(int w, int h);
@@ -38,7 +53,3 @@ class OffscreenSim {
 
         QImage render();
 };
-
-
-
-

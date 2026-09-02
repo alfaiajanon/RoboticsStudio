@@ -11,7 +11,9 @@
 #include <QDoubleSpinBox>
 #include <QPushButton>
 #include <QLabel>
+#include <QTimer>
 #include "Document/Components/ComponentData.h"
+#include "View/Viewport/ComponentPreviewViewport.h"
 
 class KeyValueListWidget;
 
@@ -54,7 +56,12 @@ private:
     QWidget* makeCollapsible(const QString& headerText, QWidget* content, QWidget* parent);
 
     QVBoxLayout* leftLayout;
-    QWidget* viewportPlaceholder; // TODO: replace with ComponentPreviewViewport
+    ComponentPreviewViewport* preview;
+    QTimer* previewReloadTimer; // debounce -- regenerating MJCF per keystroke is wasteful
+
+    // Debounced preview refresh: structural edits come through
+    // clearAndRebuild(), field edits through their commit lambdas.
+    void schedulePreviewReload();
 
     void onSaveClicked();
 
