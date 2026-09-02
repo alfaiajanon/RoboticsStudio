@@ -1,0 +1,114 @@
+{
+    "connectors": [
+        {
+            "body": "body_1",
+            "description": "",
+            "id": "connector_1",
+            "transform": {
+                "pos": [
+                    0,
+                    0,
+                    0
+                ],
+                "quat": [
+                    1,
+                    0,
+                    0,
+                    0
+                ]
+            }
+        },
+        {
+            "body": "",
+            "description": "",
+            "id": "connector_2",
+            "transform": {
+                "pos": [
+                    0,
+                    0,
+                    0
+                ],
+                "quat": [
+                    1,
+                    0,
+                    0,
+                    0
+                ]
+            }
+        }
+    ],
+    "emulator": {
+        "parameters": {
+        },
+        "source": {
+        },
+        "type": ""
+    },
+    "id": "test1",
+    "io": {
+        "inputs": [
+        ],
+        "outputs": [
+        ]
+    },
+    "kinematics": {
+        "bodies": [
+            {
+                "geoms": [
+                    {
+                        "color": [
+                            200,
+                            200,
+                            0
+                        ],
+                        "pos": [
+                            0,
+                            0,
+                            0
+                        ],
+                        "size": [
+                            0.01,
+                            0.01,
+                            0.01
+                        ],
+                        "type": "box"
+                    }
+                ],
+                "id": "body_1",
+                "mass": 0,
+                "transform": {
+                    "pos": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "quat": [
+                        1,
+                        0,
+                        0,
+                        0
+                    ]
+                }
+            }
+        ],
+        "default_body": "",
+        "joints": [
+        ]
+    },
+    "meta": {
+        "author": "anon",
+        "icon_path": "",
+        "name": "New Component",
+        "version": ""
+    },
+    "pins": {
+    },
+    "resources": {
+        "materials": {
+        },
+        "meshes": {
+        }
+    },
+    "specs": {
+    }
+}

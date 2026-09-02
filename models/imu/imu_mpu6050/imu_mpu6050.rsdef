@@ -1,6 +1,6 @@
 {
+    "id": "sensor_mpu6050",
     "meta": {
-        "id": "sensor_mpu6050",
         "name": "MPU-6050 IMU Sensor",
         "version": "1.0.0",
         "author": "Anon",
@@ -15,11 +15,11 @@
             "mat_body": "textures/mpu6050-2.png"
         }
     },
-    
+
     "specs": {
         "voltage_max": 3.3,
         "voltage_min": 2.3,
-        "current_ma": 3.9,  
+        "current_ma": 3.9,
         "weight_kg": 0.005
     },
 
@@ -27,11 +27,11 @@
         {
             "id": "vcc",
             "voltage_range": [2.3, 3.3],
-            "description": "Power input pin for servo motor"
+            "description": "Power input pin for IMU sensor"
         },
         {
             "id": "gnd",
-            "description": "Ground pin for servo motor"
+            "description": "Ground pin for IMU sensor"
         },
         {
             "id": "scl",
@@ -74,10 +74,23 @@
                 ],
                 "sites": [
                     {
-                        "id": "imu_site",
+                        "id": "imu_accel",
                         "transform": {
                             "pos": [0, 0, 0],
                             "quat": [1, 0, 0, 0]
+                        },
+                        "sensor": {
+                            "type": "accelerometer"
+                        }
+                    },
+                    {
+                        "id": "imu_gyro",
+                        "transform": {
+                            "pos": [0, 0, 0],
+                            "quat": [1, 0, 0, 0]
+                        },
+                        "sensor": {
+                            "type": "gyro"
                         }
                     }
                 ]
@@ -85,7 +98,7 @@
         ],
         "joints": []
     },
-    
+
     "connectors": [
         {
             "id": "connector_1",
@@ -114,46 +127,26 @@
         ],
         "outputs": [
             {
-                "name": "accel_x",
+                "name": "acceleration",
                 "unit": "m/s^2",
-                "sensor_type": "accelerometer",
-                "target_site": "imu_site",
-                "axis": 0
+                "data_type": "float",
+                "channel_type": "vector",
+                "physical": true,
+                "dim": 3,
+                "componentLabels": ["x", "y", "z"],
+                "target_site": "imu_accel",
+                "pin_required": ["vcc", "gnd", "sda", "scl"]
             },
             {
-                "name": "accel_y",
-                "unit": "m/s^2",
-                "sensor_type": "accelerometer",
-                "target_site": "imu_site",
-                "axis": 1
-            },
-            {
-                "name": "accel_z",
-                "unit": "m/s^2",
-                "sensor_type": "accelerometer",
-                "target_site": "imu_site",
-                "axis": 2
-            },
-            {
-                "name": "gyro_x",
+                "name": "gyroscope",
                 "unit": "degrees/s",
-                "sensor_type": "gyro",
-                "target_site": "imu_site",
-                "axis": 0
-            },
-            {
-                "name": "gyro_y",
-                "unit": "degrees/s",
-                "sensor_type": "gyro",
-                "target_site": "imu_site",
-                "axis": 1
-            },
-            {
-                "name": "gyro_z",
-                "unit": "degrees/s",
-                "sensor_type": "gyro",
-                "target_site": "imu_site",
-                "axis": 2
+                "data_type": "float",
+                "channel_type": "vector",
+                "physical": true,
+                "dim": 3,
+                "componentLabels": ["x", "y", "z"],
+                "target_site": "imu_gyro",
+                "pin_required": ["vcc", "gnd", "sda", "scl"]
             }
         ]
     },

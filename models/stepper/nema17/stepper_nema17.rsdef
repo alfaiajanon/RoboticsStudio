@@ -1,6 +1,6 @@
 {
+    "id": "stepper_nema17",
     "meta": {
-        "id": "stepper_nema17",
         "name": "NEMA 17 Stepper Motor",
         "version": "1.0.0",
         "author": "Anon",
@@ -15,12 +15,12 @@
             "mat_motor": "textures/tex_nema17.png"
         }
     },
-    
+
     "specs": {
         "voltage_max": 24.0,
         "voltage_min": 9.0,
-        "max_torque_nm": 0.45,  
-        "max_speed_rad": 20.0,   
+        "max_torque_nm": 0.45,
+        "max_speed_rad": 20.0,
         "weight_kg": 0.28
     },
 
@@ -86,7 +86,7 @@
             }
         ]
     },
-    
+
     "connectors": [
         {
             "id": "shaft_tip",
