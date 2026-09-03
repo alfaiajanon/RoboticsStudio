@@ -10,6 +10,7 @@
 #include <cmath>
 #include <qaction.h>
 #include <QDomDocument>
+#include <QUndoStack>
 
 #include "Application/Application.h"
 #include "Document/Components/LibraryManager.h"
@@ -118,11 +119,10 @@ void EditorWindow::setupMenuBar() {
     QAction* exitAct = fileMenu->addAction("Exit");
     exitAct->setShortcut(QKeySequence::Quit);
 
-    QMenu* editMenu = topMenu->addMenu("Edit");
-    QAction* undoAct = editMenu->addAction("Undo");
-    undoAct->setShortcut(QKeySequence::Undo);
-    QAction* redoAct = editMenu->addAction("Redo");
-    redoAct->setShortcut(QKeySequence::Redo);
+    editMenu = topMenu->addMenu("Edit");
+    // Undo/Redo actions are wired later in setupUndoRedo(): this window is
+    // constructed while Application's singleton pointer is still null (member
+    // init runs before Application::instance is assigned).
     editMenu->addSeparator();
     QAction* openComponentEditorAct = editMenu->addAction("Open Component Editor");
     // openComponentEditorAct->setShortcut(QKeySequence( Qt::CTRL + Qt::SHIFT + Qt::Key_E)); // ctrl + shift + E
@@ -257,6 +257,32 @@ void EditorWindow::setupMenuBar() {
     });
 
 
+}
+
+
+
+/*
+ * Wires the Edit-menu Undo/Redo actions to Application's undo stack.
+ * Called from Application's constructor body -- at EditorWindow construction
+ * time the Application singleton pointer is still null, so this cannot be
+ * done inside setupMenuBar().
+ */
+void EditorWindow::setupUndoRedo() {
+    QUndoStack* undoStack = Application::getInstance()->getUndoStack();
+
+    // createUndoAction/createRedoAction give dynamic labels ("Undo Attach
+    // component") and auto enable/disable based on stack state.
+    QAction* undoAct = undoStack->createUndoAction(this, tr("&Undo"));
+    undoAct->setShortcut(QKeySequence::Undo);
+    QAction* redoAct = undoStack->createRedoAction(this, tr("&Redo"));
+    redoAct->setShortcut(QKeySequence::Redo);
+
+    QAction* firstItem = editMenu->actions().value(0);
+    editMenu->insertAction(firstItem, undoAct);
+    editMenu->insertAction(firstItem, redoAct);
+
+    // Keep scene tree + inspector in sync after any undo/redo/push.
+    connect(undoStack, &QUndoStack::indexChanged, this, [this]() { refresh(); }, Qt::QueuedConnection);
 }
 
 

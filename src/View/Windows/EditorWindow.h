@@ -3,6 +3,7 @@
 #include <QMainWindow>
 #include <QSplitter>
 #include <QWidget>
+#include <QMenu>
 
 #include "View/Panels/SceneTreePanel.h"
 #include "View/Panels/InspectorPanel.h"
@@ -24,6 +25,7 @@ class EditorWindow : public QMainWindow{
 
         QPushButton* playBtn;
         QLabel* fpsLabel;
+        QMenu* editMenu = nullptr;
 
         void setupMenuBar();
         void setupSplitting();
@@ -50,6 +52,10 @@ class EditorWindow : public QMainWindow{
         void refresh();
         void frameScene();
         void setupSimConn();
+        // Wires the Edit-menu Undo/Redo actions to Application's undo stack.
+        // Must be called after Application::instance exists (Application's ctor
+        // body) -- the EditorWindow itself is constructed before that.
+        void setupUndoRedo();
         int getCurrentSelectedUid() const;
 
     signals:

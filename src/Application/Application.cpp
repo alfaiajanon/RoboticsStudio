@@ -39,6 +39,9 @@ Application::Application(int& argc, char** argv) : qtApp(argc, argv) {
 
     this->loadStyle(":/styles/dark.qss");
 
+    // Safe only now that Application::instance is assigned.
+    editor.setupUndoRedo();
+
     Log::info("Application initialized.");
 
     QSettings settings("RoboticsStudio", "RoboticsStudio");
@@ -98,6 +101,10 @@ void Application::openProject(const QString& projectPath) {
 
     currentProject.loadProject(projectPath);
     saveLastProject(projectPath);
+
+    // Old commands point into the previous project's component tree --
+    // undoing them now would be a use-after-free.
+    undoStack.clear();
 
     // make necessary simulation setup
     {

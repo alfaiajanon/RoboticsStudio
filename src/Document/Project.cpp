@@ -252,6 +252,11 @@ bool Project::saveProject() {
     file.write(doc.toJson(QJsonDocument::Indented));
     file.close();
 
+    // Document now matches disk -- mark the undo history clean.
+    if (Application::getInstance()) {
+        Application::getInstance()->getUndoStack()->setClean();
+    }
+
     Log::info("Project saved successfully to " + projectPath);
     return true;
 }
@@ -556,6 +561,58 @@ ComponentInstance* Project::createComponentInstance(const int parentUid,
 
     componentMap.insert(newComp->uid, newComp);
     return newComp;
+}
+
+
+
+/*
+ * Unlinks a component from the assembly WITHOUT deleting it.
+ * Inverse of createComponentInstance(); the caller takes ownership of the
+ * returned pointer. Used by AddComponentCommand for undo.
+ */
+ComponentInstance* Project::takeComponent(int uid) {
+    ComponentInstance* comp = componentMap.take(uid);
+    if (!comp) {
+        Log::warning("takeComponent: no component with uid " + QString::number(uid));
+        return nullptr;
+    }
+
+    if (comp->parentUid == 0) {
+        if (rootComponent == comp) {
+            rootComponent = nullptr;
+        }
+    } else if (componentMap.contains(comp->parentUid)) {
+        componentMap[comp->parentUid]->children.removeAll(comp);
+    }
+
+    comp->parentUid = -1;
+    comp->parentConnector = "";
+    return comp;
+}
+
+
+
+/*
+ * Re-links a component previously unlinked with takeComponent(). The
+ * caller must restore the instance's parentUid/parentConnector first
+ * (takeComponent clears them). Used by AddComponentCommand for redo.
+ */
+void Project::adoptComponent(ComponentInstance* comp) {
+    if (!comp) return;
+
+    componentMap.insert(comp->uid, comp);
+
+    if (comp->parentUid == 0) {
+        setRootComponent(comp);
+    } else if (componentMap.contains(comp->parentUid)) {
+        componentMap[comp->parentUid]->children.append(comp);
+    } else {
+        Log::warning("adoptComponent: parent uid " + QString::number(comp->parentUid) + " not found, component stays unlinked.");
+        comp->parentUid = -1;
+        comp->parentConnector = "";
+    }
+
+    applyTransforms();
 }
 
 

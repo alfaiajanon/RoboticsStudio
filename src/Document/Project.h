@@ -87,6 +87,12 @@ class Project {
                                                     const QString& selfConnector,
                                                     const float snapAngle);
         
+        // Undo/redo support for component creation (see Commands/AddComponentCommand.h).
+        // takeComponent() unlinks an instance from map/parent/root WITHOUT deleting it
+        // (caller takes ownership); adoptComponent() re-links a previously taken instance.
+        ComponentInstance* takeComponent(int uid);
+        void adoptComponent(ComponentInstance* comp);
+        
     
         
         void reloadScript();

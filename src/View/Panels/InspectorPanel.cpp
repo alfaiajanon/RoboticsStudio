@@ -21,6 +21,8 @@
 #include "Simulation/SimulationManager.h"
 #include "Simulation/MujocoContext.h"
 #include "Commands/GenericCommand.h"
+#include "Commands/CommandUtils.h"
+#include "Commands/AddComponentCommand.h"
 #include "View/Widgets/Toast.h"
 
 
@@ -222,27 +224,14 @@ void InspectorPanel::populateAvailableConnectors(QComboBox* combo, int targetUid
 #pragma region command helper
 
 /*
+ * Thin delegate over the shared Commands::push() helper (Commands/CommandUtils.h).
  * mergeKey lets repeated edits to the same field (slider drag, spinbox
  * scroll/type) collapse into a single undo step. Leave it empty for
  * one-shot actions (attach/detach, button clicks) that should never merge.
  */
 void InspectorPanel::pushCommand(std::function<void()> doFn, std::function<void()> undoFn,
                                   const QString& text, const QString& mergeKey, bool requiresReload) {
-    auto* stack = Application::getInstance()->getUndoStack();
-    stack->push(new GenericCommand(
-        [this, doFn, requiresReload]() { 
-            doFn(); 
-            if (requiresReload) 
-                Application::getInstance()->reloadSimulation(); 
-        },
-        [this, undoFn, requiresReload]() { 
-            undoFn(); 
-            if (requiresReload) 
-                Application::getInstance()->reloadSimulation(); 
-        },
-        text, 
-        mergeKey
-    ));
+    Commands::push(std::move(doFn), std::move(undoFn), text, mergeKey, requiresReload);
 }
 
 
@@ -692,12 +681,8 @@ void InspectorPanel::build_connectors(ComponentInstance* comp) {
             connect(dropBtn, &ConnectorDropTargetBtn::componentDropped, this,
                     [this, parentUid](const QString& targetConn, const QString& modelId) {
                 Project* project = Application::getInstance()->getProject();
-                // createComponentInstance has no natural undo (it allocates a
-                // new ComponentInstance*); this stays a direct call for now,
-                // same as the script file operations -- flagged as a follow-up
-                // once we decide how command-based creation/deletion should work.
-                project->createComponentInstance(parentUid, targetConn, modelId, "", 0.0f);
-                Application::getInstance()->reloadSimulation();
+                auto* stack = Application::getInstance()->getUndoStack();
+                stack->push(new AddComponentCommand(project, parentUid, targetConn, modelId, "", 0.0f));
             });
         }
     }
@@ -1032,11 +1017,10 @@ void InspectorPanel::build_rootAttachment(Project* project) {
             Toast::showMessage(this, "Drag a component from the Component Library");
         });
 
-        // not yet part of the undo system.
         connect(dropBtn, &ConnectorDropTargetBtn::componentDropped, this, [this](const QString& targetConn, const QString& modelId) {
             Project* project = Application::getInstance()->getProject();
-            project->createComponentInstance(0, targetConn, modelId, "", 0.0f);
-            Application::getInstance()->reloadSimulation();
+            auto* stack = Application::getInstance()->getUndoStack();
+            stack->push(new AddComponentCommand(project, 0, targetConn, modelId, "", 0.0f));
         });
     }
 
