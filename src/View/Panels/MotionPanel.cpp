@@ -141,7 +141,7 @@ void MotionPanel::showAddTargetDialog() {
 
     int channelId = source->channelId();
     if (auto ch = registry.getVector(channelId)) ch->subscribe();
-    plotWindow->addTarget(channelId);
+    plotWindow->addTarget(channelId, source->description());
 
     // Row UI: label + remove button
     QWidget* row = new QWidget();

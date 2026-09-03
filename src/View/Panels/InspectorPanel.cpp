@@ -17,25 +17,37 @@
 #include "Document/Project.h"
 #include "Document/Components/ComponentInstance.h"
 #include "Document/Components/ComponentBlueprint.h"
-#include "Document/Components/LibraryManager.h"
-#include "Simulation/SimulationManager.h"
-#include "Simulation/MujocoContext.h"
-#include "Commands/GenericCommand.h"
 #include "Commands/CommandUtils.h"
 #include "Commands/AddComponentCommand.h"
+#include "Simulation/SimulationManager.h"
 #include "View/Widgets/Toast.h"
 
 
-
-
-void fixComboBoxPolicy(QComboBox* combo) {
-    combo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-    combo->setMinimumContentsLength(5);
-    combo->setMinimumWidth(100);
-    combo->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Fixed);
+// UI Polish: Utility to force widgets to shrink gracefully in layouts
+void applyShrinkablePolicy(QWidget* widget) {
+    widget->setMinimumWidth(30);
+    QSizePolicy policy = widget->sizePolicy();
+    policy.setHorizontalPolicy(QSizePolicy::Expanding);
+    widget->setSizePolicy(policy);
 }
 
 
+void fixComboBoxPolicy(QComboBox* combo) {
+    combo->setSizeAdjustPolicy(QComboBox::AdjustToContentsOnFirstShow);
+    applyShrinkablePolicy(combo);
+}
+
+
+// UI Polish: Uses a transparent line edit to allow long text to shrink/scroll instead of forcing layout expansion
+QLineEdit* createShrinkableLabel(const QString& text, QWidget* parent = nullptr) {
+    QLineEdit* le = new QLineEdit(text, parent);
+    le->setReadOnly(true);
+    le->setFrame(false);
+    le->setStyleSheet("background: transparent; border: none; color: palette(text);");
+    le->setCursorPosition(0);
+    applyShrinkablePolicy(le);
+    return le;
+}
 
 
 #pragma region ConnectorDropTargetBtn
@@ -45,18 +57,15 @@ ConnectorDropTargetBtn::ConnectorDropTargetBtn(const QString& connectorId, const
     setAcceptDrops(true);
 }
 
-
 void ConnectorDropTargetBtn::dragEnterEvent(QDragEnterEvent* event) {
     if (event->mimeData()->hasFormat("application/rs-component")) {
         event->acceptProposedAction();
     }
 }
 
-
 void ConnectorDropTargetBtn::dragLeaveEvent(QDragLeaveEvent* event) {
-    // No hover-state cleanup needed currently; kept for future drag-feedback styling.
+    // No hover-state cleanup needed currently
 }
-
 
 void ConnectorDropTargetBtn::dragMoveEvent(QDragMoveEvent* event) {
     if (event->mimeData()->hasFormat("application/rs-component")) {
@@ -64,10 +73,8 @@ void ConnectorDropTargetBtn::dragMoveEvent(QDragMoveEvent* event) {
     }
 }
 
-
 void ConnectorDropTargetBtn::dropEvent(QDropEvent* event) {
     setStyleSheet("");
-
     if (event->mimeData()->hasFormat("application/rs-component")) {
         QString modelId = QString::fromUtf8(event->mimeData()->data("application/rs-component"));
         emit componentDropped(connectorId, modelId);
@@ -76,39 +83,28 @@ void ConnectorDropTargetBtn::dropEvent(QDropEvent* event) {
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 #pragma region setup
 
 InspectorPanel::InspectorPanel(QWidget* parent) : QWidget(parent), currentUid(-1) {
     QVBoxLayout* outerLayout = new QVBoxLayout(this);
     outerLayout->setContentsMargins(0, 0, 0, 0);
-    
+
     QScrollArea* scrollArea = new QScrollArea(this);
     scrollArea->setWidgetResizable(true);
     scrollArea->setFrameShape(QFrame::NoFrame);
-    
+
     contentWidget = new QWidget(scrollArea);
     mainLayout = new QVBoxLayout(contentWidget);
     mainLayout->setAlignment(Qt::AlignTop);
-    
+
+    mainLayout->setSpacing(16);
+    mainLayout->setContentsMargins(12, 12, 12, 12);
+
     scrollArea->setWidget(contentWidget);
     outerLayout->addWidget(scrollArea);
-    
+
     showEmptyState();
 }
-
-
 
 void InspectorPanel::clearLayout(QLayout* layout) {
     if (!layout) return;
@@ -124,26 +120,21 @@ void InspectorPanel::clearLayout(QLayout* layout) {
     }
 }
 
-
-
 void InspectorPanel::showEmptyState() {
-    clearLayout(mainLayout);    
+    clearLayout(mainLayout);
     QLabel* emptyLabel = new QLabel("No Component Selected", this);
     emptyLabel->setAlignment(Qt::AlignCenter);
     emptyLabel->setStyleSheet("color: gray; font-style: italic;");
     mainLayout->addWidget(emptyLabel);
 }
 
-
-
 bool InspectorPanel::eventFilter(QObject* obj, QEvent* event) {
     if (event->type() == QEvent::Wheel) {
         QWidget* widget = qobject_cast<QWidget*>(obj);
-
         if (widget && !widget->hasFocus()) {
             event->ignore();
             if (widget->parentWidget()) {
-                QCoreApplication::sendEvent(widget->parentWidget(), event); // Manually scroll
+                QCoreApplication::sendEvent(widget->parentWidget(), event);
             }
             return true;
         }
@@ -151,40 +142,21 @@ bool InspectorPanel::eventFilter(QObject* obj, QEvent* event) {
     return QWidget::eventFilter(obj, event);
 }
 
-
-
 void InspectorPanel::setComponent(int uid) {
     if (currentUid == uid) return;
     currentUid = uid;
     buildUI();
 }
 
-
-
 void InspectorPanel::setInputState(bool flag) {
     contentWidget->setEnabled(flag);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 #pragma region combo population helpers
 
 void InspectorPanel::populateAvailableComponents(QComboBox* combo) {
     combo->clear();
-
     auto& componentMap = Application::getInstance()->getProject()->getComponentMap();
     for (ComponentInstance* c : componentMap) {
         if (c->parentUid == -1 && c->uid != currentUid) {
@@ -193,12 +165,9 @@ void InspectorPanel::populateAvailableComponents(QComboBox* combo) {
     }
 }
 
-
-
 void InspectorPanel::populateAvailableConnectors(QComboBox* combo, int targetUid) {
     combo->clear();
     if (targetUid <= 0) return;
-
     ComponentInstance* targetComp = Application::getInstance()->getProject()->getComponentByUid(targetUid);
     QList<QString> connectors = targetComp->getFreeConnections();
     for (const QString& connName : connectors) {
@@ -207,43 +176,12 @@ void InspectorPanel::populateAvailableConnectors(QComboBox* combo, int targetUid
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 #pragma region command helper
 
-/*
- * Thin delegate over the shared Commands::push() helper (Commands/CommandUtils.h).
- * mergeKey lets repeated edits to the same field (slider drag, spinbox
- * scroll/type) collapse into a single undo step. Leave it empty for
- * one-shot actions (attach/detach, button clicks) that should never merge.
- */
 void InspectorPanel::pushCommand(std::function<void()> doFn, std::function<void()> undoFn,
                                   const QString& text, const QString& mergeKey, bool requiresReload) {
     Commands::push(std::move(doFn), std::move(undoFn), text, mergeKey, requiresReload);
 }
-
-
-
-
-
-
-
-
-
-
-
 
 
 #pragma region buildUI
@@ -270,18 +208,16 @@ void InspectorPanel::buildUI() {
 
     QGroupBox* infoBox = new QGroupBox("Component Info", this);
     QFormLayout* infoLayout = new QFormLayout(infoBox);
-    infoLayout->addRow("Name:", new QLabel(comp->name, infoBox));
-    infoLayout->addRow("Model:", new QLabel(comp->model, infoBox));
+    infoLayout->addRow("Name:", createShrinkableLabel(comp->name, infoBox));
+    infoLayout->addRow("Model:", createShrinkableLabel(comp->model, infoBox));
     mainLayout->addWidget(infoBox);
 
     if (!comp->blueprint->inputDefs.isEmpty()) {
         build_inputs(comp);
     }
-
     if (!comp->blueprint->outputDefs.isEmpty()) {
         build_outputs(comp);
     }
-
     if (!comp->blueprint->connectors.isEmpty()) {
         build_connectors(comp);
     }
@@ -290,24 +226,11 @@ void InspectorPanel::buildUI() {
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 #pragma region buildUI helpers
 
 void InspectorPanel::build_inputs(ComponentInstance* comp) {
     QGroupBox* inputBox = new QGroupBox("Inputs & Controls", this);
-    QFormLayout* inputLayout = new QFormLayout(inputBox);
+    QVBoxLayout* inputLayout = new QVBoxLayout(inputBox);
 
     struct InputRow {
         QString jkey;
@@ -316,10 +239,17 @@ void InspectorPanel::build_inputs(ComponentInstance* comp) {
     };
     QList<InputRow> rows;
 
-    // NOTE: assumes a scalar joint target (std::get<double>). Vector-typed inputs don't exist yet;
     for (const QString& key : comp->blueprint->inputDefs.keys()) {
         IODef def = comp->blueprint->inputDefs[key];
-        QWidget* targetWidget = new QWidget(inputBox);
+
+        QWidget* itemWidget = new QWidget(inputBox);
+        QVBoxLayout* itemVBox = new QVBoxLayout(itemWidget);
+        itemVBox->setContentsMargins(0, 0, 0, 8);
+
+        QLabel* titleLabel = new QLabel(def.name + ":", itemWidget);
+        titleLabel->setWordWrap(true);
+
+        QWidget* targetWidget = new QWidget(itemWidget);
         QHBoxLayout* targetHBox = new QHBoxLayout(targetWidget);
         targetHBox->setContentsMargins(0, 0, 0, 0);
 
@@ -339,15 +269,16 @@ void InspectorPanel::build_inputs(ComponentInstance* comp) {
 
         targetHBox->addWidget(slider);
         targetHBox->addWidget(spinBox);
-        inputLayout->addRow(def.name + ":", targetWidget);
+
+        itemVBox->addWidget(titleLabel);
+        itemVBox->addWidget(targetWidget);
+        inputLayout->addWidget(itemWidget);
 
         rows.append({def.targetJoint, slider, spinBox});
     }
     mainLayout->addWidget(inputBox);
 
-    // wire ui with commands
     for (const InputRow& row : rows) {
-        // Keep slider and spinbox mirrored
         connect(row.slider, &QSlider::valueChanged, row.spinBox, [spinBox = row.spinBox](int val) {
             spinBox->setValue(val);
         });
@@ -365,7 +296,7 @@ void InspectorPanel::build_inputs(ComponentInstance* comp) {
 
             double oldVal = std::get<double>(activeComp->getJointTarget(jkey));
             double newVal = spinBox->value();
-            if (std::abs(oldVal - newVal) < 1e-9) return; // no actual change, skip the no-op undo step
+            if (std::abs(oldVal - newVal) < 1e-9) return;
 
             pushCommand(
                 [capturedUid, jkey, newVal]() {
@@ -390,17 +321,12 @@ void InspectorPanel::build_inputs(ComponentInstance* comp) {
 }
 
 
-
-
-
-
 void InspectorPanel::build_outputs(ComponentInstance* comp) {
-    // Read-only display
     QGroupBox* outputBox = new QGroupBox("Sensor Outputs", this);
     QFormLayout* outputLayout = new QFormLayout(outputBox);
     for (const QString& key : comp->blueprint->outputDefs.keys()) {
         IOData data = comp->getSensorCurrent(key);
-        QLabel* valueLabel = new QLabel(outputBox);
+        QLineEdit* valueLabel = createShrinkableLabel("", outputBox);
         valueLabel->setObjectName("lbl_out_" + key);
 
         if (std::holds_alternative<double>(data)) {
@@ -416,11 +342,6 @@ void InspectorPanel::build_outputs(ComponentInstance* comp) {
     }
     mainLayout->addWidget(outputBox);
 }
-
-
-
-
-
 
 
 void InspectorPanel::build_connectors(ComponentInstance* comp) {
@@ -439,15 +360,14 @@ void InspectorPanel::build_connectors(ComponentInstance* comp) {
         int childUid = -1;
 
         QComboBox* childUidCombo = nullptr;
-        QComboBox* childConnectorCombo = nullptr; // only when connected
-        QComboBox* snapCombo = nullptr;            // only when connected + discrete snap angles
-        QDoubleSpinBox* snapSpinBox = nullptr;      // only when connected + free-angle
-        QPushButton* detachBtn = nullptr;           // only when connected
-        ConnectorDropTargetBtn* dropBtn = nullptr;  // only when not connected
+        QComboBox* childConnectorCombo = nullptr;
+        QComboBox* snapCombo = nullptr;
+        QDoubleSpinBox* snapSpinBox = nullptr;
+        QPushButton* detachBtn = nullptr;
+        ConnectorDropTargetBtn* dropBtn = nullptr;
     };
     QList<ConnectorRow> rows;
 
-    // ---------------- construct ----------------
     for (const QString& connId : comp->blueprint->connectors.keys()) {
         ConnectorRow row;
         row.connId = connId;
@@ -460,6 +380,8 @@ void InspectorPanel::build_connectors(ComponentInstance* comp) {
         QGridLayout* grid = new QGridLayout(frame);
         grid->setContentsMargins(5, 5, 5, 5);
         grid->setSpacing(4);
+
+        grid->setColumnStretch(0, 1);
 
         QLabel* nameLabel = new QLabel(row.def.id, frame);
         QFont boldFont = nameLabel->font();
@@ -519,7 +441,7 @@ void InspectorPanel::build_connectors(ComponentInstance* comp) {
             }
 
             row.detachBtn = new QPushButton("X", frame);
-            row.detachBtn->setMaximumWidth(50);
+            row.detachBtn->setFixedWidth(32);
             row.detachBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
             grid->addWidget(row.detachBtn, 1, 2, 2, 1);
 
@@ -530,7 +452,7 @@ void InspectorPanel::build_connectors(ComponentInstance* comp) {
             populateAvailableComponents(row.childUidCombo);
 
             row.dropBtn = new ConnectorDropTargetBtn(row.def.id, "+", frame);
-            row.dropBtn->setMaximumWidth(50);
+            row.dropBtn->setFixedWidth(32);
             row.dropBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
             grid->addWidget(row.dropBtn, 1, 2, 1, 1);
         }
@@ -540,12 +462,11 @@ void InspectorPanel::build_connectors(ComponentInstance* comp) {
     }
     mainLayout->addWidget(connectorsBox);
 
-    // ---------------- wire ----------------
     EditorWindow* mainWindow = qobject_cast<EditorWindow*>(this->window());
     int parentUid = currentUid;
 
     for (const ConnectorRow& row : rows) {
-        if (row.isSelfConnector) continue; // disabled, read-only frame
+        if (row.isSelfConnector) continue;
 
         if (row.isConnected) {
             int childUid = row.childUid;
@@ -689,18 +610,6 @@ void InspectorPanel::build_connectors(ComponentInstance* comp) {
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 #pragma region build uid 0
 
 void InspectorPanel::build_UID_0() {
@@ -712,18 +621,16 @@ void InspectorPanel::build_UID_0() {
 }
 
 
-
-
 void InspectorPanel::build_globalSettings(Project* project) {
     QJsonObject projData = project->getProjectData();
     QJsonObject meta = projData["meta"].toObject();
     QJsonObject scriptObj = projData["script"].toObject();
 
-    // ---------------- construct ----------------
     QGroupBox* globalBox = new QGroupBox("Global Robot Settings", this);
     QFormLayout* globalLayout = new QFormLayout(globalBox);
 
     QLineEdit* nameEdit = new QLineEdit(meta["name"].toString(), globalBox);
+    applyShrinkablePolicy(nameEdit);
     globalLayout->addRow("Robot Name:", nameEdit);
 
     QWidget* scriptWidget = new QWidget(globalBox);
@@ -754,7 +661,6 @@ void InspectorPanel::build_globalSettings(Project* project) {
 
     mainLayout->addWidget(globalBox);
 
-    // ---------------- wire ----------------
     connect(nameEdit, &QLineEdit::editingFinished, this, [this, project, nameEdit]() {
         QString newName = nameEdit->text();
         QString oldName = project->getProjectData()["meta"].toObject()["name"].toString();
@@ -778,7 +684,6 @@ void InspectorPanel::build_globalSettings(Project* project) {
             "Rename robot"
         );
     });
-    
 
     connect(scriptCombo, &QComboBox::currentTextChanged, this, [this, project](const QString& text) {
         if (text.isEmpty()) return;
@@ -859,16 +764,11 @@ void InspectorPanel::build_globalSettings(Project* project) {
 }
 
 
-
-
-
-
 void InspectorPanel::build_rootAttachment(Project* project) {
     ComponentInstance* rootComp = project->getRootComponent();
     bool isConnected = (rootComp != nullptr);
     const QString connId = "root";
 
-    // ---------------- construct ----------------
     QGroupBox* connectorsBox = new QGroupBox("Base Component Attachment", this);
     QVBoxLayout* connectorsLayout = new QVBoxLayout(connectorsBox);
 
@@ -877,6 +777,8 @@ void InspectorPanel::build_rootAttachment(Project* project) {
     QGridLayout* grid = new QGridLayout(frame);
     grid->setContentsMargins(5, 5, 5, 5);
     grid->setSpacing(4);
+
+    grid->setColumnStretch(0, 1);
 
     QLabel* originLabel = new QLabel("root", frame);
     QFont boldFont = originLabel->font();
@@ -899,7 +801,7 @@ void InspectorPanel::build_rootAttachment(Project* project) {
         childUidCombo->setCurrentIndex(childUidCombo->count() - 1);
 
         detachBtn = new QPushButton("X", frame);
-        detachBtn->setMaximumWidth(50);
+        detachBtn->setFixedWidth(32);
         detachBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
         grid->addWidget(detachBtn, 1, 2, 2, 1);
     } else {
@@ -908,7 +810,7 @@ void InspectorPanel::build_rootAttachment(Project* project) {
         grid->addWidget(childUidCombo, 1, 0, 1, 2);
 
         dropBtn = new ConnectorDropTargetBtn(connId, "+", frame);
-        dropBtn->setMaximumWidth(50);
+        dropBtn->setFixedWidth(32);
         dropBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
         grid->addWidget(dropBtn, 1, 2, 1, 1);
     }
@@ -931,20 +833,22 @@ void InspectorPanel::build_rootAttachment(Project* project) {
         spin->setPrefix(prefix);
         spin->setValue(val);
         spin->setFocusPolicy(Qt::StrongFocus);
+        applyShrinkablePolicy(spin);
     };
     setupSpinBox(spinRoll, "R: ", roll);
     setupSpinBox(spinPitch, "P: ", pitch);
     setupSpinBox(spinYaw, "Y: ", yaw);
 
-    grid->addWidget(spinRoll, 4, 0);
-    grid->addWidget(spinPitch, 4, 1);
-    grid->addWidget(spinYaw, 4, 2);
+    QHBoxLayout* rotLayout = new QHBoxLayout();
+    rotLayout->addWidget(spinRoll);
+    rotLayout->addWidget(spinPitch);
+    rotLayout->addWidget(spinYaw);
+    grid->addLayout(rotLayout, 4, 0, 1, 3);
 
     connectorsLayout->addWidget(frame);
     mainLayout->addWidget(connectorsBox);
     mainLayout->addStretch();
 
-    // ---------------- wire ----------------
     if (isConnected) {
         connect(childUidCombo, &QComboBox::currentIndexChanged, this, [this, project, rootComp, childUidCombo]() {
             int newUid = childUidCombo->currentData().toInt();
@@ -1042,19 +946,6 @@ void InspectorPanel::build_rootAttachment(Project* project) {
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 #pragma region live updates
 
 void InspectorPanel::updateLiveValues() {
@@ -1062,7 +953,7 @@ void InspectorPanel::updateLiveValues() {
 
     if (ComponentInstance* comp = Application::getInstance()->getProject()->getComponentByUid(currentUid)) {
         for (const QString& key : comp->blueprint->outputDefs.keys()) {
-            if (QLabel* label = this->findChild<QLabel*>("lbl_out_" + key)) {
+            if (QLineEdit* label = this->findChild<QLineEdit*>("lbl_out_" + key)) {
                 IOData data = comp->getSensorCurrent(key);
                 if (std::holds_alternative<double>(data)) {
                     label->setText(QString::number(std::get<double>(data), 'f', 2));
@@ -1072,6 +963,7 @@ void InspectorPanel::updateLiveValues() {
                     for (double v : vec) parts << QString::number(v, 'f', 2);
                     label->setText(parts.join(", "));
                 }
+                label->setCursorPosition(0);
             }
         }
     }

@@ -36,6 +36,7 @@
 EditorWindow::EditorWindow(QWidget* parent) : QMainWindow(parent){
     this->setWindowTitle("Robotics Studio");
     this->resize(1600, 950);
+    this->setWindowState(Qt::WindowMaximized);
 
     topDownSplitter=nullptr;
     viewport=nullptr;
@@ -105,27 +106,30 @@ int EditorWindow::getCurrentSelectedUid() const {
 void EditorWindow::setupMenuBar() {
     QMenuBar* topMenu = this->menuBar();
 
-    QMenu* fileMenu = topMenu->addMenu("File");
-    QAction* newAct = fileMenu->addAction("New Project");
+    QMenu* projectMenu = topMenu->addMenu("Project");
+    QAction* newAct = projectMenu->addAction("New Project");
     newAct->setShortcut(QKeySequence::New);
-    QAction* openAct = fileMenu->addAction("Open Project...");
+    QAction* openAct = projectMenu->addAction("Open Project...");
     openAct->setShortcut(QKeySequence::Open);
-    fileMenu->addSeparator();
-    QAction* saveAct = fileMenu->addAction("Save");
+    projectMenu->addSeparator();
+    QAction* saveAct = projectMenu->addAction("Save");
     saveAct->setShortcut(QKeySequence::Save);
-    QAction* saveAsAct = fileMenu->addAction("Save As...");
+    QAction* saveAsAct = projectMenu->addAction("Save As...");
     saveAsAct->setShortcut(QKeySequence::SaveAs);
-    fileMenu->addSeparator();
-    QAction* exitAct = fileMenu->addAction("Exit");
+    projectMenu->addSeparator();
+    QMenu* addComponentMenu = projectMenu->addMenu("Add Component");
+    QAction* servoTemplateAct = addComponentMenu->addAction("Servo template");
+    QAction* stepperTemplateAct = addComponentMenu->addAction("Stepper template");
+    QAction* blankTemplateAct = addComponentMenu->addAction("Blank template");
+    QAction* editComponentAct = projectMenu->addAction("Edit Component");
+    projectMenu->addSeparator();
+    QAction* exitAct = projectMenu->addAction("Exit");
     exitAct->setShortcut(QKeySequence::Quit);
 
     editMenu = topMenu->addMenu("Edit");
     // Undo/Redo actions are wired later in setupUndoRedo(): this window is
     // constructed while Application's singleton pointer is still null (member
     // init runs before Application::instance is assigned).
-    editMenu->addSeparator();
-    QAction* openComponentEditorAct = editMenu->addAction("Open Component Editor");
-    // openComponentEditorAct->setShortcut(QKeySequence( Qt::CTRL + Qt::SHIFT + Qt::Key_E)); // ctrl + shift + E
     editMenu->addSeparator();
     QAction* prefsAct = editMenu->addAction("Preferences");
     prefsAct->setShortcut(QKeySequence::Preferences);
@@ -167,6 +171,33 @@ void EditorWindow::setupMenuBar() {
 
     connect(saveAct, &QAction::triggered, this, [this, saveAsAct]() {
         Project* proj = Application::getInstance()->getProject();
+
+        // --- Thumbnail Generation ---
+        if (viewport) {
+            QPixmap currentView = viewport->pixmap();
+            if (!currentView.isNull()) {
+                // Scale to a small, performant thumbnail for the Launcher card
+                QPixmap thumbnail = currentView.scaled(128, 128, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+
+                QFileInfo projInfo(proj->getProjectPath());
+                QString projDir = projInfo.absolutePath();
+                QString logoFileName = "logo.png";
+                QString logoAbsPath = QDir(projDir).absoluteFilePath(logoFileName);
+
+                if (thumbnail.save(logoAbsPath, "PNG")) {
+                    // Update the project's JSON meta data to point to the new icon
+                    QJsonObject pData = proj->getProjectData();
+                    QJsonObject m = pData["meta"].toObject();
+                    m["icon"] = logoFileName;
+                    pData["meta"] = m;
+                    proj->setProjectData(pData);
+                } else {
+                Log::warning("Failed to save project thumbnail to: " + logoAbsPath);
+                }
+            }
+        }
+        // -----------------------------
+
         bool success = proj->saveProject();
         if (success) {
             Toast::showMessage(this, "Project saved successfully!");
@@ -191,7 +222,7 @@ void EditorWindow::setupMenuBar() {
         }
     });
 
-    connect(openComponentEditorAct, &QAction::triggered, this, [this]() {
+    connect(blankTemplateAct, &QAction::triggered, this, [this]() {
         ComponentEditorWindow* dialog = new ComponentEditorWindow("",false,this);
         dialog->show();
     });
@@ -334,23 +365,34 @@ void EditorWindow::setupSplitting(){
     topDownSplitter->addWidget(bottomTabs);
     topDownSplitter->setCollapsible(0, false);
     topDownSplitter->setCollapsible(1, false);
-    topDownSplitter->setSizes({1000, bottomTabs->tabBar()->sizeHint().height()});
+
+    // 1. Tell Qt to give all extra space to the top viewport (index 0)
+    // and keep the bottom panel (index 1) locked to its fixed size.
+    topDownSplitter->setStretchFactor(0, 1);
+    topDownSplitter->setStretchFactor(1, 0);
+
+    // 2. Set the initial sizes directly (using a massive number forces the top to take the remainder)
+    topDownSplitter->setSizes({9999, 250});
 
     connect(bottomTabs->tabBar(), &QTabBar::tabBarClicked, this, [this](int index){
-        if(index==bottomTabs->currentIndex()){
-            QList<int> sizes = topDownSplitter->sizes();
-            int topSize    = sizes[0];
-            int bottomSize = sizes[1];
-            int tabHeight = bottomTabs->tabBar()->sizeHint().height();
+        QList<int> sizes = topDownSplitter->sizes();
+        int topSize    = sizes[0];
+        int bottomSize = sizes[1];
+        int tabHeight = bottomTabs->tabBar()->sizeHint().height();
 
-            if(bottomSize <= tabHeight+10){
-                topDownSplitter->setSizes({ topSize-250, 250});
-            }
-            else{
+        if(bottomSize <= tabHeight+10){
+            // Use the same massive-number trick for a flawless 250px snap, avoiding pixel math
+            topDownSplitter->setSizes({ 9999, 250 });
+        }
+        else{
+            if(index==bottomTabs->currentIndex()){
                 topDownSplitter->setSizes({ topSize+bottomSize-tabHeight, tabHeight });
             }
         }
     });
+
+    bottomTabs->setCurrentIndex(0);
+    // Removed: emit bottomTabs->tabBar()->tabBarClicked(0);
 }
 
 
@@ -520,8 +562,8 @@ void EditorWindow::setupRightDocking(){
 
     QList<QDockWidget*> horizontalDocks = {sceneDock, inspectorDock};
     QList<QDockWidget*> verticalDocks = {sceneDock, graphDock};
-    QList<int> horizontalSizes = {270, 330};
-    QList<int> verticalSizes = {550, 300};
+    QList<int> horizontalSizes = {340, 400};
+    QList<int> verticalSizes = {600, 350};
     resizeDocks(horizontalDocks, horizontalSizes, Qt::Horizontal);
     resizeDocks(verticalDocks, verticalSizes, Qt::Vertical);
 }

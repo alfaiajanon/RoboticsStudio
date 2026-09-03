@@ -3,8 +3,8 @@
 #include <QHBoxLayout>
 #include <QPushButton>
 #include <QFrame>
-#include <qlineedit.h>
-#include <qpushbutton.h>
+#include <QLineEdit>
+#include <QScrollBar>
 
 OutputPanel::OutputPanel(QWidget* parent) : QWidget(parent) {
     QVBoxLayout* mainLayout = new QVBoxLayout(this);
@@ -87,6 +87,8 @@ void OutputPanel::appendMessage(LogLevel level, const QString& category,
         if (searchBox->text().isEmpty() || plainMessage.contains(searchBox->text(), Qt::CaseInsensitive)) {
             textOutput->appendHtml(htmlMessage);
             textOutput->ensureCursorVisible();
+            // UI Polish: Force horizontal scroll back to the left edge
+            textOutput->horizontalScrollBar()->setValue(0);
         }
     }
 }
@@ -103,6 +105,8 @@ void OutputPanel::applyFilters() {
         }
     }
     textOutput->ensureCursorVisible();
+    // UI Polish: Force horizontal scroll back to the left edge
+    textOutput->horizontalScrollBar()->setValue(0);
 }
 
 bool OutputPanel::isLevelVisible(LogLevel level) const {

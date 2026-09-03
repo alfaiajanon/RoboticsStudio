@@ -4,6 +4,7 @@
 #include "Utils/Spatial.h"
 #include "Telemetry/PlotTarget.h"
 #include "Simulation/MicroController/MicroController.h"
+#include <qobject.h>
 
 
 class ComponentInstance;
@@ -21,13 +22,13 @@ class Project {
         QString projectPath;
         QString directoryPath;
         QJsonObject projectData;
-        
+
         int nextComponentUid = 1; // for auto-assigning UIDs to new components
 
         ComponentInstance* rootComponent = nullptr;
         QMap<int, ComponentInstance*> componentMap;
         QList<Constraint*> constraintList;
-        Rotation rootRotation; 
+        Rotation rootRotation;
 
         MicroController microcontroller;
 
@@ -40,7 +41,7 @@ class Project {
 
         void clear();
         void parseAssembly();
-        void buildHierarchy(); 
+        void buildHierarchy();
         void applyTransforms();
         void applyDefaults();
         void saveDefaults();
@@ -50,18 +51,19 @@ class Project {
         void writeAssetsXML(ComponentInstance* comp, QString& assetsOut, QSet<QString>& processedModels);
         void writeActuatorsXML(ComponentInstance* comp, QString& actuatorsOut);
         void writeSensorsXML(ComponentInstance* comp, QString& sensorsOut);
-        
-        void writeConstraintXML(ComponentInstance* compA, const QString& connA, 
-                                ComponentInstance* compB, const QString& connB, 
+
+        void writeConstraintXML(ComponentInstance* compA, const QString& connA,
+                                ComponentInstance* compB, const QString& connB,
                                 QString& constraintsOut, QString& contactsOut);
-            
+
     public:
         Project();
         ~Project();
-        
+
 
         bool loadProject(const QString& path);
         void setProjectPath(const QString& path);
+        QString getProjectPath(){return projectPath;}
         bool saveProject();
         void unloadProject();
         void refresh();
@@ -69,7 +71,7 @@ class Project {
         QJsonObject getProjectData();
         void setProjectData(QJsonObject data);
 
-        QList<PlotTarget> getActivePlotsVal(){ return activePlots; } 
+        QList<PlotTarget> getActivePlotsVal(){ return activePlots; }
         QList<PlotTarget>* getActivePlots(){ return &activePlots; }
         ComponentInstance* getRootComponent();
         ComponentInstance* getComponentByUid(int uid);
@@ -81,20 +83,20 @@ class Project {
         void setRootComponent(ComponentInstance* comp);
         void resetRootComponent();
 
-        ComponentInstance* createComponentInstance( const int parentUid, 
-                                                    const QString& parentConnector, 
-                                                    const QString& modelId, 
+        ComponentInstance* createComponentInstance( const int parentUid,
+                                                    const QString& parentConnector,
+                                                    const QString& modelId,
                                                     const QString& selfConnector,
                                                     const float snapAngle);
-        
+
         // Undo/redo support for component creation (see Commands/AddComponentCommand.h).
         // takeComponent() unlinks an instance from map/parent/root WITHOUT deleting it
         // (caller takes ownership); adoptComponent() re-links a previously taken instance.
         ComponentInstance* takeComponent(int uid);
         void adoptComponent(ComponentInstance* comp);
-        
-    
-        
+
+
+
         void reloadScript();
         void setScript(int idx);
         void setScriptPaths(QJsonArray newarr){ scriptPaths = newarr; };
@@ -104,6 +106,6 @@ class Project {
 
         QString getProjectDirectory() const { return directoryPath; }
 
-        
+
         QString generateMujocoXML(bool forSimulation = false);
 };

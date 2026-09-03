@@ -13,11 +13,11 @@
 
 #include "Utils/Log.h"
 #include "View/Widgets/Toast.h"
-#include "View/Widgets/CodeEditor.h" 
+#include "View/Widgets/CodeEditor.h"
 
-ScriptPanel::ScriptPanel(QWidget* parent) 
+ScriptPanel::ScriptPanel(QWidget* parent)
     : QWidget(parent), isInternalSave(false), hasUnsavedChanges(false) {
-    
+
     fileWatcher = new QFileSystemWatcher(this);
     setupUI();
 
@@ -39,7 +39,7 @@ void ScriptPanel::setupUI() {
 
     statusLabel = new QLabel("No script loaded", toolbar);
     statusLabel->setStyleSheet("color: #cccccc; font-style: italic;");
-    
+
     saveButton = new QPushButton("Save", toolbar);
     saveButton->setEnabled(false);
     saveButton->setFixedWidth(60);
@@ -80,16 +80,19 @@ void ScriptPanel::loadScript(const QString& fullpath) {
     QString content = in.readAll();
     file.close();
 
-    textEditor->blockSignals(true);
+    // Disconnect our specific slot to prevent state changes, allowing CodeEditor to process internal sizing signals
+    disconnect(textEditor, &QPlainTextEdit::textChanged, this, &ScriptPanel::onEditorTextChanged);
     textEditor->setPlainText(content);
-    textEditor->blockSignals(false);
+    textEditor->horizontalScrollBar()->setValue(0);
+    textEditor->verticalScrollBar()->setValue(0);
+    connect(textEditor, &QPlainTextEdit::textChanged, this, &ScriptPanel::onEditorTextChanged);
 
     currentFilePath = fullpath;
     fileWatcher->addPath(currentFilePath);
-    
+
     hasUnsavedChanges = false;
     saveButton->setEnabled(false);
-    
+
     QFileInfo fileInfo(fullpath);
     statusLabel->setText(fileInfo.fileName() + " (External Editor Preferred)");
 }
@@ -107,10 +110,10 @@ void ScriptPanel::saveScript() {
 
         hasUnsavedChanges = false;
         saveButton->setEnabled(false);
-        
+
         QFileInfo fileInfo(currentFilePath);
         statusLabel->setText(fileInfo.fileName() + " (External Editor Preferred)");
-        
+
         Toast::showMessage(this->window(), "Script Saved");
     } else {
         Log::error("ScriptPanel failed to save file: " + currentFilePath);
@@ -129,7 +132,7 @@ void ScriptPanel::onEditorTextChanged() {
     if (!hasUnsavedChanges && !currentFilePath.isEmpty()) {
         hasUnsavedChanges = true;
         saveButton->setEnabled(true);
-        
+
         QFileInfo fileInfo(currentFilePath);
         statusLabel->setText(fileInfo.fileName() + " *");
     }
@@ -148,17 +151,22 @@ void ScriptPanel::onExternalFileChanged(const QString& fullpath) {
         QString content = in.readAll();
         file.close();
 
-        textEditor->blockSignals(true);
-        
+        // Disconnect our specific slot to prevent state changes, allowing CodeEditor to process internal sizing signals
+        disconnect(textEditor, &QPlainTextEdit::textChanged, this, &ScriptPanel::onEditorTextChanged);
+
         int scrollPos = textEditor->verticalScrollBar()->value();
+        int hScrollPos = textEditor->horizontalScrollBar()->value();
+
         textEditor->setPlainText(content);
+
         textEditor->verticalScrollBar()->setValue(scrollPos);
-        
-        textEditor->blockSignals(false);
+        textEditor->horizontalScrollBar()->setValue(hScrollPos);
+
+        connect(textEditor, &QPlainTextEdit::textChanged, this, &ScriptPanel::onEditorTextChanged);
 
         hasUnsavedChanges = false;
         saveButton->setEnabled(false);
-        
+
         QFileInfo fileInfo(fullpath);
         statusLabel->setText(fileInfo.fileName() + " (External Editor Preferred)");
 

@@ -13,15 +13,6 @@
 
 #pragma region Helpers
 
-/*
- * Helper function to apply the global dark theme to QCustomPlot instances.
- * Configures background colors, grid lines, and axis label colors.
- */
-
-
-
-
-
 static void applyDarkThemeToPlot(QCustomPlot* plot, const QString& yLabel) {
     QColor bgColor("#1e1e1e");
     QColor textColor("#dcdcdc");
@@ -29,15 +20,15 @@ static void applyDarkThemeToPlot(QCustomPlot* plot, const QString& yLabel) {
     QColor axisColor("#7a7a7a");
 
     plot->setBackground(QBrush(bgColor));
-    
+
     plot->xAxis->setLabel("Time (s)");
     plot->yAxis->setLabel(yLabel);
-    
+
     plot->xAxis->setLabelColor(textColor);
     plot->yAxis->setLabelColor(textColor);
     plot->xAxis->setTickLabelColor(textColor);
     plot->yAxis->setTickLabelColor(textColor);
-    
+
     QPen axisPen(axisColor, 1);
     plot->xAxis->setBasePen(axisPen);
     plot->xAxis->setTickPen(axisPen);
@@ -45,7 +36,7 @@ static void applyDarkThemeToPlot(QCustomPlot* plot, const QString& yLabel) {
     plot->yAxis->setBasePen(axisPen);
     plot->yAxis->setTickPen(axisPen);
     plot->yAxis->setSubTickPen(axisPen);
-    
+
     QPen gridPen(gridColor, 1, Qt::SolidLine);
     plot->xAxis->grid()->setPen(gridPen);
     plot->yAxis->grid()->setPen(gridPen);
@@ -57,100 +48,87 @@ static void applyDarkThemeToPlot(QCustomPlot* plot, const QString& yLabel) {
 
 #pragma region CanvasWindow Base
 
-/*
- * Base constructor for all canvas window types.
- * Initializes the default window properties and native styling.
- */
-
-
-
-
-
-CanvasWindow::CanvasWindow(DataType type, const QString& title, QWidget* parent) 
+CanvasWindow::CanvasWindow(DataType type, const QString& title, QWidget* parent)
     : QWidget(parent, Qt::Window), dataType(type), title(title) {
     setWindowTitle(title);
-    resize(600, 400);
+    resize(750, 450); // Slightly wider to accommodate the side panel
 }
 
 #pragma region ScalarCanvasWindow
 
-/*
- * Initializes the ScalarCanvasWindow UI layout and update timer.
- * Sets up a single QCustomPlot for 1D time series tracking.
- */
-
-
-
-
-
 ScalarCanvasWindow::ScalarCanvasWindow(const QString& title, QWidget* parent)
     : CanvasWindow(DataType::SCALAR, title, parent) {
-    
-    QVBoxLayout* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(0, 0, 0, 0);
+
+    QHBoxLayout* rootLayout = new QHBoxLayout(this);
+    rootLayout->setContentsMargins(0, 0, 0, 0);
 
     customPlot = new QCustomPlot(this);
     applyDarkThemeToPlot(customPlot, "Value");
-    layout->addWidget(customPlot);
+    rootLayout->addWidget(customPlot, 1);
+
+    QFrame* sidePanel = new QFrame(this);
+    sidePanel->setFixedWidth(200);
+    sidePanel->setStyleSheet("QFrame { background-color: #252526; border-left: 1px solid #333; }");
+    controlsLayout = new QVBoxLayout(sidePanel);
+    controlsLayout->setAlignment(Qt::AlignTop);
+    controlsLayout->setContentsMargins(8, 8, 8, 8);
+    controlsLayout->setSpacing(6);
+
+    QLabel* legendLabel = new QLabel("<b>Sources</b>", sidePanel);
+    legendLabel->setStyleSheet("color: #dcdcdc; border: none;");
+    controlsLayout->addWidget(legendLabel);
+
+    rootLayout->addWidget(sidePanel, 0);
 
     this->setProperty("lastSeenTime", -1.0);
 
     updateTimer = new QTimer(this);
     connect(updateTimer, &QTimer::timeout, this, &ScalarCanvasWindow::onUpdateTimer);
-    updateTimer->start(16); 
+    updateTimer->start(16);
 }
-
-
-
-
-
-/*
- * Cleans up the update timer upon window destruction.
- */
-
-
-
-
 
 ScalarCanvasWindow::~ScalarCanvasWindow() {
     updateTimer->stop();
 }
 
-
-
-
-
-/*
- * Adds a new target graph to the plot with a randomized hue.
- * Registers the channel ID for active polling.
- */
-
-
-
-
-
-void ScalarCanvasWindow::addTarget(int channelId) {
+void ScalarCanvasWindow::addTarget(int channelId, const QString& label) {
     if (activeGraphs.contains(channelId)) return;
 
     QCPGraph* newGraph = customPlot->addGraph();
     int hue = QRandomGenerator::global()->bounded(360);
-    newGraph->setPen(QPen(QColor::fromHsv(hue, 200, 240), 2));
-    
+    QColor initialColor = QColor::fromHsv(hue, 200, 240);
+    newGraph->setPen(QPen(initialColor, 2));
+
     activeGraphs.insert(channelId, newGraph);
+
+    QWidget* rowWidget = new QWidget();
+    QHBoxLayout* rowLayout = new QHBoxLayout(rowWidget);
+    rowLayout->setContentsMargins(0, 0, 0, 0);
+
+    QLabel* nameLabel = new QLabel(label);
+    nameLabel->setStyleSheet("color: #dcdcdc; border: none;");
+
+    QPushButton* colorBtn = new QPushButton();
+    colorBtn->setFixedSize(20, 20);
+    colorBtn->setCursor(Qt::PointingHandCursor);
+    colorBtn->setStyleSheet(QString("background-color: %1; border: 1px solid #555; border-radius: 2px;").arg(initialColor.name()));
+
+    connect(colorBtn, &QPushButton::clicked, this, [this, newGraph, colorBtn]() {
+        QColor newCol = QColorDialog::getColor(newGraph->pen().color(), this, "Select Graph Color");
+        if (newCol.isValid()) {
+            newGraph->setPen(QPen(newCol, 2));
+            colorBtn->setStyleSheet(QString("background-color: %1; border: 1px solid #555; border-radius: 2px;").arg(newCol.name()));
+            customPlot->replot();
+        }
+    });
+
+    rowLayout->addWidget(nameLabel);
+    rowLayout->addStretch();
+    rowLayout->addWidget(colorBtn);
+
+    controlsLayout->addWidget(rowWidget);
+    controlRows.insert(channelId, rowWidget);
 }
-
-
-
-
-
-/*
- * Removes an existing target graph from the plot and clears its data.
- * Unregisters the channel ID from active polling.
- */
-
-
-
-
 
 void ScalarCanvasWindow::removeTarget(int channelId) {
     if (activeGraphs.contains(channelId)) {
@@ -158,20 +136,11 @@ void ScalarCanvasWindow::removeTarget(int channelId) {
         activeGraphs.remove(channelId);
         customPlot->replot();
     }
+    if (controlRows.contains(channelId)) {
+        QWidget* row = controlRows.take(channelId);
+        row->deleteLater();
+    }
 }
-
-
-
-
-
-/*
- * High-speed polling loop for fetching data from the TelemetryRegistry.
- * Intelligently scales axes and handles simulation resets.
- */
-
-
-
-
 
 void ScalarCanvasWindow::onUpdateTimer() {
     auto& registry = TelemetryRegistry::getInstance();
@@ -189,14 +158,14 @@ void ScalarCanvasWindow::onUpdateTimer() {
         size_t validStartIndex = 0;
         for (size_t i = 1; i < points.size(); ++i) {
             if (points[i].time < points[i-1].time) {
-                validStartIndex = i; 
+                validStartIndex = i;
             }
         }
 
         QVector<double> keys, values;
         keys.reserve(points.size() - validStartIndex);
         values.reserve(points.size() - validStartIndex);
-        
+
         for (size_t i = validStartIndex; i < points.size(); ++i) {
             keys.append(points[i].time);
             values.append(points[i].value);
@@ -218,28 +187,23 @@ void ScalarCanvasWindow::onUpdateTimer() {
     }
 
     if (hasNewData) {
-        customPlot->xAxis->setRange(latestTime - 5.0, latestTime + 0.5); 
+        customPlot->xAxis->setRange(latestTime - 5.0, latestTime + 0.5);
         customPlot->yAxis->rescale();
         customPlot->replot();
     }
 }
 
 
-#pragma region VectorCanvasWindow 
-
-/*
- * Initializes the VectorCanvasWindow UI layout and interaction modes.
- * Sets up a dropdown for plot variation and a stacked widget for different views.
- */
-
-
-
-
+#pragma region VectorCanvasWindow
 
 VectorCanvasWindow::VectorCanvasWindow(const QString& title, QWidget* parent)
     : CanvasWindow(DataType::VECTOR, title, parent) {
-    
-    QVBoxLayout* mainLayout = new QVBoxLayout(this);
+
+    QHBoxLayout* rootLayout = new QHBoxLayout(this);
+    rootLayout->setContentsMargins(0, 0, 0, 0);
+
+    QWidget* plotArea = new QWidget();
+    QVBoxLayout* mainLayout = new QVBoxLayout(plotArea);
     mainLayout->setContentsMargins(8, 8, 8, 8);
 
     QHBoxLayout* topBar = new QHBoxLayout();
@@ -276,6 +240,22 @@ VectorCanvasWindow::VectorCanvasWindow(const QString& title, QWidget* parent)
     connect(variationCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             stackedWidget, &QStackedWidget::setCurrentIndex);
 
+    rootLayout->addWidget(plotArea, 1);
+
+    QFrame* sidePanel = new QFrame(this);
+    sidePanel->setFixedWidth(200);
+    sidePanel->setStyleSheet("QFrame { background-color: #252526; border-left: 1px solid #333; }");
+    controlsLayout = new QVBoxLayout(sidePanel);
+    controlsLayout->setAlignment(Qt::AlignTop);
+    controlsLayout->setContentsMargins(8, 8, 8, 8);
+    controlsLayout->setSpacing(6);
+
+    QLabel* legendLabel = new QLabel("<b>Sources</b>", sidePanel);
+    legendLabel->setStyleSheet("color: #dcdcdc; border: none;");
+    controlsLayout->addWidget(legendLabel);
+
+    rootLayout->addWidget(sidePanel, 0);
+
     this->setProperty("lastSeenTime", -1.0);
 
     updateTimer = new QTimer(this);
@@ -283,36 +263,11 @@ VectorCanvasWindow::VectorCanvasWindow(const QString& title, QWidget* parent)
     updateTimer->start(16);
 }
 
-
-
-
-
-/*
- * Cleans up the update timer upon window destruction.
- */
-
-
-
-
-
 VectorCanvasWindow::~VectorCanvasWindow() {
     updateTimer->stop();
 }
 
-
-
-
-
-/*
- * Adds a new multi-dimensional target graph to all internal plots.
- * Configures distinct line styles for X, Y, and Z combined axes.
- */
-
-
-
-
-
-void VectorCanvasWindow::addTarget(int channelId) {
+void VectorCanvasWindow::addTarget(int channelId, const QString& label) {
     if (activeGraphs.contains(channelId)) return;
 
     VectorGraphs vg;
@@ -326,28 +281,56 @@ void VectorCanvasWindow::addTarget(int channelId) {
     vg.combinedZ = combinedPlot->addGraph();
     vg.combinedZ->setPen(QPen(baseColor, 2, Qt::DotLine));
 
-    vg.sepX = xPlot->addGraph(); 
+    vg.sepX = xPlot->addGraph();
     vg.sepX->setPen(QPen(baseColor, 2));
-    vg.sepY = yPlot->addGraph(); 
+    vg.sepY = yPlot->addGraph();
     vg.sepY->setPen(QPen(baseColor, 2));
-    vg.sepZ = zPlot->addGraph(); 
+    vg.sepZ = zPlot->addGraph();
     vg.sepZ->setPen(QPen(baseColor, 2));
 
     activeGraphs.insert(channelId, vg);
+
+    QWidget* rowWidget = new QWidget();
+    QHBoxLayout* rowLayout = new QHBoxLayout(rowWidget);
+    rowLayout->setContentsMargins(0, 0, 0, 0);
+
+    QLabel* nameLabel = new QLabel(label);
+    nameLabel->setStyleSheet("color: #dcdcdc; border: none;");
+
+    QPushButton* colorBtn = new QPushButton();
+    colorBtn->setFixedSize(20, 20);
+    colorBtn->setCursor(Qt::PointingHandCursor);
+    colorBtn->setStyleSheet(QString("background-color: %1; border: 1px solid #555; border-radius: 2px;").arg(baseColor.name()));
+
+    connect(colorBtn, &QPushButton::clicked, this, [this, channelId, colorBtn]() {
+        if (!activeGraphs.contains(channelId)) return;
+
+        QColor newCol = QColorDialog::getColor(activeGraphs[channelId].sepX->pen().color(), this, "Select Graph Color");
+        if (newCol.isValid()) {
+            VectorGraphs& g = activeGraphs[channelId];
+            g.combinedX->setPen(QPen(newCol, 2, Qt::SolidLine));
+            g.combinedY->setPen(QPen(newCol, 2, Qt::DashLine));
+            g.combinedZ->setPen(QPen(newCol, 2, Qt::DotLine));
+            g.sepX->setPen(QPen(newCol, 2));
+            g.sepY->setPen(QPen(newCol, 2));
+            g.sepZ->setPen(QPen(newCol, 2));
+
+            colorBtn->setStyleSheet(QString("background-color: %1; border: 1px solid #555; border-radius: 2px;").arg(newCol.name()));
+
+            combinedPlot->replot();
+            xPlot->replot();
+            yPlot->replot();
+            zPlot->replot();
+        }
+    });
+
+    rowLayout->addWidget(nameLabel);
+    rowLayout->addStretch();
+    rowLayout->addWidget(colorBtn);
+
+    controlsLayout->addWidget(rowWidget);
+    controlRows.insert(channelId, rowWidget);
 }
-
-
-
-
-
-/*
- * Removes all representations of a multi-dimensional target graph.
- * Unregisters the channel ID from active polling.
- */
-
-
-
-
 
 void VectorCanvasWindow::removeTarget(int channelId) {
     if (activeGraphs.contains(channelId)) {
@@ -365,20 +348,11 @@ void VectorCanvasWindow::removeTarget(int channelId) {
         yPlot->replot();
         zPlot->replot();
     }
+    if (controlRows.contains(channelId)) {
+        QWidget* row = controlRows.take(channelId);
+        row->deleteLater();
+    }
 }
-
-
-
-
-
-/*
- * High-speed polling loop for fetching 3D vector data from the TelemetryRegistry.
- * Updates both combined and separated plot views concurrently.
- */
-
-
-
-
 
 void VectorCanvasWindow::onUpdateTimer() {
     auto& registry = TelemetryRegistry::getInstance();
@@ -400,9 +374,9 @@ void VectorCanvasWindow::onUpdateTimer() {
 
         QVector<double> keys, xVals, yVals, zVals;
         int count = points.size() - validStartIndex;
-        keys.reserve(count); 
-        xVals.reserve(count); 
-        yVals.reserve(count); 
+        keys.reserve(count);
+        xVals.reserve(count);
+        yVals.reserve(count);
         zVals.reserve(count);
 
         for (size_t i = validStartIndex; i < points.size(); ++i) {
@@ -437,16 +411,16 @@ void VectorCanvasWindow::onUpdateTimer() {
             combinedPlot->yAxis->rescale();
             combinedPlot->replot();
         } else if (mode == 1) {
-            xPlot->xAxis->setRange(latestTime - 5.0, latestTime + 0.5); 
-            xPlot->yAxis->rescale(); 
+            xPlot->xAxis->setRange(latestTime - 5.0, latestTime + 0.5);
+            xPlot->yAxis->rescale();
             xPlot->replot();
-            
-            yPlot->xAxis->setRange(latestTime - 5.0, latestTime + 0.5); 
-            yPlot->yAxis->rescale(); 
+
+            yPlot->xAxis->setRange(latestTime - 5.0, latestTime + 0.5);
+            yPlot->yAxis->rescale();
             yPlot->replot();
-            
-            zPlot->xAxis->setRange(latestTime - 5.0, latestTime + 0.5); 
-            zPlot->yAxis->rescale(); 
+
+            zPlot->xAxis->setRange(latestTime - 5.0, latestTime + 0.5);
+            zPlot->yAxis->rescale();
             zPlot->replot();
         }
     }
@@ -455,24 +429,15 @@ void VectorCanvasWindow::onUpdateTimer() {
 
 #pragma region CanvasDockItem (The Card)
 
-/*
- * Constructor for the UI card inside the PlotPanel dock.
- * Sets up distinct styling and interactive logic for managing canvas states.
- */
-
-
-
-
-
 CanvasDockItem::CanvasDockItem(DataType type, const QString& name, QWidget* parent)
     : QWidget(parent), dataType(type), canvasName(name) {
-    
+
     QVBoxLayout* outerLayout = new QVBoxLayout(this);
     outerLayout->setContentsMargins(0, 0, 0, 0);
 
     QFrame* mainFrame = new QFrame(this);
     mainFrame->setStyleSheet("QFrame { background-color: rgba(128, 128, 128, 0.05); border: 1px solid rgba(128, 128, 128, 0.2); border-radius: 4px; }");
-    
+
     QVBoxLayout* mainLayout = new QVBoxLayout(mainFrame);
     mainLayout->setContentsMargins(8, 8, 8, 8);
     mainLayout->setSpacing(6);
@@ -483,8 +448,8 @@ CanvasDockItem::CanvasDockItem(DataType type, const QString& name, QWidget* pare
     if (type == DataType::SCALAR) iconLabel->setText("📈");
     else if (type == DataType::VECTOR) iconLabel->setText("📐");
     else if (type == DataType::IMAGE) iconLabel->setText("📷");
-    iconLabel->setStyleSheet("border: none; font-size: 18px;"); 
-    
+    iconLabel->setStyleSheet("border: none; font-size: 18px;");
+
     QLabel* nameLabel = new QLabel("<b>" + name + "</b>");
     nameLabel->setStyleSheet("border: none;");
 
@@ -497,35 +462,35 @@ CanvasDockItem::CanvasDockItem(DataType type, const QString& name, QWidget* pare
     QWidget* targetsContainer = new QWidget();
     targetsContainer->setStyleSheet("background-color: transparent; border: none;");
     targetsLayout = new QVBoxLayout(targetsContainer);
-    targetsLayout->setContentsMargins(28, 0, 0, 0); 
+    targetsLayout->setContentsMargins(28, 0, 0, 0);
     targetsLayout->setSpacing(2);
     mainLayout->addWidget(targetsContainer);
 
     QHBoxLayout* actionsLayout = new QHBoxLayout();
-    
+
     QPushButton* addTargetBtn = new QPushButton("+ Add Target");
     QPushButton* viewBtn = new QPushButton("View");
     QPushButton* toggleBtn = new QPushButton("Disable");
     QPushButton* deleteBtn = new QPushButton("✖");
-    deleteBtn->setFixedWidth(30); 
+    deleteBtn->setFixedWidth(30);
 
     actionsLayout->addWidget(addTargetBtn);
-    actionsLayout->addStretch(); 
+    actionsLayout->addStretch();
     actionsLayout->addWidget(viewBtn);
     actionsLayout->addWidget(toggleBtn);
     actionsLayout->addWidget(deleteBtn);
-    
+
     mainLayout->addLayout(actionsLayout);
 
     if (type == DataType::SCALAR) popUpWindow = new ScalarCanvasWindow(name, nullptr);
-    else popUpWindow = new VectorCanvasWindow(name, nullptr); 
+    else popUpWindow = new VectorCanvasWindow(name, nullptr);
 
     connect(addTargetBtn, &QPushButton::clicked, this, [this, toggleBtn]() {
         bool isEnabled = (toggleBtn->text() == "Disable");
         this->setProperty("currentlyEnabled", isEnabled);
         showAddTargetDialog();
     });
-    
+
     connect(viewBtn, &QPushButton::clicked, this, [this]() {
         if (popUpWindow) {
             popUpWindow->show();
@@ -536,7 +501,7 @@ CanvasDockItem::CanvasDockItem(DataType type, const QString& name, QWidget* pare
 
     connect(toggleBtn, &QPushButton::clicked, this, [this, toggleBtn]() {
         bool isEnabled = (toggleBtn->text() == "Disable");
-        isEnabled = !isEnabled; 
+        isEnabled = !isEnabled;
         toggleBtn->setText(isEnabled ? "Disable" : "Enable");
 
         auto& registry = TelemetryRegistry::getInstance();
@@ -565,27 +530,15 @@ CanvasDockItem::CanvasDockItem(DataType type, const QString& name, QWidget* pare
             }
         }
         subscribedChannels.clear();
-        
+
         if (popUpWindow) {
             popUpWindow->close();
             popUpWindow->deleteLater();
         }
-        
+
         this->deleteLater();
     });
 }
-
-
-
-
-
-/*
- * Cleans up registry subscriptions and sub-windows upon deletion.
- */
-
-
-
-
 
 CanvasDockItem::~CanvasDockItem() {
     auto& registry = TelemetryRegistry::getInstance();
@@ -599,33 +552,9 @@ CanvasDockItem::~CanvasDockItem() {
     if (popUpWindow) popUpWindow->deleteLater();
 }
 
-
-
-
-
-/*
- * Absorbs the click event without popping up the window.
- */
-
-
-
-
-
 void CanvasDockItem::mouseReleaseEvent(QMouseEvent* event) {
-    QWidget::mouseReleaseEvent(event); 
+    QWidget::mouseReleaseEvent(event);
 }
-
-
-
-
-
-/*
- * Shows a dialog to select data channels that match the canvas data type.
- */
-
-
-
-
 
 void CanvasDockItem::showAddTargetDialog() {
     QDialog dialog(this);
@@ -662,9 +591,9 @@ void CanvasDockItem::showAddTargetDialog() {
     if (dialog.exec() == QDialog::Accepted && listWidget->currentItem()) {
         int channelId = listWidget->currentItem()->data(Qt::UserRole).toInt();
         QString label = listWidget->currentItem()->text();
-        
+
         subscribedChannels.append(channelId);
-        
+
         bool isEnabled = this->property("currentlyEnabled").toBool();
         if (isEnabled) {
             if (dataType == DataType::SCALAR) {
@@ -674,23 +603,10 @@ void CanvasDockItem::showAddTargetDialog() {
             }
         }
 
-        popUpWindow->addTarget(channelId);
+        popUpWindow->addTarget(channelId, label);
         addTargetUI(channelId, label);
     }
 }
-
-
-
-
-
-/*
- * Adds a visual pill to the card's layout representing the chosen target.
- * Includes a remove button for specific target deletion.
- */
-
-
-
-
 
 void CanvasDockItem::addTargetUI(int channelId, const QString& label) {
     QWidget* row = new QWidget();
@@ -699,9 +615,9 @@ void CanvasDockItem::addTargetUI(int channelId, const QString& label) {
     rowLayout->setContentsMargins(0, 2, 0, 2);
 
     QLabel* textLabel = new QLabel("↳ " + label);
-    
+
     QPushButton* removeBtn = new QPushButton("✖");
-    removeBtn->setFixedSize(24, 24); 
+    removeBtn->setFixedSize(24, 24);
     removeBtn->setStyleSheet("color: #E53935; border: none; font-weight: bold; font-size: 14px; background: transparent;");
 
     rowLayout->addWidget(textLabel);
@@ -713,14 +629,14 @@ void CanvasDockItem::addTargetUI(int channelId, const QString& label) {
     connect(removeBtn, &QPushButton::clicked, this, [this, row, channelId]() {
         subscribedChannels.removeOne(channelId);
         popUpWindow->removeTarget(channelId);
-        
+
         auto& registry = TelemetryRegistry::getInstance();
         if (dataType == DataType::SCALAR) {
             if (auto ch = registry.getScalar(channelId)) ch->unsubscribe();
         } else if (dataType == DataType::VECTOR) {
             if (auto ch = registry.getVector(channelId)) ch->unsubscribe();
         }
-        
+
         row->deleteLater();
     });
 }
