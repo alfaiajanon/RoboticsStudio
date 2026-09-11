@@ -55,6 +55,23 @@ class InspectorPanel : public QWidget {
         int currentUid = -1;
         QVBoxLayout* mainLayout;
         QWidget* contentWidget;
+
+        // Set while a joint slider is being mouse-dragged: buildUI() defers
+        // rebuilds so the drag doesn't lose focus mid-gesture, and joint
+        // values are previewed directly on the document until sliderRelease
+        // commits a single undoable command.
+        bool dragInProgress = false;
+        // Joint value captured on sliderPressed; the release command undoes to this.
+        double dragStartValue = 0.0;
+        // Each slider drag gets a unique merge key (see below), so a finished
+        // drag can never merge with the NEXT edit -- every drag is its own
+        // undo step. Keyboard/spinbox nudges share a per-field "nudge" key and
+        // only merge with immediately consecutive nudges.
+        int dragSessionCounter = 0;
+        QString dragMergeKey;
+        // Set when a buildUI() request was suppressed by dragInProgress;
+        // sliderReleased runs the deferred rebuild.
+        bool rebuildPending = false;
         
         void clearLayout(QLayout* layout); 
         void showEmptyState();
@@ -82,7 +99,11 @@ class InspectorPanel : public QWidget {
         void setComponent(int uid);
         void setInputState(bool flag);
 
-        void updateLiveValues(); 
+        void updateLiveValues();
+        // Lightweight alternative to buildUI() for undoing value-only
+        // commands: syncs the joint sliders/spinboxes from the document
+        // without rebuilding (and de-focusing) the panel.
+        void updateJointValues();
 
     protected:
         bool eventFilter(QObject* obj, QEvent* event) override;

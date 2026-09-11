@@ -1,5 +1,6 @@
 // src/View/Windows/ComponentEditorWindow.cpp
 #include "ComponentEditorWindow.h"
+#include "Document/Components/ComponentData.h"
 #include "View/Panels/ComponentEditor/KeyValueListWidget.h"
 #include "View/Widgets/Toast.h"
 #include "Document/Components/LibraryManager.h"
@@ -121,8 +122,22 @@ static QList<double> stringToDoubleList(const QString& s) {
 
 
 
-ComponentEditorWindow::ComponentEditorWindow(const QString& rsdefPath, bool overwriteInPlace, QWidget* parent)
-    : QWidget(parent, Qt::Window), overwriteInPlace(overwriteInPlace) {
+ComponentEditorWindow::ComponentEditorWindow(ComponentData source, QWidget* parent)
+    : QWidget(parent, Qt::Window) {
+
+    // process data
+    data = source;
+
+    if(!data.modelId.isEmpty()){
+        lockedComponent = true;
+    }else{
+        data.modelId = "new_component";
+        data.meta.name = "New Component";
+    }
+
+
+
+    // show window
 
     setWindowTitle("Component Editor");
     resize(1100, 720);
@@ -159,26 +174,22 @@ ComponentEditorWindow::ComponentEditorWindow(const QString& rsdefPath, bool over
     QWidget* bottomBar = new QWidget(this);
     QHBoxLayout* bottomLayout = new QHBoxLayout(bottomBar);
     bottomLayout->addStretch();
-    QPushButton* saveBtn = new QPushButton(overwriteInPlace ? "Save" : "Save As New Component", bottomBar);
+    QPushButton* saveBtn = new QPushButton(lockedComponent? "Save":"Create", bottomBar);
     saveBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     bottomLayout->addWidget(saveBtn);
     rootLayout->addWidget(bottomBar);
     connect(saveBtn, &QPushButton::clicked, this, &ComponentEditorWindow::onSaveClicked);
 
     // ---- load ----
-    QFile file(rsdefPath);
-    if (file.open(QFile::ReadOnly)) {
-        QJsonObject root = QJsonDocument::fromJson(file.readAll()).object();
-        file.close();
-        data = ComponentData::fromJson(root, QFileInfo(rsdefPath).absolutePath());
-    } else {
-        Toast::showMessage(this, "Could not open: " + rsdefPath);
-    }
+    // QFile file(rsdefPath);
+    // if (file.open(QFile::ReadOnly)) {
+    //     QJsonObject root = QJsonDocument::fromJson(file.readAll()).object();
+    //     file.close();
+    //     data = ComponentData::fromJson(root, QFileInfo(rsdefPath).absolutePath());
+    // } else {
+    //     Toast::showMessage(this, "Could not open: " + rsdefPath);
+    // }
 
-    if (!overwriteInPlace) {
-        data.modelId = "new_component";
-        data.meta.name = "New Component";
-    }
 
     clearAndRebuild();
 }
@@ -187,8 +198,7 @@ ComponentEditorWindow::ComponentEditorWindow(const QString& rsdefPath, bool over
 
 
 void ComponentEditorWindow::onSaveClicked() {
-    bool isNewCatalogEntry = !overwriteInPlace;
-    bool ok = LibraryManager::getInstance().saveComponent(data, isNewCatalogEntry);
+    bool ok = LibraryManager::getInstance().saveLocalComponent(data);
     if (ok) {
         Toast::showMessage(this, "Saved: " + data.modelId);
     } else {
@@ -1003,11 +1013,7 @@ void ComponentEditorWindow::build_data() {
 
     QLineEdit* idEdit = new QLineEdit(data.modelId, metaBox);
     idEdit->setPlaceholderText("unique id -- also the save folder/file name");
-    if (overwriteInPlace) {
-        // Locked: the save destination is derived as basePath + modelId +
-        // ".rsdef" with no separate fixed path to fall back on, so
-        // changing id here would silently redirect Save to a different,
-        // uncataloged location instead of updating the file being edited.
+    if (lockedComponent) {
         idEdit->setReadOnly(true);
         idEdit->setToolTip("Id is locked while editing an existing component -- use \"Save As New Component\" to save under a different id.");
     }

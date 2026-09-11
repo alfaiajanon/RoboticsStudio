@@ -79,14 +79,8 @@ void Application::openProject(const QString& projectPath) {
             QMessageBox::critical(nullptr, "Error", "Download/Fetch the component library before opening a project.");
             return;
         }
-        // if (QFile::exists(catalogPath)) {
-        //     Log::info("Loading from downloaded Catalog: " + catalogPath);
-        //     LibraryManager::getInstance().load(catalogPath);
-        // } else {
-        //     QMessageBox::critical(nullptr, "Error", "Download/Fetch the component library before opening a project.");
-        //     return;
-        // }
     }
+    LibraryManager::getInstance().loadLocalComponents(QFileInfo(projectPath).absolutePath());
 
 
     launcher.hide();
@@ -102,11 +96,9 @@ void Application::openProject(const QString& projectPath) {
     currentProject.loadProject(projectPath);
     saveLastProject(projectPath);
 
-    // Old commands point into the previous project's component tree --
-    // undoing them now would be a use-after-free.
+
     undoStack.clear();
 
-    // make necessary simulation setup
     {
         // The physics thread may still be live from a previously opened
         // project -- don't swap the model out from under it.
@@ -179,9 +171,14 @@ int Application::run() {
 
 
 void Application::reloadSimulation() {
+    if (reloadScheduled) return;
+    reloadScheduled = true;
+
     Project* project = getProject();
 
-    QTimer::singleShot(0, this, [project]() {
+    QTimer::singleShot(0, this, [this, project]() {
+        reloadScheduled = false;
+
         SimulationManager* simManager = Application::getInstance()->getSimulationManager();
         std::lock_guard<std::mutex> lock(simManager->physicsMutex);
 
@@ -193,7 +190,9 @@ void Application::reloadSimulation() {
             project->getRootComponent(),
             simManager->getMujocoContext()->getModel()
         );
-        Application::getInstance()->getEditor()->refresh();
+        // Coalesced: the command that triggered this reload also fires the
+        // undo stack's indexChanged -> scheduleRefresh() in the same turn.
+        Application::getInstance()->getEditor()->scheduleRefresh();
     });
 }
 

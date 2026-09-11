@@ -23,6 +23,14 @@ class EditorWindow : public QMainWindow{
         QSplitter *topDownSplitter;
         int currentSelectedUid = -1;
 
+        // scheduleRefresh() coalescing: several refresh requests in the same
+        // event-loop turn (undo-stack indexChanged + reloadSimulation) collapse
+        // into a single rebuild instead of double-logging/double-rebuilding.
+        bool refreshScheduled = false;
+        // Tracks QUndoStack::index() between indexChanged signals so the
+        // handler can tell pushes/redos apart from undos.
+        int lastUndoIndex = 0;
+
         QPushButton* playBtn;
         QLabel* fpsLabel;
         QMenu* editMenu = nullptr;
@@ -50,6 +58,9 @@ class EditorWindow : public QMainWindow{
         EditorWindow(QWidget* parent = nullptr);
 
         void refresh();
+        // Coalesced refresh: collapses multiple requests in the same
+        // event-loop turn into one actual refresh().
+        void scheduleRefresh();
         void frameScene();
         void setupSimConn();
         // Wires the Edit-menu Undo/Redo actions to Application's undo stack.

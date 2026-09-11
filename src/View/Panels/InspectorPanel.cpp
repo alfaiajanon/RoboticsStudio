@@ -11,7 +11,9 @@
 #include <QFile>
 #include <QDir>
 #include <QJsonArray>
+#include <QTimer>
 #include <QDebug>
+#include <qobject.h>
 
 #include "Application/Application.h"
 #include "Document/Project.h"
@@ -19,6 +21,7 @@
 #include "Document/Components/ComponentBlueprint.h"
 #include "Commands/CommandUtils.h"
 #include "Commands/AddComponentCommand.h"
+#include "Commands/RemoveComponentCommand.h"
 #include "Simulation/SimulationManager.h"
 #include "View/Widgets/Toast.h"
 
@@ -187,6 +190,15 @@ void InspectorPanel::pushCommand(std::function<void()> doFn, std::function<void(
 #pragma region buildUI
 
 void InspectorPanel::buildUI() {
+    // A slider drag previews values live without commands; rebuilding here
+    // would delete the slider mid-gesture. sliderReleased runs the deferred
+    // rebuild if one was requested.
+    if (dragInProgress) {
+        rebuildPending = true;
+        return;
+    }
+    rebuildPending = false;
+
     clearLayout(mainLayout);
 
     if (currentUid == -1) {
@@ -208,8 +220,9 @@ void InspectorPanel::buildUI() {
 
     QGroupBox* infoBox = new QGroupBox("Component Info", this);
     QFormLayout* infoLayout = new QFormLayout(infoBox);
-    infoLayout->addRow("Name:", createShrinkableLabel(comp->name, infoBox));
-    infoLayout->addRow("Model:", createShrinkableLabel(comp->model, infoBox));
+    infoLayout->addRow("Component Name:", createShrinkableLabel(comp->name, infoBox));
+    infoLayout->addRow("Model ID:", createShrinkableLabel(comp->modelId, infoBox));
+    infoLayout->addRow("UID:", createShrinkableLabel(QString::number(comp->uid), infoBox));
     mainLayout->addWidget(infoBox);
 
     if (!comp->blueprint->inputDefs.isEmpty()) {
@@ -256,12 +269,14 @@ void InspectorPanel::build_inputs(ComponentInstance* comp) {
         double currentVal = std::get<double>(comp->getJointTarget(def.targetJoint));
 
         QSlider* slider = new QSlider(Qt::Horizontal, targetWidget);
+        slider->setObjectName("inp_slider_" + def.targetJoint); // for updateJointValues()
         slider->setRange(def.range.first, def.range.second);
         slider->setValue(currentVal);
         slider->setFocusPolicy(Qt::StrongFocus);
         slider->installEventFilter(this);
 
         QDoubleSpinBox* spinBox = new QDoubleSpinBox(targetWidget);
+        spinBox->setObjectName("inp_spin_" + def.targetJoint); // for updateJointValues()
         spinBox->setRange(def.range.first, def.range.second);
         spinBox->setValue(currentVal);
         spinBox->setFocusPolicy(Qt::StrongFocus);
@@ -287,17 +302,19 @@ void InspectorPanel::build_inputs(ComponentInstance* comp) {
         });
 
         QString jkey = row.jkey;
+        QSlider* slider = row.slider;
         QDoubleSpinBox* spinBox = row.spinBox;
         int capturedUid = currentUid;
+        // Merge keys: keyboard/wheel/spinbox nudges share one key per field, so
+        // a run of consecutive nudges collapses into a single undo step. Mouse
+        // drags get a UNIQUE key per drag (assigned in sliderPressed) -- a
+        // finished drag is sealed and the next edit always starts a new undo
+        // step, never merging into it. (Merging only ever happens with the
+        // command on top of the stack.)
+        QString nudgeMergeKey = QString("joint:%1:%2:nudge").arg(capturedUid).arg(jkey);
 
-        auto commitValue = [this, capturedUid, jkey, spinBox]() {
-            ComponentInstance* activeComp = Application::getInstance()->getProject()->getComponentByUid(capturedUid);
-            if (!activeComp) return;
-
-            double oldVal = std::get<double>(activeComp->getJointTarget(jkey));
-            double newVal = spinBox->value();
+        auto pushJointCommand = [this, capturedUid, jkey](double oldVal, double newVal, const QString& mergeKey) {
             if (std::abs(oldVal - newVal) < 1e-9) return;
-
             pushCommand(
                 [capturedUid, jkey, newVal]() {
                     if (auto* c = Application::getInstance()->getProject()->getComponentByUid(capturedUid)) {
@@ -310,13 +327,59 @@ void InspectorPanel::build_inputs(ComponentInstance* comp) {
                     }
                 },
                 "Set " + jkey,
-                QString(),
-                false
+                mergeKey,
+                false // joint targets sync live; no MJCF rebuild needed
             );
         };
 
-        connect(row.slider, &QSlider::valueChanged, this, commitValue);
-        connect(spinBox, &QDoubleSpinBox::editingFinished, this, commitValue);
+        // Mouse drag: capture the pre-drag value, seal the session with a
+        // unique merge key, and switch to live preview.
+        connect(slider, &QSlider::sliderPressed, this, [this, capturedUid, jkey]() {
+            ComponentInstance* c = Application::getInstance()->getProject()->getComponentByUid(capturedUid);
+            if (!c) return;
+            dragStartValue = std::get<double>(c->getJointTarget(jkey));
+            dragMergeKey = QString("joint:%1:%2:drag:%3").arg(capturedUid).arg(jkey).arg(++dragSessionCounter);
+            dragInProgress = true;
+        });
+
+        connect(slider, &QSlider::valueChanged, this,
+                [this, capturedUid, jkey, slider, nudgeMergeKey, pushJointCommand](int val) {
+            ComponentInstance* c = Application::getInstance()->getProject()->getComponentByUid(capturedUid);
+            if (!c) return;
+            if (slider->isSliderDown()) {
+                // Live preview only -- the physics loop picks this up every frame;
+                // the undoable command is committed once on sliderReleased.
+                IOData v = static_cast<double>(val); c->setJointTarget(jkey, v);
+            } else {
+                // Keyboard/wheel step (or programmatic sync from the spinbox):
+                // commit immediately, merged with neighbouring nudges.
+                double oldVal = std::get<double>(c->getJointTarget(jkey));
+                pushJointCommand(oldVal, static_cast<double>(val), nudgeMergeKey);
+            }
+        });
+
+        // End of drag: commit a single command (old = pre-drag value) under the
+        // drag's unique key, finalizing the session. Value-only commands don't
+        // trigger an editor refresh -- the widgets already show the value --
+        // so no rebuild happens unless one was suppressed mid-drag.
+        connect(slider, &QSlider::sliderReleased, this, [this, slider, capturedUid, jkey, pushJointCommand]() {
+            dragInProgress = false;
+            pushJointCommand(dragStartValue, static_cast<double>(slider->value()), dragMergeKey);
+            if (rebuildPending) {
+                rebuildPending = false;
+                // Deferred: buildUI() deletes this very slider, so rebuilding
+                // inside the sliderReleased emission would be a use-after-free.
+                QTimer::singleShot(0, this, [this]() { buildUI(); });
+            }
+        });
+
+        connect(spinBox, &QDoubleSpinBox::editingFinished, this,
+                [this, capturedUid, jkey, spinBox, nudgeMergeKey, pushJointCommand]() {
+            ComponentInstance* activeComp = Application::getInstance()->getProject()->getComponentByUid(capturedUid);
+            if (!activeComp) return;
+            double oldVal = std::get<double>(activeComp->getJointTarget(jkey));
+            pushJointCommand(oldVal, spinBox->value(), nudgeMergeKey);
+        });
     }
 }
 
@@ -553,11 +616,26 @@ void InspectorPanel::build_connectors(ComponentInstance* comp) {
                 ComponentInstance* comp = project->getComponentByUid(parentUid);
                 ComponentInstance* childComp = project->getComponentByUid(childUid);
                 if (!comp || !childComp) return;
-                pushCommand(
-                    [comp, childComp]() { childComp->parentUid = -1; childComp->parentConnector = ""; comp->children.removeAll(childComp); },
-                    [comp, childComp, parentUid, connId]() { childComp->parentUid = parentUid; childComp->parentConnector = connId; comp->children.append(childComp); },
-                    "Detach component"
-                );
+
+                QMessageBox box(this);
+                box.setWindowTitle("Remove Attached Component");
+                box.setText(QString("\"%1\" is attached to connector \"%2\".").arg(childComp->name, connId));
+                box.setInformativeText("Detach keeps it in the project as an unattached component.\n"
+                                       "Delete removes it -- and everything attached to it -- from the project.");
+                QPushButton* detachChoice = box.addButton("Detach", QMessageBox::AcceptRole);
+                QPushButton* deleteChoice = box.addButton("Delete Permanently", QMessageBox::DestructiveRole);
+                box.addButton(QMessageBox::Cancel);
+                box.exec();
+
+                if (box.clickedButton() == detachChoice) {
+                    pushCommand(
+                        [comp, childComp]() { childComp->parentUid = -1; childComp->parentConnector = ""; comp->children.removeAll(childComp); },
+                        [comp, childComp, parentUid, connId]() { childComp->parentUid = parentUid; childComp->parentConnector = connId; comp->children.append(childComp); },
+                        "Detach component"
+                    );
+                } else if (box.clickedButton() == deleteChoice) {
+                    Application::getInstance()->getUndoStack()->push(new RemoveComponentCommand(project, childUid));
+                }
             });
 
         } else {
@@ -681,8 +759,13 @@ void InspectorPanel::build_globalSettings(Project* project) {
                 pData["meta"] = m;
                 project->setProjectData(pData);
             },
-            "Rename robot"
+            "Rename robot",
+            QString(),
+            false // the name only labels <mujoco model="...">; no sim reload needed
         );
+        // ...but the scene tree displays the name, and value-only commands
+        // don't trigger an editor refresh on their own.
+        Application::getInstance()->getEditor()->scheduleRefresh();
     });
 
     connect(scriptCombo, &QComboBox::currentTextChanged, this, [this, project](const QString& text) {
@@ -881,11 +964,25 @@ void InspectorPanel::build_rootAttachment(Project* project) {
         });
 
         connect(detachBtn, &QPushButton::clicked, this, [this, project, rootComp]() {
-            pushCommand(
-                [project, rootComp]() { rootComp->parentUid = -1; rootComp->parentConnector = ""; project->resetRootComponent(); },
-                [project, rootComp]() { rootComp->parentUid = 0; rootComp->parentConnector = "root"; project->setRootComponent(rootComp); },
-                "Detach root component"
-            );
+            QMessageBox box(this);
+            box.setWindowTitle("Remove Root Component");
+            box.setText(QString("\"%1\" is attached as the root component.").arg(rootComp->name));
+            box.setInformativeText("Detach keeps it in the project as an unattached component.\n"
+                                   "Delete removes it -- and everything attached to it -- from the project.");
+            QPushButton* detachChoice = box.addButton("Detach", QMessageBox::AcceptRole);
+            QPushButton* deleteChoice = box.addButton("Delete Permanently", QMessageBox::DestructiveRole);
+            box.addButton(QMessageBox::Cancel);
+            box.exec();
+
+            if (box.clickedButton() == detachChoice) {
+                pushCommand(
+                    [project, rootComp]() { rootComp->parentUid = -1; rootComp->parentConnector = ""; project->resetRootComponent(); },
+                    [project, rootComp]() { rootComp->parentUid = 0; rootComp->parentConnector = "root"; project->setRootComponent(rootComp); },
+                    "Detach root component"
+                );
+            } else if (box.clickedButton() == deleteChoice) {
+                Application::getInstance()->getUndoStack()->push(new RemoveComponentCommand(project, rootComp->uid));
+            }
         });
 
     } else {
@@ -947,6 +1044,34 @@ void InspectorPanel::build_rootAttachment(Project* project) {
 
 
 #pragma region live updates
+
+/*
+ * Syncs the joint input widgets (sliders/spinboxes) from the document without
+ * rebuilding the panel. Used when a value-only command is undone -- a full
+ * buildUI() would de-focus widgets and flicker for no structural reason.
+ * Programmatic setValue() re-enters the valueChanged handlers, but they
+ * compare against the document (which already holds the restored value), so
+ * no new command is pushed.
+ */
+void InspectorPanel::updateJointValues() {
+    if (currentUid <= 0) return;
+
+    ComponentInstance* comp = Application::getInstance()->getProject()->getComponentByUid(currentUid);
+    if (!comp || !comp->blueprint) return;
+
+    for (const QString& key : comp->blueprint->inputDefs.keys()) {
+        QString jkey = comp->blueprint->inputDefs[key].targetJoint;
+        double val = std::get<double>(comp->getJointTarget(jkey));
+
+        if (QSlider* slider = this->findChild<QSlider*>("inp_slider_" + jkey)) {
+            slider->setValue(static_cast<int>(val));
+        }
+        if (QDoubleSpinBox* spinBox = this->findChild<QDoubleSpinBox*>("inp_spin_" + jkey)) {
+            spinBox->setValue(val);
+        }
+    }
+}
+
 
 void InspectorPanel::updateLiveValues() {
     if (currentUid <= 0) return;

@@ -95,6 +95,12 @@ class Project {
         ComponentInstance* takeComponent(int uid);
         void adoptComponent(ComponentInstance* comp);
 
+        // Subtree variants used by Commands/RemoveComponentCommand.h: take/adopt a
+        // component together with all its descendants (intra-subtree parent/children
+        // links are preserved; only the root's external link is severed/restored).
+        ComponentInstance* takeSubtree(int uid);
+        void adoptSubtree(ComponentInstance* root);
+
 
 
         void reloadScript();

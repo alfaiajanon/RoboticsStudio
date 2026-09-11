@@ -45,11 +45,11 @@ class ComponentEditorWindow : public QWidget {
     Q_OBJECT
 
 public:
-    explicit ComponentEditorWindow(const QString& rsdefPath, bool overwriteInPlace, QWidget* parent = nullptr);
+    explicit ComponentEditorWindow(ComponentData source, QWidget* parent = nullptr);
 
 private:
     ComponentData data;
-    bool overwriteInPlace;
+    bool lockedComponent = false;
 
     struct TransformFieldRefs { QLineEdit* posEdit; QLineEdit* rotEdit; };
     TransformFieldRefs addTransformFields(QFormLayout* form, const Transform& t);

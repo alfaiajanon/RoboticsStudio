@@ -20,16 +20,15 @@ configure_file(
 find_package(Qt6 COMPONENTS Xml Widgets OpenGL OpenGLWidgets Qml PrintSupport Network REQUIRED)
 
 file(GLOB_RECURSE SRC_FILES
+    resources/resources.qrc
     src/**/**/*.h
     src/**/**/*.cpp
     src/**/*.h
     src/**/*.cpp
     src/*.h
     src/*.cpp
-    src/View/Resources/resources.qrc
     extern/qcustomplot/*.h
     extern/qcustomplot/*.cpp
-    models/resources.qrc
 )
 add_executable(RoboticsStudio ${SRC_FILES})
 

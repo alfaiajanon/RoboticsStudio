@@ -33,7 +33,9 @@ fields); the simulation reload and the panel refresh happen afterwards.
 | `GenericCommand` | `src/Commands/GenericCommand.h` | Lambda-based `QUndoCommand` — no subclass needed for simple edits. |
 | `Commands::push()` | `src/Commands/CommandUtils.h` | Shared helper: pushes a `GenericCommand`, optionally wrapped with `reloadSimulation()`. |
 | `AddComponentCommand` | `src/Commands/AddComponentCommand.h` | Dedicated command for creating a component on a connector (owns the instance while undone). |
+| `RemoveComponentCommand` | `src/Commands/RemoveComponentCommand.h` | Dedicated command for permanently deleting a component + its subtree (owns the subtree while done). |
 | `Project::takeComponent()` / `adoptComponent()` | `src/Document/Project.cpp` | Unlink/re-link an instance without deleting it — the undo/redo primitives for creation. |
+| `Project::takeSubtree()` / `adoptSubtree()` | `src/Document/Project.cpp` | Subtree variants of the above — the undo/redo primitives for deletion. |
 | Edit-menu actions | `src/View/Windows/EditorWindow.cpp` | `createUndoAction`/`createRedoAction` → dynamic labels + auto enable/disable. |
 
 ## GenericCommand in detail
@@ -52,14 +54,33 @@ Commands::push(
 - Look components up by **uid inside the lambda** (`project->getComponentByUid(uid)`), not by
   caching a pointer you assume is still linked — safer across structural changes.
 - `requiresReload` (default `true`) calls `Application::reloadSimulation()` after each
-  do/undo, which regenerates the MuJoCo XML and refreshes the editor. Leave it on for anything
-  that affects the assembly.
+  do/undo, which regenerates the MuJoCo XML and refreshes the editor. Turn it **off**
+  for anything that doesn't change the MJCF — joint targets and actuator controls sync
+  live through the physics loop (`syncToMujocoJoint`/`syncToMujocoActuator`), and the
+  project name only labels `<mujoco model="...">`. Keep it on for structural edits
+  (attach/detach/delete/replace, snap angle, connector reassign, root rotation),
+  which are baked into the XML.
 
 ### Merging (slider drags)
 
 Give a command a non-empty `mergeKey` and repeated pushes with the same key collapse into one
 undo step: the merged command keeps the **first** undo lambda (returns to the value before the
-drag started) and the **latest** do lambda. Empty mergeKey = never merge.
+drag started) and the **latest** do lambda. Empty mergeKey = never merge. Merging only ever
+happens with the command **on top of the stack** — so a shared key means "consecutive edits of
+the same field merge", and a finished edit run is sealed as soon as any other command lands
+on top.
+
+The joint sliders exploit this with two key schemes (`InspectorPanel::build_inputs`):
+
+- **Mouse drag** — while moving, no commands are pushed at all: the value is previewed
+  directly on the document (the EDITING physics loop shows the motion live) and
+  `InspectorPanel::buildUI()` defers rebuilds so the slider keeps focus. `sliderPressed`
+  assigns a **unique** key (`joint:<uid>:<jkey>:drag:<session>`); `sliderReleased` pushes one
+  command (old = value captured at press) under that key. Because the key is unique per drag,
+  the next edit can never merge into it — every drag is exactly one undo step.
+- **Keyboard / wheel / spinbox nudges** — pushed immediately under a shared per-field key
+  (`joint:<uid>:<jkey>:nudge`), so a run of consecutive nudges is one undo step, but a drag
+  (or any other command) in between starts a fresh step.
 
 ### Macros (multi-step actions)
 
@@ -91,14 +112,41 @@ stack->push(new AddComponentCommand(project, parentUid, connector, modelId, "", 
 
 `parentUid == 0` means "attach as root".
 
+## Deleting components (the other special case)
+
+The cross button on an attached connector offers **Detach** (plain value-flip command —
+the instance stays in the project as an orphan, selectable in connector combos) and
+**Delete Permanently** (`RemoveComponentCommand`), which removes the component *and its
+whole subtree*. The ownership rule is the mirror image of creation:
+
+- **Done state** → the **command** owns the subtree (`Project::takeSubtree()` unlinked
+  the root and removed every descendant from `componentMap`; intra-subtree links stay
+  intact).
+- **Undone state** → the `Project` owns it again (`Project::adoptSubtree()` re-links
+  the same instances — same uids, same emulators).
+- **Command destroyed** while in the done state → it recursively deletes the instances
+  *and their emulators*.
+
 ## Stack lifecycle rules
 
 - **Project open** → `undoStack.clear()`. Old commands point into the old component tree;
   keeping them would be use-after-free.
 - **Successful save** → `undoStack.setClean()` (in `Project::saveProject()`), enabling
   "modified since save" tracking later.
-- Any stack change (`indexChanged`) triggers `EditorWindow::refresh()`, so the scene tree and
-  inspector always match the document after undo/redo.
+- Stack changes (`indexChanged`) trigger `EditorWindow::scheduleRefresh()` **only when the
+  command affects structure** (`GenericCommand::affectsStructure()`, same flag as
+  `requiresReload`). Value-only pushes (joint targets) skip the refresh entirely — the
+  committing widget already shows the value, and rebuilding would steal focus. Undoing a
+  value-only command calls `InspectorPanel::updateJointValues()`, which syncs the
+  sliders/spinboxes from the document in place — no rebuild, no focus loss. (Redo of a
+  value-only command is indistinguishable from a push at the signal level, so it skips
+  the refresh — the inspector catches up on the next structural edit or reselection.)
+- `scheduleRefresh()` and `Application::reloadSimulation()` are both **coalesced**: multiple
+  triggers in the same event-loop turn (a structural command fires both) collapse into one
+  rebuild / one XML regeneration — no double rebuilds, no double log lines.
+- Every command logs `Do:` / `Undo:` / `Redo: <text>` via `Log::info` (in `GenericCommand`,
+  `AddComponentCommand`, `RemoveComponentCommand`), so the Output panel shows the full
+  edit history as it happens.
 
 ## Recipe: adding a new undoable action
 
@@ -113,6 +161,7 @@ stack->push(new AddComponentCommand(project, parentUid, connector, modelId, "", 
 
 ## Known limits / future work
 
-- No delete-component command yet (there is no delete UI at all).
+- Detached (orphan) components can't be deleted from the UI yet — only attached ones
+  (via the connector cross button).
 - Script file operations (add/rename script) are not undoable.
 - No visual "unsaved changes" marker yet (`setClean()` is already in place to support one).

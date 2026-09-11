@@ -188,16 +188,26 @@ void SimulationManager::mcuLoop() {
  * Calculates scaled timesteps, locks the engine, processes math, and yields.
  */
 #pragma region physicsLoop
-void SimulationManager::physicsLoop() {
-    while (isAlive) {
-        if (currentState == SimulationState::PLAYING) {
 
-            stepAccumulator += (8.0f * timeScale.load());
+void SimulationManager::physicsLoop() {
+    lastTickTime = std::chrono::steady_clock::now();
+
+    while (isAlive) {
+        auto now = std::chrono::steady_clock::now();
+        double dtSeconds = std::chrono::duration<double>(now - lastTickTime).count();
+        lastTickTime = now;
+        dtSeconds = std::min(dtSeconds, 0.25);  // Clamp so a debugger pause / OS hitch doesn't force a huge
+                                                // catch-up burst of steps on the next tick.
+
+        if (currentState == SimulationState::PLAYING) {
+            MujocoContext* mj = &mujocoContext;
+            double modelTimestep = mj->getModel()->opt.timestep;
+
+            stepAccumulator += (dtSeconds * timeScale.load()) / modelTimestep;
             int stepsToTake = static_cast<int>(stepAccumulator);
             stepAccumulator -= stepsToTake;
 
             if (stepsToTake > 0) {
-                MujocoContext* mj = &mujocoContext;
                 ComponentInstance* root = project->getRootComponent();
                 {
                     std::lock_guard<std::mutex> lock(physicsMutex);
@@ -208,7 +218,7 @@ void SimulationManager::physicsLoop() {
                     }
                     syncFromMujocoSensor(root, mj->getModel(), mj->getData());
 
-                    processEmulators(root);
+                    processEmulators(root); // position it here to capture both sensor and actuator properly
 
                     pushTelemetry(root, mj->getData()->time);
                     TelemetryRegistry::getInstance().captureAll(mj->getModel(), mj->getData(), mj->getData()->time);

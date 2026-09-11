@@ -1,19 +1,11 @@
 {
-    "id": "servo_sg90",
+    "id": "",
     "meta": {
         "name": "TowerPro SG90",
-        "version": "1.0.0",
-        "author": "Anon",
-        "icon_path": "sg90.png"
+        "version": "1.0.0"
     },
 
     "resources": {
-        "meshes": {
-            "mesh_body": "meshes/servo_body.obj"
-        },
-        "materials": {
-            "mat_servo": "textures/servo_body_texture.png"
-        }
     },
 
     "specs": {
@@ -51,7 +43,7 @@
                     "quat": [1, 0, 0, 0]
                 },
                 "geoms": [
-                    { "type": "mesh", "mesh": "mesh_body", "material": "mat_servo" }
+                    { "type": "box", "size": [0.01, 0.005, 0.014], "pos": [0, 0, 0.004] }
                 ]
             },
             {
@@ -146,10 +138,6 @@
                 "channel_type": "scalar",
                 "physical": true,
                 "target_joint": "servo_joint",
-                "range": [
-                    -90,
-                    90
-                ],
                 "pin_required": ["signal"]
             }
         ],

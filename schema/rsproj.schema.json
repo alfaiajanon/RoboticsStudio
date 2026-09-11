@@ -1,208 +1,97 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
-    "title": "Robotics Studio Project",
+    "title": "Robotics Studio Project (RSPROJ)",
     "type": "object",
-    "required": [
-        "version",
-        "meta",
-        "assembly",
-        "simulation"
-    ],
+    "required": ["assembly", "meta", "script", "version"],
     "properties": {
-        "version": {
-            "type": "number"
-        },
-        "meta": {
-            "type": "object",
-            "required": [
-                "name",
-                "version"
-            ],
-            "properties": {
-                "name": {
-                    "type": "string"
-                },
-                "author": {
-                    "type": "string"
-                },
-                "version": {
-                    "type": "string"
-                },
-                "icon": {
-                    "type": "string"
-                }
-            }
-        },
         "assembly": {
             "type": "object",
-            "required": [
-                "components",
-                "constraints"
-            ],
+            "required": ["components"],
             "properties": {
-                "dependencies": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    },
-                    "description": "Map of Model Alias -> File Path"
-                },
                 "components": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/componentNode"
+                        "type": "object",
+                        "required": ["uid", "model_id", "name", "connection"],
+                        "properties": {
+                            "uid": { "type": "integer" },
+                            "model_id": { "type": "string" },
+                            "name": { "type": "string" },
+                            "parameters": {
+                                "type": "object",
+                                "additionalProperties": { "type": "number" }
+                            },
+                            "connection": {
+                                "anyOf": [
+                                    { "type": "null" },
+                                    {
+                                        "type": "object",
+                                        "required": ["parent_connector", "parent_uid", "self_connector", "snap_angle"],
+                                        "properties": {
+                                            "parent_connector": { "type": "string" },
+                                            "parent_uid": { "type": "integer" },
+                                            "self_connector": { "type": "string" },
+                                            "snap_angle": { "type": "number" }
+                                        }
+                                    }
+                                ]
+                            }
+                        }
                     }
                 },
                 "constraints": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/constraintNode"
+                        "type": "object",
+                        "required": ["component_a", "component_b", "connector_a", "connector_b", "snap_angle"],
+                        "properties": {
+                            "component_a": { "type": "integer" },
+                            "component_b": { "type": "integer" },
+                            "connector_a": { "type": "string" },
+                            "connector_b": { "type": "string" },
+                            "snap_angle": { "type": "number" }
+                        }
                     }
+                },
+                "transform": {
+                    "type": "object",
+                    "properties": {
+                        "rotation": {
+                            "type": "array",
+                            "items": { "type": "number" },
+                            "minItems": 3,
+                            "maxItems": 3
+                        }
+                    }
+                }
+            }
+        },
+        "meta": {
+            "type": "object",
+            "required": ["name"],
+            "properties": {
+                "name": { "type": "string" },
+                "author": { "type": "string" },
+                "icon": { "type": "string" },
+                "version": { "type": "string" }
+            }
+        },
+        "script": {
+            "type": "object",
+            "required": ["current"],
+            "properties": {
+                "current": { "type": "integer" },
+                "paths": {
+                    "type": "array",
+                    "items": { "type": "string" }
                 }
             }
         },
         "simulation": {
-            "type": "object",
-            "required": [
-                "instances"
-            ],
-            "properties": {
-                "dependencies": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    }
-                },
-                "instances": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "required": [
-                            "uid",
-                            "source",
-                            "frame"
-                        ],
-                        "properties": {
-                            "uid": {
-                                "type": "integer"
-                            },
-                            "source": {
-                                "type": "string"
-                            },
-                            "frame": {
-                                "type": "object",
-                                "required": [
-                                    "position",
-                                    "up_vector",
-                                    "forward_vector"
-                                ],
-                                "properties": {
-                                    "position": {
-                                        "type": "array",
-                                        "items": { "type": "number" },
-                                        "minItems": 3,
-                                        "maxItems": 3
-                                    },
-                                    "up_vector": {
-                                        "type": "array",
-                                        "items": { "type": "number" },
-                                        "minItems": 3,
-                                        "maxItems": 3
-                                    },
-                                    "forward_vector": {
-                                        "type": "array",
-                                        "items": { "type": "number" },
-                                        "minItems": 3,
-                                        "maxItems": 3
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    },
-    "definitions": {
-        "componentNode": {
-            "type": "object",
-            "required": [
-                "uid",
-                "type",
-                "model"
-            ],
-            "properties": {
-                "uid": {
-                    "type": "integer"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "type": {
-                    "type": "string"
-                },
-                "model": {
-                    "type": "string"
-                },
-                "connection": {
-                    "type": [
-                        "object",
-                        "null"
-                    ],
-                    "required": [
-                        "parent_uid",
-                        "parent_connector",
-                        "self_connector",
-                        "snap_angle"
-                    ],
-                    "properties": {
-                        "parent_uid": {
-                            "type": "integer"
-                        },
-                        "parent_connector": {
-                            "type": "string"
-                        },
-                        "self_connector": {
-                            "type": "string"
-                        },
-                        "snap_angle": {
-                            "type": "number"
-                        }
-                    }
-                },
-                "parameters": {
-                    "type": "object",
-                    "additionalProperties": true,
-                    "description": "Map of parameter overrides like initial_angle, colors, PID configs, etc."
-                }
-            }
+            "type": "object"
         },
-        "constraintNode": {
-            "type": "object",
-            "required": [
-                "component_a",
-                "connector_a",
-                "component_b",
-                "connector_b",
-                "snap_angle"
-            ],
-            "properties": {
-                "component_a": {
-                    "type": "integer"
-                },
-                "connector_a": {
-                    "type": "string"
-                },
-                "component_b": {
-                    "type": "integer"
-                },
-                "connector_b": {
-                    "type": "string"
-                },
-                "snap_angle": {
-                    "type": "number"
-                }
-            }
+        "version": {
+            "type": "integer"
         }
     }
 }

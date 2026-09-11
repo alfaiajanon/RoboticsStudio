@@ -26,6 +26,9 @@ class Application : public QObject {
     LauncherWindow launcher;
     EditorWindow editor;
     SimulationManager* simManager=nullptr;
+    // reloadSimulation() coalescing: rapid structural edits (spinbox stepping,
+    // macro commands) collapse into one XML regeneration per event-loop turn.
+    bool reloadScheduled = false;
 
     public:
         Project currentProject;

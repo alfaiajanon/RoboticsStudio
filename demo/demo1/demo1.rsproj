@@ -8,11 +8,10 @@
                     "self_connector": "back",
                     "snap_angle": 0
                 },
-                "model": "base_rect",
+                "model_id": "dummy_base_rect",
                 "name": "Dummy Base for fixed robots (32)",
                 "parameters": {
                 },
-                "type": "dummy",
                 "uid": 1
             },
             {
@@ -22,12 +21,11 @@
                     "self_connector": "base",
                     "snap_angle": 0
                 },
-                "model": "mg996r",
+                "model_id": "servo_mg996r",
                 "name": "TowerPro MG996R (2)",
                 "parameters": {
                     "servo_joint": -73
                 },
-                "type": "servo",
                 "uid": 2
             },
             {
@@ -37,11 +35,10 @@
                     "self_connector": "back_mount",
                     "snap_angle": 0
                 },
-                "model": "multipurpose_bracket",
+                "model_id": "joints_multipurpose_bracket",
                 "name": "Multipurpose Bracket (3)",
                 "parameters": {
                 },
-                "type": "joints",
                 "uid": 3
             },
             {
@@ -51,12 +48,11 @@
                     "self_connector": "side_screw_left2",
                     "snap_angle": 0
                 },
-                "model": "mg996r",
+                "model_id": "servo_mg996r",
                 "name": "TowerPro MG996R (4)",
                 "parameters": {
                     "servo_joint": 0
                 },
-                "type": "servo",
                 "uid": 4
             },
             {
@@ -66,11 +62,10 @@
                     "self_connector": "inside_mount",
                     "snap_angle": 0
                 },
-                "model": "long_u_bracket",
+                "model_id": "joints_long_u_bracket",
                 "name": "Long U-Bracket (5)",
                 "parameters": {
                 },
-                "type": "joints",
                 "uid": 5
             },
             {
@@ -80,11 +75,10 @@
                     "self_connector": "back_mount",
                     "snap_angle": 0
                 },
-                "model": "long_u_bracket",
+                "model_id": "joints_long_u_bracket",
                 "name": "Long U-Bracket (6)",
                 "parameters": {
                 },
-                "type": "joints",
                 "uid": 6
             },
             {
@@ -94,12 +88,11 @@
                     "self_connector": "horn",
                     "snap_angle": 180
                 },
-                "model": "mg996r",
+                "model_id": "servo_mg996r",
                 "name": "TowerPro MG996R (7)",
                 "parameters": {
                     "servo_joint": -48
                 },
-                "type": "servo",
                 "uid": 7
             },
             {
@@ -109,11 +102,10 @@
                     "self_connector": "self_mount",
                     "snap_angle": 0
                 },
-                "model": "multipurpose_bracket",
+                "model_id": "joints_multipurpose_bracket",
                 "name": "Multipurpose Bracket (8)",
                 "parameters": {
                 },
-                "type": "joints",
                 "uid": 8
             },
             {
@@ -123,11 +115,10 @@
                     "self_connector": "back_mount",
                     "snap_angle": 0
                 },
-                "model": "long_u_bracket",
+                "model_id": "joints_long_u_bracket",
                 "name": "Long U-Bracket (9)",
                 "parameters": {
                 },
-                "type": "joints",
                 "uid": 9
             }
         ],

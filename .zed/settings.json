@@ -1,5 +1,23 @@
 {
-  "file_types": {
-    "JSON": ["**/*.rsdef"]
-  }
+    "file_types": {
+        "JSON": ["rsdef", "rsproj"]
+    },
+    "lsp": {
+        "json-language-server": {
+            "settings": {
+                "json": {
+                    "schemas": [
+                        {
+                            "fileMatch": ["*.rsproj"],
+                            "url": "./schema/rsproj.schema.json"
+                        },
+                        {
+                            "fileMatch": ["*.rsdef"],
+                            "url": "./schema/rsdef.schema.json"
+                        }
+                    ]
+                }
+            }
+        }
+    }
 }

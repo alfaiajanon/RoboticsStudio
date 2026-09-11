@@ -11,7 +11,7 @@
 Emulator* EmulatorFactory::create(const QString& type, ComponentInstance* comp) {
     if (type == "servo_emulator") {
         return new ServoEmulatorCpp(comp);
-    } 
+    }
     else if(type == "stepper_emulator") {
         return new StepperEmulatorCpp(comp);
     }
@@ -23,14 +23,14 @@ Emulator* EmulatorFactory::create(const QString& type, ComponentInstance* comp) 
     }
     else if(type == "custom_emulator"){
         Log::error("Custom Emulator requested but factory logic not implemented. Returning nullptr.");
-        return nullptr; 
+        return nullptr;
     }
     else if(type == "default_emulator"){
-        Log::warning("Default Emulator created for component '" + comp->name + "' of type '" + comp->type + "'. Consider implementing a specific emulator for better simulation fidelity.");
-        return new DefaultEmulatorCpp(comp); 
+        Log::warning("Default Emulator created for component '" + comp->name + "' of '" + comp->modelId + "'. Consider implementing a specific emulator for better simulation fidelity.");
+        return new DefaultEmulatorCpp(comp);
     }
     else {
         Log::error("Factory failed: Unknown emulator type requested -> " + type);
-        return nullptr; 
+        return nullptr;
     }
 }

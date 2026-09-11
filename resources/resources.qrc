@@ -1,5 +1,6 @@
 <RCC>
     <qresource prefix="/">
         <file>styles/dark.qss</file>
+        <file>templates/servo.rsdef</file>
     </qresource>
 </RCC>

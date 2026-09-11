@@ -5,14 +5,13 @@
             "name": "Debug RoboticsStudio",
             "type": "cppdbg",
             "request": "launch",
-            // IMPORTANT: Point this to the binary you just built
-            "program": "${workspaceFolder}/build/RoboticsStudio", 
+            "program": "${workspaceFolder}/build/RoboticsStudio",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
             "externalConsole": false,
-            "MIMode": "gdb", // Use "lldb" if on macOS
+            "MIMode": "gdb",
             "setupCommands": [
                 {
                     "description": "Enable pretty-printing for gdb",

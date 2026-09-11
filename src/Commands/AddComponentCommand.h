@@ -7,6 +7,7 @@
 #include "Document/Project.h"
 #include "Document/Components/ComponentInstance.h"
 #include "Simulation/ErrorSystem/Emulator.h" // complete type needed for `delete emulator`
+#include "Utils/Log.h"
 
 
 /*
@@ -50,12 +51,14 @@ public:
 
         if (!m_instance) {
             // First execution: create a fresh instance (this also links it).
+            Log::info("Do: " + text());
             m_instance = m_project->createComponentInstance(
                 m_parentUid, m_parentConnector, m_modelId, m_selfConnector, m_snapAngle);
             if (!m_instance) return;
         } else {
             // Redo after an undo: re-link the same instance (keeps uid + emulator).
             // takeComponent() cleared the parent info, so restore it first.
+            Log::info("Redo: " + text());
             m_instance->parentUid = m_parentUid;
             m_instance->parentConnector = m_parentConnector;
             m_project->adoptComponent(m_instance);
@@ -67,6 +70,7 @@ public:
     void undo() override {
         if (!m_project || !m_instance) return;
 
+        Log::info("Undo: " + text());
         // Unlink without deleting; the command retains ownership.
         m_project->takeComponent(m_instance->uid);
         m_linked = false;

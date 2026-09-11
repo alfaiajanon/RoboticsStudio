@@ -3,6 +3,7 @@
 #include "Utils/Global.h"
 #include "Utils/Spatial.h"
 #include <QVariant>
+#include <qobject.h>
 #include <vector>
 #include <mutex>
 #include <memory>
@@ -17,10 +18,10 @@ using IOData = std::variant<double, std::vector<double>>;
 
 
 struct IOStream {
-    int mujocoId = -1;       
+    int mujocoId = -1;
     int channelId = -1;
-    IOData targetData = 0.0;  
-    IOData currentData = 0.0; 
+    IOData targetData = 0.0;
+    IOData currentData = 0.0;
 };
 
 
@@ -48,27 +49,29 @@ class ComponentInstance {
 
     public:
         int uid;
+        QString modelId;
         QString name;
-        QString type;
-        QString model;
-        
+        // QString type;
+        // QString model;
+
+
         int parentUid;
         QString parentConnector;
         QString selfConnector;
         float snapAngle;
-        
+
         QMap<QString, QVariant> parameters;
-        
+
         Transform transform;
         Emulator* emulator = nullptr;
-        
+
         ComponentBlueprint* blueprint = nullptr;
         QList<ComponentInstance*> children;
 
         ComponentInstance() : uid(-1), parentUid(-1), snapAngle(0.0f) {}
-        
+
         QList<QString> getFreeConnections() const;
-        QMap<QString, QPair<int, QString>> getActiveConnections() const; 
+        QMap<QString, QPair<int, QString>> getActiveConnections() const;
 
         void initializeIO();
 

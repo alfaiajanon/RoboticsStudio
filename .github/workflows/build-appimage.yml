@@ -59,8 +59,8 @@ jobs:
         ./linuxdeploy-x86_64.AppImage \
           --appdir AppDir \
           -e build/RoboticsStudio \
-          -d src/View/Resources/RoboticsStudio.desktop \
-          -i src/View/Resources/icon.png \
+          -d resources/RoboticsStudio.desktop \
+          -i resources/icon.png \
           --plugin qt
 
         patchelf --set-rpath '$ORIGIN/../lib' AppDir/usr/bin/RoboticsStudio

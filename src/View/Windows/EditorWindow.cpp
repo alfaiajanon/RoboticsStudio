@@ -11,8 +11,12 @@
 #include <qaction.h>
 #include <QDomDocument>
 #include <QUndoStack>
+#include <QTimer>
+#include <qjsondocument.h>
 
 #include "Application/Application.h"
+#include "Commands/GenericCommand.h"
+#include "Document/Components/ComponentData.h"
 #include "Document/Components/LibraryManager.h"
 #include "Simulation/SimulationManager.h"
 #include "Simulation/MujocoContext.h"
@@ -85,6 +89,22 @@ void EditorWindow::refresh() {
     int temp = currentSelectedUid;
     currentSelectedUid = -1;
     selectComponent(temp);
+}
+
+
+/*
+ * Coalesced refresh: multiple triggers in the same event-loop turn (e.g. the
+ * undo stack's indexChanged AND Application::reloadSimulation, both caused by
+ * one structural command) collapse into a single actual refresh() -- otherwise
+ * every structural edit would rebuild twice and double-log the selection.
+ */
+void EditorWindow::scheduleRefresh() {
+    if (refreshScheduled) return;
+    refreshScheduled = true;
+    QTimer::singleShot(0, this, [this]() {
+        refreshScheduled = false;
+        refresh();
+    });
 }
 
 
@@ -222,8 +242,22 @@ void EditorWindow::setupMenuBar() {
         }
     });
 
+
+    connect(servoTemplateAct,&QAction::triggered, this, [this]() {
+        QFile file(":/templates/servo.rsdef");
+        if(!file.open(QIODevice::ReadOnly)){
+            Log::error("Failed to load embedded template: " + file.errorString());
+            return;
+        }
+        QJsonDocument doc=QJsonDocument::fromJson(file.readAll());
+        ComponentData data=ComponentData::fromJson(doc.object(), "");
+        ComponentEditorWindow* dialog = new ComponentEditorWindow(data,this);
+        dialog->show();
+    });
+
     connect(blankTemplateAct, &QAction::triggered, this, [this]() {
-        ComponentEditorWindow* dialog = new ComponentEditorWindow("",false,this);
+        ComponentData data;
+        ComponentEditorWindow* dialog = new ComponentEditorWindow(data,this);
         dialog->show();
     });
 
@@ -312,8 +346,32 @@ void EditorWindow::setupUndoRedo() {
     editMenu->insertAction(firstItem, undoAct);
     editMenu->insertAction(firstItem, redoAct);
 
-    // Keep scene tree + inspector in sync after any undo/redo/push.
-    connect(undoStack, &QUndoStack::indexChanged, this, [this]() { refresh(); }, Qt::QueuedConnection);
+    // Keep scene tree + inspector in sync after undo/redo/push -- but only
+    // when the command actually changes the assembly. Value-only commands
+    // (joint targets, robot rename) sync live through the physics loop, and
+    // the widget that committed them already shows the new value; rebuilding
+    // here would just steal focus (e.g. mid slider drag / spinbox typing).
+    // Undoing a value-only command doesn't rebuild either -- the inspector
+    // syncs the affected widgets in place instead. (A redo is
+    // indistinguishable from a push at the signal level; redoing a value-only
+    // command leaves the inspector stale until the next structural edit or
+    // reselection -- accepted trade-off.)
+    connect(undoStack, &QUndoStack::indexChanged, this, [this, undoStack](int idx) {
+        bool wasUndo = idx < lastUndoIndex;
+        const QUndoCommand* cmd = nullptr;
+        if (wasUndo) cmd = undoStack->command(idx);          // the command just undone
+        else if (idx > 0) cmd = undoStack->command(idx - 1); // pushed / merged / redone
+        lastUndoIndex = idx;
+
+        const auto* generic = dynamic_cast<const GenericCommand*>(cmd);
+        bool structural = !generic || generic->affectsStructure();
+
+        if (structural) {
+            scheduleRefresh();
+        } else if (wasUndo && inspector) {
+            inspector->updateJointValues();
+        }
+    });
 }
 
 

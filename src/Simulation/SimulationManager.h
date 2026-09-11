@@ -5,6 +5,7 @@
 #include <atomic>
 #include <QElapsedTimer>
 #include "Utils/Global.h"
+#include <chrono>
 #include "mujoco/mujoco.h"
 #include "Simulation/MujocoContext.h"
 
@@ -38,9 +39,12 @@ class SimulationManager : public QObject {
     std::thread physicsThread;
     std::thread mcuThread;
 
+    std::chrono::steady_clock::time_point lastTickTime;
+
     std::atomic<bool> isAlive;
     std::atomic<SimulationState> currentState;
     std::atomic<float> timeScale;
+
     float stepAccumulator;
 
     void physicsLoop();

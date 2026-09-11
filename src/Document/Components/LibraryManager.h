@@ -5,6 +5,7 @@
 #include <QStringList>
 #include <QMap>
 #include <QList>
+#include <qobject.h>
 #include "ComponentBlueprint.h"
 
 
@@ -28,18 +29,20 @@ class LibraryManager : public QObject {
         static const QString CUSTOM_CATEGORY_ID;
         static const QString CUSTOM_CATEGORY_NAME;
 
-        void appendCustomCatalogEntry(const QString& relativeItemPath, const QString& modelId);
+        // void appendCustomCatalogEntry(const QString& relativeItemPath, const QString& modelId);
         QString copyResourceFile(const QString& srcAbsPath, const QString& destDir, const QString& subfolder);
 
 
     public:
         static LibraryManager& getInstance();
 
-        void fetchOnline();
         bool load(const QString& models_dir="");
-        bool saveComponent(ComponentData draft, bool isNewCatalogEntry);
+        bool loadLocalComponents(QString project_dir);
+        bool saveLocalComponent(ComponentData draft);
+        bool deleteLocalComponent(QString modelId);
 
         QString getModelsDir();
+        bool hasBlueprint(const QString& model_id);
         ComponentBlueprint* getBlueprint(const QString& model_id);
         const QList<CategoryDef>& getCategories() const { return categories; }
 

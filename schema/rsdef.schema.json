@@ -1,0 +1,252 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Robotics Studio Component Definition (RSDEF)",
+    "type": "object",
+    "required": [
+        "id",
+        "meta",
+        "kinematics",
+        "connectors"
+    ],
+    "properties": {
+        "id": {
+            "type": "string",
+            "description": "Unique identifier for the component type"
+        },
+        "meta": {
+            "type": "object",
+            "required": ["name", "version"],
+            "properties": {
+                "name": { "type": "string" },
+                "version": { "type": "string" },
+                "author": { "type": "string" },
+                "icon_path": { "type": "string" }
+            }
+        },
+        "resources": {
+            "type": "object",
+            "properties": {
+                "meshes": {
+                    "type": "object",
+                    "additionalProperties": { "type": "string" }
+                },
+                "materials": {
+                    "type": "object",
+                    "additionalProperties": { "type": "string" }
+                }
+            }
+        },
+        "specs": {
+            "type": "object",
+            "additionalProperties": { "type": "number" }
+        },
+        "pins": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["id"],
+                "properties": {
+                    "id": { "type": "string" },
+                    "voltage_range": {
+                        "type": "array",
+                        "items": { "type": "number" },
+                        "minItems": 2,
+                        "maxItems": 2
+                    },
+                    "description": { "type": "string" }
+                }
+            }
+        },
+        "kinematics": {
+            "type": "object",
+            "required": ["bodies"],
+            "properties": {
+                "default_body": { "type": "string" },
+                "bodies": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": ["id"],
+                        "properties": {
+                            "id": { "type": "string" },
+                            "mass": { "type": "number" },
+                            "transform": { "$ref": "#/definitions/transform" },
+                            "geoms": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": { "type": "string" },
+                                        "mesh": { "type": "string" },
+                                        "material": { "type": "string" },
+                                        "size": {
+                                            "type": "array",
+                                            "items": { "type": "number" }
+                                        },
+                                        "pos": {
+                                            "type": "array",
+                                            "items": { "type": "number" },
+                                            "minItems": 3,
+                                            "maxItems": 3
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "joints": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": ["id", "body_a", "body_b", "type", "range"],
+                        "properties": {
+                            "id": { "type": "string" },
+                            "body_a": { "type": "string" },
+                            "body_b": { "type": "string" },
+                            "type": { "type": "string" },
+                            "transform": { "$ref": "#/definitions/transform" },
+                            "range": {
+                                "type": "array",
+                                "items": { "type": "number" },
+                                "minItems": 2,
+                                "maxItems": 2
+                            },
+                            "damping": { "type": "number" },
+                            "armature": { "type": "number" },
+                            "frictionloss": { "type": "number" },
+                            "collision": { "type": "boolean" },
+                            "actuator": {
+                                "type": "object",
+                                "properties": {
+                                    "type": { "type": "string" },
+                                    "ctrlrange": {
+                                        "type": "array",
+                                        "items": { "type": "number" },
+                                        "minItems": 2,
+                                        "maxItems": 2
+                                    },
+                                    "kp": { "type": "number" },
+                                    "kv": { "type": "number" },
+                                    "forcerange": {
+                                        "type": "array",
+                                        "items": { "type": "number" },
+                                        "minItems": 2,
+                                        "maxItems": 2
+                                    }
+                                }
+                            },
+                            "sensor": {
+                                "type": "object",
+                                "properties": {
+                                    "type": { "type": "string" }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "connectors": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["id", "body"],
+                "properties": {
+                    "id": { "type": "string" },
+                    "body": { "type": "string" },
+                    "description": { "type": "string" },
+                    "mechanics": {
+                        "type": "object",
+                        "properties": {
+                            "snap_angles": {
+                                "type": "array",
+                                "items": { "type": "number" }
+                            }
+                        }
+                    },
+                    "transform": { "$ref": "#/definitions/transform" }
+                }
+            }
+        },
+        "io": {
+            "type": "object",
+            "properties": {
+                "inputs": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": ["name", "target_joint"],
+                        "properties": {
+                            "name": { "type": "string" },
+                            "unit": { "type": "string" },
+                            "data_type": { "type": "string" },
+                            "channel_type": { "type": "string" },
+                            "physical": { "type": "boolean" },
+                            "target_joint": { "type": "string" },
+                            "range": {
+                                "type": "array",
+                                "items": { "type": "number" },
+                                "minItems": 2,
+                                "maxItems": 2
+                            },
+                            "pin_required": {
+                                "type": "array",
+                                "items": { "type": "string" }
+                            }
+                        }
+                    }
+                },
+                "outputs": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": ["name", "target_joint"],
+                        "properties": {
+                            "name": { "type": "string" },
+                            "unit": { "type": "string" },
+                            "data_type": { "type": "string" },
+                            "channel_type": { "type": "string" },
+                            "physical": { "type": "boolean" },
+                            "target_joint": { "type": "string" },
+                            "pin_required": {
+                                "type": "array",
+                                "items": { "type": "string" }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "emulator": {
+            "type": "object",
+            "properties": {
+                "type": { "type": "string" },
+                "source": { "type": ["string", "null"] },
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": { "type": "number" }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "transform": {
+            "type": "object",
+            "properties": {
+                "pos": {
+                    "type": "array",
+                    "items": { "type": "number" },
+                    "minItems": 3,
+                    "maxItems": 3
+                },
+                "quat": {
+                    "type": "array",
+                    "items": { "type": "number" },
+                    "minItems": 4,
+                    "maxItems": 4
+                }
+            }
+        }
+    }
+}
