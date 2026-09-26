@@ -44,8 +44,9 @@ class DcGearEmulatorCpp : public Emulator {
 
             // component->setActuatorTarget("target_velocity", currentVelocityRadS);
 
-            IOData val = (double)currentPwm;
-            component->setActuatorTarget("target_velocity", val);
+            BasicIOValue val = component->getActuatorValue("target_velocity");
+            val.data[0] = (double)currentPwm;
+            component->setActuatorValue("target_velocity", val);
         }
 
 
@@ -69,8 +70,8 @@ class DcGearEmulatorCpp : public Emulator {
 
         Q_INVOKABLE double read_velocity() {
             // return component->getSensorCurrent("current_velocity");
-            if(std::holds_alternative<double>(component->getSensorCurrent("current_velocity"))) {
-                return std::get<double>(component->getSensorCurrent("current_velocity"));
+            if(component->getSensorValue("current_velocity").dim==1) {
+                return component->getSensorValue("current_velocity").data[0];
             } else {
                 return 0.0;
             }

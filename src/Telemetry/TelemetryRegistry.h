@@ -7,7 +7,9 @@
 #include <memory>
 #include <mutex>
 #include "Channel.h"
-#include "TelemetrySource.h"
+#include "Sources/TelemetrySource.h"
+
+using namespace std;
 
 class TelemetryRegistry {
 private:
@@ -15,30 +17,18 @@ private:
     ~TelemetryRegistry() = default;
 
     int nextId = 1;
-    std::mutex registryMutex;
-
-    QMap<int, std::shared_ptr<ScalarChannel>> scalarChannels;
-    QMap<int, std::shared_ptr<VectorChannel>> vectorChannels;
-    QMap<int, std::shared_ptr<ImageChannel>> imageChannels;
-
-    QList<std::shared_ptr<TelemetrySource>> sources;
+    mutex registryMutex;
+    QMap<QString, shared_ptr<TelemetrySource>> sources;
 
 public:
     static TelemetryRegistry& getInstance();
+    QList<QString> getKeysOfType(DataType type) const;
+    shared_ptr<TelemetrySource> getSource(const QString& key) const;
+    shared_ptr<TelemetrySource> getOrCreateSource(const QString& key,
+                                                  const function<shared_ptr<TelemetrySource>()>& factory);
 
-    int registerScalar(const ChannelMeta& meta);
-    int registerVector(const ChannelMeta& meta);
-    int registerImage(const ChannelMeta& meta);
+    void clearAll();
+    void clearInactive();
+    void captureAll(double time);
 
-    std::shared_ptr<ScalarChannel> getScalar(int id);
-    std::shared_ptr<VectorChannel> getVector(int id);
-    std::shared_ptr<ImageChannel> getImage(int id);
-
-    QList<int> getChannelsOfType(DataType type);
-
-    void addSource(const std::shared_ptr<TelemetrySource>& source);
-    void removeSource(int channelId);
-    void captureAll(mjModel* m, mjData* d, double time);
-
-    void clear();
 };

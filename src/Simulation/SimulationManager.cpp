@@ -2,12 +2,14 @@
 #include "MujocoContext.h"
 
 #include <chrono>
+#include <qobject.h>
 #include "Utils/Log.h"
 #include "Document/Project.h"
 #include "Document/Components/ComponentBlueprint.h"
 #include "Document/Components/ComponentInstance.h"
 #include "Telemetry/TelemetryRegistry.h"
 #include "Simulation/ErrorSystem/Emulator.h"
+#include "mujoco/mjdata.h"
 
 
 
@@ -142,7 +144,9 @@ void SimulationManager::trackFps() {
 
     if (fpsTimer.elapsed() >= 400) {
         int currentFps = static_cast<int>((frameCount*1000.0 / fpsTimer.elapsed()));
-        emit fpsUpdated(currentFps);
+        // emit fpsUpdated(currentFps);
+        status.fps=currentFps;
+        emit statusUpdated(status);
 
         frameCount = 0;
         fpsTimer.restart();
@@ -220,10 +224,22 @@ void SimulationManager::physicsLoop() {
 
                     processEmulators(root); // position it here to capture both sensor and actuator properly
 
-                    pushTelemetry(root, mj->getData()->time);
-                    TelemetryRegistry::getInstance().captureAll(mj->getModel(), mj->getData(), mj->getData()->time);
+                    // pushTelemetry(root, mj->getData()->time);
+                    TelemetryRegistry::getInstance().captureAll(mj->getData()->time);
                 }
             }
+            status.simTime=mj->getData()->time;
+            status.activeContacts=mj->getData()->ncon;
+
+            int invasiveCount = 0;
+            const double PENETRATION_THRESHOLD = -0.002;
+            mjData* d = mj->getData();
+            for (int i = 0; i < d->ncon; ++i) {
+                if (d->contact[i].dist < PENETRATION_THRESHOLD) {
+                    invasiveCount++;
+                }
+            }
+            status.invasiveCollisions = invasiveCount;
         }
 
         else if (currentState == SimulationState::EDITING) {
@@ -276,51 +292,51 @@ void SimulationManager::processEmulators(ComponentInstance* comp) {
 
 
 
-void SimulationManager::pushTelemetry(ComponentInstance* comp, double time) {
-    if (!comp || !comp->blueprint) return;
+// void SimulationManager::pushTelemetry(ComponentInstance* comp, double time) {
+//     if (!comp || !comp->blueprint) return;
 
-    auto& registry = TelemetryRegistry::getInstance();
+//     auto& registry = TelemetryRegistry::getInstance();
 
-    for (const QString& key : comp->blueprint->inputDefs.keys()) {
-        int channelId = comp->getActuatorChannelId(key);
-        if (channelId != -1) {
-            IOData data = comp->getActuatorTarget(key);
-            QString cType = comp->blueprint->inputDefs[key].channelType;
+//     for (const QString& key : comp->blueprint->inputDefs.keys()) {
+//         int channelId = comp->getActuatorChannelId(key);
+//         if (channelId != -1) {
+//             IOData data = comp->getActuatorTarget(key);
+//             QString cType = comp->blueprint->inputDefs[key].channelType;
 
-            if (cType == "vector" && std::holds_alternative<std::vector<double>>(data)) {
-                if (auto channel = registry.getVector(channelId)) {
-                    channel->push(time, std::get<std::vector<double>>(data));
-                }
-            } else if (std::holds_alternative<double>(data)) {
-                if (auto channel = registry.getScalar(channelId)) {
-                    channel->push(time, std::get<double>(data));
-                }
-            }
-        }
-    }
+//             if (cType == "vector" && std::holds_alternative<std::vector<double>>(data)) {
+//                 if (auto channel = registry.getVector(channelId)) {
+//                     channel->push(time, std::get<std::vector<double>>(data));
+//                 }
+//             } else if (std::holds_alternative<double>(data)) {
+//                 if (auto channel = registry.getScalar(channelId)) {
+//                     channel->push(time, std::get<double>(data));
+//                 }
+//             }
+//         }
+//     }
 
-    for (const QString& key : comp->blueprint->outputDefs.keys()) {
-        int channelId = comp->getSensorChannelId(key);
-        if (channelId != -1) {
-            IOData data = comp->getSensorCurrent(key);
-            QString cType = comp->blueprint->outputDefs[key].channelType;
+//     for (const QString& key : comp->blueprint->outputDefs.keys()) {
+//         int channelId = comp->getSensorChannelId(key);
+//         if (channelId != -1) {
+//             IOData data = comp->getSensorCurrent(key);
+//             QString cType = comp->blueprint->outputDefs[key].channelType;
 
-            if (cType == "vector" && std::holds_alternative<std::vector<double>>(data)) {
-                if (auto channel = registry.getVector(channelId)) {
-                    channel->push(time, std::get<std::vector<double>>(data));
-                }
-            } else if (std::holds_alternative<double>(data)) {
-                if (auto channel = registry.getScalar(channelId)) {
-                    channel->push(time, std::get<double>(data));
-                }
-            }
-        }
-    }
+//             if (cType == "vector" && std::holds_alternative<std::vector<double>>(data)) {
+//                 if (auto channel = registry.getVector(channelId)) {
+//                     channel->push(time, std::get<std::vector<double>>(data));
+//                 }
+//             } else if (std::holds_alternative<double>(data)) {
+//                 if (auto channel = registry.getScalar(channelId)) {
+//                     channel->push(time, std::get<double>(data));
+//                 }
+//             }
+//         }
+//     }
 
-    for (ComponentInstance* child : comp->children) {
-        pushTelemetry(child, time);
-    }
-}
+//     for (ComponentInstance* child : comp->children) {
+//         pushTelemetry(child, time);
+//     }
+// }
 
 
 
@@ -353,28 +369,38 @@ void SimulationManager::cacheMujocoIds(ComponentInstance* root, mjModel* m) {
 
     QString prefix = "comp_" + QString::number(root->uid) + "_";
 
-    if (root->blueprint) {
-        for (const QString& key : root->blueprint->inputDefs.keys()) {
-            QString targetJoint = root->blueprint->inputDefs[key].targetJoint;
+    if (root->getBlueprint()) {
+        for (const QString& key : root->getBlueprint()->inputDefs.keys()) {
+            QString targetJoint = root->getBlueprint()->inputDefs[key].targetJoint;
             QString actuatorName = prefix + targetJoint + "_actuator";
             int id = mj_name2id(m, mjOBJ_ACTUATOR, actuatorName.toStdString().c_str());
-            root->setMujocoActuatorId(key, id);
+            // root->setMujocoActuatorId(key, id);
+            BasicIOValue value = root->getActuatorValue(key);
+            value.mujocoId = id;
+            root->setActuatorValue(key, value);
         }
 
-        for(const QString& key : root->blueprint->inputDefs.keys()) {
-            QString jkey = root->blueprint->inputDefs[key].targetJoint;
+        for(const QString& key : root->getBlueprint()->inputDefs.keys()) {
+            QString jkey = root->getBlueprint()->inputDefs[key].targetJoint;
             QString jointName = prefix + jkey;
             int id = mj_name2id(m, mjOBJ_JOINT, jointName.toStdString().c_str());
-            root->setMujocoJointId(jkey, id);
+            // root->setMujocoJointId(jkey, id);
+            // Log::info(QString("jointName %1, %2").arg(jointName).arg(id));
+            BasicIOValue value = root->getJointValue(jkey);
+            value.mujocoId = id;
+            root->setJointValue(jkey, value);
         }
 
-        for (const QString& key : root->blueprint->outputDefs.keys()) {
+        for (const QString& key : root->getBlueprint()->outputDefs.keys()) {
             // FIXED: Fallback to targetSite if targetJoint is empty (Crucial for IMU)
-            const IODef& def = root->blueprint->outputDefs[key];
+            const IODef& def = root->getBlueprint()->outputDefs[key];
             QString target = def.targetJoint.isEmpty() ? def.targetSite : def.targetJoint;
             QString sensorName = prefix + target + "_sensor";
             int id = mj_name2id(m, mjOBJ_SENSOR, sensorName.toStdString().c_str());
-            root->setMujocoSensorId(key, id);
+            // root->setMujocoSensorId(key, id);
+            BasicIOValue value = root->getSensorValue(key);
+            value.mujocoId = id;
+            root->setSensorValue(key, value);
         }
     }
 
@@ -393,15 +419,15 @@ void SimulationManager::cacheMujocoIds(ComponentInstance* root, mjModel* m) {
 void SimulationManager::syncToMujocoActuator(ComponentInstance* root, mjModel* m, mjData* d) {
     if (!m || !d || !root) return;
 
-    if (root->blueprint) {
-        for (const QString& key : root->blueprint->inputDefs.keys()) {
-            int mujocoId = root->getMujocoActuatorId(key);
+    if (root->getBlueprint()) {
+        for (const QString& key : root->getBlueprint()->inputDefs.keys()) {
+            int mujocoId = root->getActuatorValue(key).mujocoId;
             if (mujocoId >= 0 && mujocoId < m->nu) {
 
-                IOData data = root->getActuatorTarget(key);
-                double val = std::holds_alternative<double>(data) ? std::get<double>(data) : 0.0;
+                BasicIOValue data = root->getActuatorValue(key);
+                double val = data.dim==1 ? data.data[0] : 0.0;
 
-                QString unit = root->blueprint->inputDefs[key].unit.toLower();
+                QString unit = root->getBlueprint()->inputDefs[key].unit.toLower();
                 if (unit == "degree" || unit == "deg" || unit == "degrees") {
                     val = val * (M_PI / 180.0);
                 }
@@ -424,17 +450,18 @@ void SimulationManager::syncToMujocoActuator(ComponentInstance* root, mjModel* m
 void SimulationManager::syncToMujocoJoint(ComponentInstance* root, mjModel* m, mjData* d) {
     if (!m || !d || !root) return;
 
-    if (root->blueprint) {
-        for (const QString& key : root->blueprint->inputDefs.keys()) {
-            QString jkey = root->blueprint->inputDefs[key].targetJoint;
-            int mujocoId = root->getMujocoJointId(jkey);
+    if (root->getBlueprint()) {
+        for (const QString& key : root->getBlueprint()->inputDefs.keys()) {
+            QString jkey = root->getBlueprint()->inputDefs[key].targetJoint;
+            int mujocoId = root->getJointValue(jkey).mujocoId;
+            // Log::info(QString("syncToMujocoJoint: %1 %2 %3").arg(key).arg(jkey).arg(mujocoId));
 
             if (mujocoId >= 0 && mujocoId < m->njnt) {
 
-                IOData data = root->getJointTarget(jkey);
-                double targetVal = std::holds_alternative<double>(data) ? std::get<double>(data) : 0.0;
+                BasicIOValue data = root->getJointValue(jkey);
+                double targetVal = data.dim==1 ? data.data[0] : 0.0;
 
-                QString unit = root->blueprint->inputDefs[key].unit.toLower();
+                QString unit = root->getBlueprint()->inputDefs[key].unit.toLower();
                 if (unit == "degree" || unit == "deg" || unit == "degrees") {
                     targetVal = targetVal * (M_PI / 180.0);
                 }
@@ -467,17 +494,17 @@ void SimulationManager::syncToMujocoJoint(ComponentInstance* root, mjModel* m, m
 void SimulationManager::syncFromMujocoSensor(ComponentInstance* root, mjModel* m, mjData* d) {
     if (!m || !d || !root) return;
 
-    if (root->blueprint) {
-        for (const QString& key : root->blueprint->outputDefs.keys()) {
-            int sensorId = root->getMujocoSensorId(key);
+    if (root->getBlueprint()) {
+        for (const QString& key : root->getBlueprint()->outputDefs.keys()) {
+            int sensorId = root->getSensorValue(key).mujocoId;
 
             if (sensorId >= 0 && sensorId < m->nsensor) {
                 int adr = m->sensor_adr[sensorId];
-                int dim = root->blueprint->outputDefs[key].dim;
-                QString channelType = root->blueprint->outputDefs[key].channelType;
+                int dim = root->getBlueprint()->outputDefs[key].dim;
+                QString channelType = root->getBlueprint()->outputDefs[key].channelType;
 
                 if (adr + dim <= m->nsensordata) {
-                    QString unit = root->blueprint->outputDefs[key].unit.toLower();
+                    QString unit = root->getBlueprint()->outputDefs[key].unit.toLower();
                     bool isDegree = (unit == "degree" || unit == "deg" || unit == "degrees");
 
                     if (channelType == "vector" || dim > 1) {
@@ -487,14 +514,16 @@ void SimulationManager::syncFromMujocoSensor(ComponentInstance* root, mjModel* m
                             if (isDegree) val *= (180.0 / M_PI);
                             vec[i] = val;
                         }
-                        IOData data = vec;
-                        root->setSensorCurrent(key, data);
+                        BasicIOValue data = root->getSensorValue(key);
+                        data.data=vec;
+                        root->setSensorValue(key, data);
                     } else {
                         double val = d->sensordata[adr];
                         if (isDegree) val *= (180.0 / M_PI);
 
-                        IOData data = val;
-                        root->setSensorCurrent(key, data);
+                        BasicIOValue data = root->getSensorValue(key);
+                        data.data[0]=val;
+                        root->setSensorValue(key, data);
                     }
                 }
             }

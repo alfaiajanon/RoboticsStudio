@@ -23,6 +23,7 @@
 #include "Commands/AddComponentCommand.h"
 #include "Commands/RemoveComponentCommand.h"
 #include "Simulation/SimulationManager.h"
+#include "Utils/Log.h"
 #include "View/Widgets/Toast.h"
 
 
@@ -213,7 +214,7 @@ void InspectorPanel::buildUI() {
 
     Project* project = Application::getInstance()->getProject();
     ComponentInstance* comp = project->getComponentByUid(currentUid);
-    if (!comp || !comp->blueprint) {
+    if (!comp || !comp->getBlueprint()) {
         showEmptyState();
         return;
     }
@@ -225,13 +226,13 @@ void InspectorPanel::buildUI() {
     infoLayout->addRow("UID:", createShrinkableLabel(QString::number(comp->uid), infoBox));
     mainLayout->addWidget(infoBox);
 
-    if (!comp->blueprint->inputDefs.isEmpty()) {
+    if (!comp->getBlueprint()->inputDefs.isEmpty()) {
         build_inputs(comp);
     }
-    if (!comp->blueprint->outputDefs.isEmpty()) {
+    if (!comp->getBlueprint()->outputDefs.isEmpty()) {
         build_outputs(comp);
     }
-    if (!comp->blueprint->connectors.isEmpty()) {
+    if (!comp->getBlueprint()->connectors.isEmpty()) {
         build_connectors(comp);
     }
 
@@ -252,8 +253,8 @@ void InspectorPanel::build_inputs(ComponentInstance* comp) {
     };
     QList<InputRow> rows;
 
-    for (const QString& key : comp->blueprint->inputDefs.keys()) {
-        IODef def = comp->blueprint->inputDefs[key];
+    for (const QString& key : comp->getBlueprint()->inputDefs.keys()) {
+        IODef def = comp->getBlueprint()->inputDefs[key];
 
         QWidget* itemWidget = new QWidget(inputBox);
         QVBoxLayout* itemVBox = new QVBoxLayout(itemWidget);
@@ -266,7 +267,7 @@ void InspectorPanel::build_inputs(ComponentInstance* comp) {
         QHBoxLayout* targetHBox = new QHBoxLayout(targetWidget);
         targetHBox->setContentsMargins(0, 0, 0, 0);
 
-        double currentVal = std::get<double>(comp->getJointTarget(def.targetJoint));
+        double currentVal = (comp->getJointValue(def.targetJoint)).data[0];
 
         QSlider* slider = new QSlider(Qt::Horizontal, targetWidget);
         slider->setObjectName("inp_slider_" + def.targetJoint); // for updateJointValues()
@@ -318,12 +319,16 @@ void InspectorPanel::build_inputs(ComponentInstance* comp) {
             pushCommand(
                 [capturedUid, jkey, newVal]() {
                     if (auto* c = Application::getInstance()->getProject()->getComponentByUid(capturedUid)) {
-                        IOData v = newVal; c->setJointTarget(jkey, v);
+                        BasicIOValue v = c->getJointValue(jkey);
+                        v.data[0] = newVal;
+                        c->setJointValue(jkey, v);
                     }
                 },
                 [capturedUid, jkey, oldVal]() {
                     if (auto* c = Application::getInstance()->getProject()->getComponentByUid(capturedUid)) {
-                        IOData v = oldVal; c->setJointTarget(jkey, v);
+                        BasicIOValue v = c->getJointValue(jkey);
+                        v.data[0] = oldVal;
+                        c->setJointValue(jkey, v);
                     }
                 },
                 "Set " + jkey,
@@ -337,7 +342,7 @@ void InspectorPanel::build_inputs(ComponentInstance* comp) {
         connect(slider, &QSlider::sliderPressed, this, [this, capturedUid, jkey]() {
             ComponentInstance* c = Application::getInstance()->getProject()->getComponentByUid(capturedUid);
             if (!c) return;
-            dragStartValue = std::get<double>(c->getJointTarget(jkey));
+            dragStartValue = c->getJointValue(jkey).data[0];
             dragMergeKey = QString("joint:%1:%2:drag:%3").arg(capturedUid).arg(jkey).arg(++dragSessionCounter);
             dragInProgress = true;
         });
@@ -349,11 +354,13 @@ void InspectorPanel::build_inputs(ComponentInstance* comp) {
             if (slider->isSliderDown()) {
                 // Live preview only -- the physics loop picks this up every frame;
                 // the undoable command is committed once on sliderReleased.
-                IOData v = static_cast<double>(val); c->setJointTarget(jkey, v);
+                BasicIOValue v=c->getJointValue(jkey);
+                v.data[0]=val;
+                c->setJointValue(jkey, v);
             } else {
                 // Keyboard/wheel step (or programmatic sync from the spinbox):
                 // commit immediately, merged with neighbouring nudges.
-                double oldVal = std::get<double>(c->getJointTarget(jkey));
+                double oldVal = c->getJointValue(jkey).data[0];
                 pushJointCommand(oldVal, static_cast<double>(val), nudgeMergeKey);
             }
         });
@@ -377,7 +384,7 @@ void InspectorPanel::build_inputs(ComponentInstance* comp) {
                 [this, capturedUid, jkey, spinBox, nudgeMergeKey, pushJointCommand]() {
             ComponentInstance* activeComp = Application::getInstance()->getProject()->getComponentByUid(capturedUid);
             if (!activeComp) return;
-            double oldVal = std::get<double>(activeComp->getJointTarget(jkey));
+            double oldVal = activeComp->getJointValue(jkey).data[0];
             pushJointCommand(oldVal, spinBox->value(), nudgeMergeKey);
         });
     }
@@ -387,21 +394,21 @@ void InspectorPanel::build_inputs(ComponentInstance* comp) {
 void InspectorPanel::build_outputs(ComponentInstance* comp) {
     QGroupBox* outputBox = new QGroupBox("Sensor Outputs", this);
     QFormLayout* outputLayout = new QFormLayout(outputBox);
-    for (const QString& key : comp->blueprint->outputDefs.keys()) {
-        IOData data = comp->getSensorCurrent(key);
+    for (const QString& key : comp->getBlueprint()->outputDefs.keys()) {
+        BasicIOValue data = comp->getSensorValue(key);
         QLineEdit* valueLabel = createShrinkableLabel("", outputBox);
         valueLabel->setObjectName("lbl_out_" + key);
 
-        if (std::holds_alternative<double>(data)) {
-            valueLabel->setText(QString::number(std::get<double>(data)));
-        } else if (std::holds_alternative<std::vector<double>>(data)) {
-            const auto& vec = std::get<std::vector<double>>(data);
+        if (data.dim==1) {
+            valueLabel->setText(QString::number(data.data[0]));
+        } else if (data.dim==3) {
+            const auto& vec = data.data;
             QStringList parts;
             for (double v : vec) parts << QString::number(v, 'f', 2);
             valueLabel->setText(parts.join(", "));
         }
 
-        outputLayout->addRow(comp->blueprint->outputDefs[key].name + " (" + comp->blueprint->outputDefs[key].unit + "):", valueLabel);
+        outputLayout->addRow(comp->getBlueprint()->outputDefs[key].name + " (" + comp->getBlueprint()->outputDefs[key].unit + "):", valueLabel);
     }
     mainLayout->addWidget(outputBox);
 }
@@ -431,10 +438,10 @@ void InspectorPanel::build_connectors(ComponentInstance* comp) {
     };
     QList<ConnectorRow> rows;
 
-    for (const QString& connId : comp->blueprint->connectors.keys()) {
+    for (const QString& connId : comp->getBlueprint()->connectors.keys()) {
         ConnectorRow row;
         row.connId = connId;
-        row.def = comp->blueprint->connectors[connId];
+        row.def = comp->getBlueprint()->connectors[connId];
         row.isSelfConnector = (comp->selfConnector == connId);
         row.isConnected = activeConnections.contains(connId);
 
@@ -509,10 +516,10 @@ void InspectorPanel::build_connectors(ComponentInstance* comp) {
             grid->addWidget(row.detachBtn, 1, 2, 2, 1);
 
         } else {
+            populateAvailableComponents(row.childUidCombo);
             row.childUidCombo->addItem("-", -1);
             row.childUidCombo->setCurrentIndex(row.childUidCombo->count() - 1);
             grid->addWidget(row.childUidCombo, 1, 0, 1, 2);
-            populateAvailableComponents(row.childUidCombo);
 
             row.dropBtn = new ConnectorDropTargetBtn(row.def.id, "+", frame);
             row.dropBtn->setFixedWidth(32);
@@ -590,7 +597,7 @@ void InspectorPanel::build_connectors(ComponentInstance* comp) {
                 if (!comp || !oldChild || !newChild) return;
 
                 float carriedSnapAngle = oldChild->snapAngle;
-                QString newSelfConn = newChild->blueprint->connectors.isEmpty() ? "" : newChild->blueprint->connectors.first().id;
+                QString newSelfConn = newChild->getBlueprint()->connectors.isEmpty() ? "" : newChild->getBlueprint()->connectors.first().id;
 
                 auto* stack = Application::getInstance()->getUndoStack();
                 stack->beginMacro("Replace connected component");
@@ -661,7 +668,7 @@ void InspectorPanel::build_connectors(ComponentInstance* comp) {
                 ComponentInstance* newChild = project->getComponentByUid(newUid);
                 if (!comp || !newChild) return;
 
-                QString newSelfConn = newChild->blueprint->connectors.isEmpty() ? "" : newChild->blueprint->connectors.first().id;
+                QString newSelfConn = newChild->getBlueprint()->connectors.isEmpty() ? "" : newChild->getBlueprint()->connectors.first().id;
                 pushCommand(
                     [comp, newChild, parentUid, defId, newSelfConn]() {
                         newChild->parentUid = parentUid; newChild->parentConnector = defId;
@@ -941,7 +948,7 @@ void InspectorPanel::build_rootAttachment(Project* project) {
             if (!newChild) return;
 
             float carriedSnapAngle = rootComp->snapAngle;
-            QString newSelfConn = newChild->blueprint->connectors.isEmpty() ? "" : newChild->blueprint->connectors.first().id;
+            QString newSelfConn = "";
             ComponentInstance* oldRoot = rootComp;
 
             auto* stack = Application::getInstance()->getUndoStack();
@@ -954,7 +961,8 @@ void InspectorPanel::build_rootAttachment(Project* project) {
             pushCommand(
                 [project, newChild, carriedSnapAngle, newSelfConn]() {
                     newChild->parentUid = 0; newChild->parentConnector = "root";
-                    newChild->snapAngle = carriedSnapAngle; newChild->selfConnector = newSelfConn;
+                    newChild->snapAngle = carriedSnapAngle;
+                    newChild->selfConnector = newSelfConn;
                     project->setRootComponent(newChild);
                 },
                 [project, newChild]() { newChild->parentUid = -1; newChild->parentConnector = ""; project->resetRootComponent(); },
@@ -1002,7 +1010,7 @@ void InspectorPanel::build_rootAttachment(Project* project) {
             ComponentInstance* newChild = project->getComponentByUid(newUid);
             if (!newChild) return;
 
-            QString newSelfConn = newChild->blueprint->connectors.isEmpty() ? "" : newChild->blueprint->connectors.first().id;
+            QString newSelfConn = "";
             pushCommand(
                 [project, newChild, newSelfConn]() {
                     newChild->parentUid = 0; newChild->parentConnector = "root";
@@ -1057,11 +1065,11 @@ void InspectorPanel::updateJointValues() {
     if (currentUid <= 0) return;
 
     ComponentInstance* comp = Application::getInstance()->getProject()->getComponentByUid(currentUid);
-    if (!comp || !comp->blueprint) return;
+    if (!comp || !comp->getBlueprint()) return;
 
-    for (const QString& key : comp->blueprint->inputDefs.keys()) {
-        QString jkey = comp->blueprint->inputDefs[key].targetJoint;
-        double val = std::get<double>(comp->getJointTarget(jkey));
+    for (const QString& key : comp->getBlueprint()->inputDefs.keys()) {
+        QString jkey = comp->getBlueprint()->inputDefs[key].targetJoint;
+        double val = comp->getJointValue(jkey).data[0];
 
         if (QSlider* slider = this->findChild<QSlider*>("inp_slider_" + jkey)) {
             slider->setValue(static_cast<int>(val));
@@ -1077,13 +1085,13 @@ void InspectorPanel::updateLiveValues() {
     if (currentUid <= 0) return;
 
     if (ComponentInstance* comp = Application::getInstance()->getProject()->getComponentByUid(currentUid)) {
-        for (const QString& key : comp->blueprint->outputDefs.keys()) {
+        for (const QString& key : comp->getBlueprint()->outputDefs.keys()) {
             if (QLineEdit* label = this->findChild<QLineEdit*>("lbl_out_" + key)) {
-                IOData data = comp->getSensorCurrent(key);
-                if (std::holds_alternative<double>(data)) {
-                    label->setText(QString::number(std::get<double>(data), 'f', 2));
-                } else if (std::holds_alternative<std::vector<double>>(data)) {
-                    const auto& vec = std::get<std::vector<double>>(data);
+                BasicIOValue data = comp->getSensorValue(key);
+                if (data.dim==1) {
+                    label->setText(QString::number(data.data[0], 'f', 2));
+                } else if (data.dim==3) {
+                    const auto& vec = data.data;
                     QStringList parts;
                     for (double v : vec) parts << QString::number(v, 'f', 2);
                     label->setText(parts.join(", "));

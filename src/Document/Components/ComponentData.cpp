@@ -86,6 +86,14 @@ static QMap<QString, Node> parseBodies(const QJsonArray& bodiesArr) {
                     geom.pos = Position(posArr[0].toDouble(), posArr[1].toDouble(), posArr[2].toDouble());
                 }
             }
+
+            if (gObj.contains("quat")) {
+                QJsonArray quatArr = gObj["quat"].toArray();
+                if (quatArr.size() == 4) {
+                    geom.rot = Rotation(quatArr[0].toDouble(), quatArr[1].toDouble(), quatArr[2].toDouble(), quatArr[3].toDouble());
+                }
+            }
+
             node.geoms.append(geom);
         }
 
@@ -115,6 +123,7 @@ static QJsonObject geomToJson(const Geom& g) {
     if (!g.material.isEmpty()) obj["material"] = g.material; // raw resource key
     if (!g.size.isEmpty()) obj["size"] = doubleListToJson(g.size);
     obj["pos"] = QJsonArray{g.pos.x, g.pos.y, g.pos.z};
+    obj["quat"] = QJsonArray{g.rot.w, g.rot.x, g.rot.y, g.rot.z};
     if (g.material.isEmpty() && !g.color.isEmpty()) obj["color"] = doubleListToJson(g.color);
     return obj;
 }

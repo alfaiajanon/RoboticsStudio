@@ -8,6 +8,7 @@
 #include <QLabel>
 #include <QMap>
 #include <QTimer>
+#include <qobject.h>
 #include "qcustomplot.h"
 #include "Telemetry/TelemetryRegistry.h"
 
@@ -21,8 +22,8 @@ public:
     explicit CanvasWindow(DataType type, const QString& title, QWidget* parent = nullptr);
     virtual ~CanvasWindow() = default;
 
-    virtual void addTarget(int channelId, const QString& label) = 0;
-    virtual void removeTarget(int channelId) = 0;
+    virtual void addTarget(QString sourceKey, const QString& label) = 0;
+    virtual void removeTarget(QString sourceKey) = 0;
     DataType getType() const { return dataType; }
 };
 
@@ -31,17 +32,17 @@ class ScalarCanvasWindow : public CanvasWindow {
 private:
     QCustomPlot* customPlot;
     QTimer* updateTimer;
-    QMap<int, QCPGraph*> activeGraphs;
+    QMap<QString, QCPGraph*> activeGraphs;
 
     QVBoxLayout* controlsLayout;
-    QMap<int, QWidget*> controlRows;
+    QMap<QString, QWidget*> controlRows;
 
 public:
     explicit ScalarCanvasWindow(const QString& title, QWidget* parent = nullptr);
     ~ScalarCanvasWindow() override;
 
-    void addTarget(int channelId, const QString& label) override;
-    void removeTarget(int channelId) override;
+    void addTarget(QString sourceKey, const QString& label) override;
+    void removeTarget(QString sourceKey) override;
 
 private slots:
     void onUpdateTimer();
@@ -62,14 +63,14 @@ public:
     explicit VectorCanvasWindow(const QString& title, QWidget* parent = nullptr);
     ~VectorCanvasWindow() override;
 
-    void addTarget(int channelId, const QString& label) override;
-    void removeTarget(int channelId) override;
+    void addTarget(QString sourceKey, const QString& label) override;
+    void removeTarget(QString sourceKey) override;
 
 private slots:
     void onUpdateTimer();
 
 private:
-    QMap<int, VectorGraphs> activeGraphs;
+    QMap<QString, VectorGraphs> activeGraphs;
 
     QComboBox* variationCombo;
     QStackedWidget* stackedWidget;
@@ -82,7 +83,7 @@ private:
     QTimer* updateTimer;
 
     QVBoxLayout* controlsLayout;
-    QMap<int, QWidget*> controlRows;
+    QMap<QString, QWidget*> controlRows;
 };
 
 class CanvasDockItem : public QWidget {
@@ -93,10 +94,10 @@ private:
     CanvasWindow* popUpWindow;
 
     QVBoxLayout* targetsLayout;
-    QList<int> subscribedChannels;
+    QList<QString> subscribedSources;
 
     void showAddTargetDialog();
-    void addTargetUI(int channelId, const QString& label);
+    void addTargetUI(QString channelKey, const QString& label);
 
 protected:
     void mouseReleaseEvent(QMouseEvent* event) override;

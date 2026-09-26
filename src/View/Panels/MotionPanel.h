@@ -20,7 +20,7 @@ class MotionPanel : public QWidget {
 private:
     QVBoxLayout* targetsLayout;
     VectorCanvasWindow* plotWindow;
-    QMap<int, QWidget*> targetRows; // channelId -> row widget
+    QMap<QString, QWidget*> targetRows; // channelKey -> row widget
 
 public:
     explicit MotionPanel(QWidget* parent = nullptr);

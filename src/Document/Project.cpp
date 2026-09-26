@@ -194,8 +194,6 @@ bool Project::saveProject() {
         QJsonObject compObj;
         compObj["uid"] = comp->uid;
         compObj["name"] = comp->name;
-        // compObj["type"] = comp->type;
-        // compObj["model"] = comp->model;
         compObj["model_id"]=comp->modelId;
 
         if (comp->parentUid == -1) {
@@ -269,21 +267,13 @@ bool Project::saveProject() {
 
 void Project::saveDefaults() {
     for (ComponentInstance* comp : componentMap) {
-        if (comp->blueprint) {
-            for (const QString& key : comp->blueprint->inputDefs.keys()) {
-                QString jkey = comp->blueprint->inputDefs[key].targetJoint;
+        if (comp->getBlueprint()) {
+            for (const QString& key : comp->getBlueprint()->inputDefs.keys()) {
+                QString jkey = comp->getBlueprint()->inputDefs[key].targetJoint;
 
                 if (!jkey.isEmpty()) {
-                    // Fetch the current state from the component's memory
-                    IOData currentValueIOData = comp->getJointTarget(jkey);
-                    double currentValue;
-                    if(std::holds_alternative<double>(currentValueIOData)) {
-                        currentValue = std::get<double>(currentValueIOData);
-                    } else {
-                        currentValue = 0.0;
-                    }
-
-                    // Overwrite the old parameter with the new live value
+                    BasicIOValue currentValueIOData = comp->getJointValue(jkey);
+                    double currentValue = currentValueIOData.data[0];
                     comp->parameters.insert(jkey, currentValue);
                 }
             }
@@ -319,8 +309,6 @@ void Project::parseAssembly() {
 
         component->uid = obj["uid"].toInt();
         component->name = obj["name"].toString();
-        // component->type = obj["type"].toString();
-        // component->model = obj["model"].toString();
         component->modelId = obj["model_id"].toString();
 
         QJsonValue connVal = obj["connection"];
@@ -343,11 +331,11 @@ void Project::parseAssembly() {
         }
 
         QString model_id = component->modelId;
-        component->blueprint = LibraryManager::getInstance().getBlueprint(model_id);
-        component->initializeIO();
+        component->setBlueprint(LibraryManager::getInstance().getBlueprint(model_id));
+        // component->initializeIO();
 
 
-        QString emulatorType = component->blueprint->emulatorDef.type;
+        QString emulatorType = component->getBlueprint()->emulatorDef.type;
         if(!emulatorType.isEmpty()){
             component->emulator = EmulatorFactory::create(emulatorType, component);
         }else{
@@ -429,23 +417,23 @@ void Project::applyTransforms() {
         q.pop();
 
         if (current->parentUid == 0) {
-            Transform pConnRelTrans(Position(0, 0, 0), rootRotation);
-            Rotation mateRot(0, 1, 0, 0);
-            double halfAngle = current->snapAngle * 0.5 * (M_PI / 180.0);
-            Rotation snapRot(std::cos(halfAngle), 0, 0, std::sin(halfAngle));
-            Transform alignTransform(Position(0,0,0), mateRot * snapRot);
-            current->transform = pConnRelTrans * alignTransform;
+            // Transform pConnRelTrans(Position(0, 0, 0), rootRotation);
+            // Rotation mateRot(0, 1, 0, 0);
+            // double halfAngle = current->snapAngle * 0.5 * (M_PI / 180.0);
+            // Rotation snapRot(std::cos(halfAngle), 0, 0, std::sin(halfAngle));
+            // Transform alignTransform(Position(0,0,0), mateRot * snapRot);
+            // current->transform = pConnRelTrans * alignTransform;
 
         } else if (componentMap.contains(current->parentUid)) {
             ComponentInstance* parent = componentMap[current->parentUid];
 
-            if (parent->blueprint && current->blueprint) {
-                if (!parent->blueprint->connectors.contains(current->parentConnector)) {
+            if (parent->getBlueprint() && current->getBlueprint()) {
+                if (!parent->getBlueprint()->connectors.contains(current->parentConnector)) {
                     Log::error(QString("Parent connector '%1' missing on UID %2").arg(current->parentConnector).arg(parent->uid));
-                } else if (!current->blueprint->connectors.contains(current->selfConnector)) {
+                } else if (!current->getBlueprint()->connectors.contains(current->selfConnector)) {
                     Log::error(QString("Self connector '%1' missing on UID %2").arg(current->selfConnector).arg(current->uid));
                 } else {
-                    Transform pConnRelTrans = parent->blueprint->getConnectorRelativeTransform(current->parentConnector);
+                    Transform pConnRelTrans = parent->getBlueprint()->getConnectorRelativeTransform(current->parentConnector);
                     Rotation mateRot(0, 1, 0, 0);
                     double halfAngle = current->snapAngle * 0.5 * (M_PI / 180.0);
                     Rotation snapRot(std::cos(halfAngle), 0, 0, std::sin(halfAngle));
@@ -473,13 +461,14 @@ void Project::applyTransforms() {
 void Project::applyDefaults() {
     // apply joint params
     for (ComponentInstance* comp : componentMap) {
-        if (comp->blueprint) {
-            for (const QString& key : comp->blueprint->inputDefs.keys()) {
-                QString jkey=comp->blueprint->inputDefs[key].targetJoint;
+        if (comp->getBlueprint()) {
+            for (const QString& key : comp->getBlueprint()->inputDefs.keys()) {
+                QString jkey=comp->getBlueprint()->inputDefs[key].targetJoint;
                 if (comp->parameters.contains(jkey)) {
                     double val=comp->parameters.value(jkey).toDouble();
-                    IOData data = val;
-                    comp->setJointTarget(jkey, data);
+                    BasicIOValue data = comp->getJointValue(jkey);
+                    data.data[0]=val;
+                    comp->setJointValue(jkey, data);
                 }
             }
         }
@@ -526,7 +515,7 @@ ComponentInstance* Project::createComponentInstance(const int parentUid,
             Log::error("Blueprint has no connectors: " + modelId);
             return nullptr;
         }
-        actualSelfConnector = blueprint->connectors.firstKey();
+        if(parentUid!=0) actualSelfConnector = blueprint->connectors.firstKey();
     }
 
     ComponentInstance* newComp = new ComponentInstance();
@@ -535,10 +524,10 @@ ComponentInstance* Project::createComponentInstance(const int parentUid,
     // newComp->type = modelId.section('_', 0, 0);
     // newComp->model = modelId.section('_', 1);
     newComp->modelId = modelId;
-    newComp->blueprint = blueprint;
     newComp->selfConnector = actualSelfConnector;
     newComp->snapAngle = snapAngle;
-    newComp->initializeIO();
+    newComp->setBlueprint(blueprint);
+    // newComp->initializeIO();
 
     QString emulatorType = blueprint->emulatorDef.type;
     if(!emulatorType.isEmpty()){
@@ -754,7 +743,7 @@ QString Project::generateMujocoXML(bool isSimulation) {
 
 
 QString Project::writeWorldBodyXML(ComponentInstance* comp, QSet<int>& visitedComponents, bool isSimulation) {
-    if (!comp || !comp->blueprint) return "";
+    if (!comp || !comp->getBlueprint()) return "";
 
     if (visitedComponents.contains(comp->uid)) {
         Log::error("Macro-graph cycle detected! UID " + QString::number(comp->uid) + " is looping.");
@@ -763,8 +752,8 @@ QString Project::writeWorldBodyXML(ComponentInstance* comp, QSet<int>& visitedCo
     visitedComponents.insert(comp->uid);
 
     int uid=comp->uid;
-    QString selfConnector = (comp->parentUid==0) ? QString() : comp->selfConnector;
-    QString xml = comp->blueprint->generateTreeXML(comp->uid, selfConnector, comp->transform);
+    // QString selfConnector = (comp->parentUid==0) ? QString() : comp->selfConnector; // should be redundant now
+    QString xml = comp->getBlueprint()->generateTreeXML(comp->uid, comp->selfConnector, comp->transform);
 
     if (comp->parentUid == 0 && isSimulation) {
         int insertPos = xml.indexOf(">"); // Finds the end of the first <body ...> tag
@@ -776,8 +765,8 @@ QString Project::writeWorldBodyXML(ComponentInstance* comp, QSet<int>& visitedCo
     for (ComponentInstance* child : comp->children) {
         QString childXML = writeWorldBodyXML(child, visitedComponents);
 
-        if (comp->blueprint->connectors.contains(child->parentConnector)) {
-            QString targetBody = comp->blueprint->connectors.value(child->parentConnector).body;
+        if (comp->getBlueprint()->connectors.contains(child->parentConnector)) {
+            QString targetBody = comp->getBlueprint()->connectors.value(child->parentConnector).body;
             QString injectMarker = "<!" + QString("-- INJECT_comp_%1_%2 --").arg(comp->uid).arg(targetBody) + ">";
 
             if (!injectMarker.isEmpty() && xml.contains(injectMarker)) {
@@ -794,7 +783,7 @@ QString Project::writeWorldBodyXML(ComponentInstance* comp, QSet<int>& visitedCo
 
 
 void Project::writeContactXML(ComponentInstance* comp, QString& contacts, QSet<int>& visitedComponents) {
-    if (!comp || !comp->blueprint) return;
+    if (!comp || !comp->getBlueprint()) return;
 
     if (visitedComponents.contains(comp->uid)) {
         Log::error("Macro-graph cycle detected during contact generation! UID " + QString::number(comp->uid) + " is looping.");
@@ -802,7 +791,7 @@ void Project::writeContactXML(ComponentInstance* comp, QString& contacts, QSet<i
     }
     visitedComponents.insert(comp->uid);
 
-    contacts += comp->blueprint->generateContactsXML(comp->uid);
+    contacts += comp->getBlueprint()->generateContactsXML(comp->uid);
 
     for (ComponentInstance* child : comp->children) {
         writeContactXML(child, contacts, visitedComponents);
@@ -813,13 +802,13 @@ void Project::writeContactXML(ComponentInstance* comp, QString& contacts, QSet<i
 
 
 void Project::writeAssetsXML(ComponentInstance* comp, QString& assetsOut, QSet<QString>& processedModels) {
-    if (!comp->blueprint) return;
+    if (!comp->getBlueprint()) return;
 
     QString model_id = comp->modelId;
 
     if (!processedModels.contains(model_id)) {
         processedModels.insert(model_id);
-        assetsOut += comp->blueprint->getAssetXML();
+        assetsOut += comp->getBlueprint()->getAssetXML();
     }
 
     for (ComponentInstance* child : comp->children) {
@@ -832,8 +821,8 @@ void Project::writeAssetsXML(ComponentInstance* comp, QString& assetsOut, QSet<Q
 
 
 void Project::writeActuatorsXML(ComponentInstance* comp, QString& actuatorsOut) {
-    if (comp->blueprint) {
-        actuatorsOut += comp->blueprint->generateActuatorXML(comp->uid);
+    if (comp->getBlueprint()) {
+        actuatorsOut += comp->getBlueprint()->generateActuatorXML(comp->uid);
     }
 
     for (ComponentInstance* child : comp->children) {
@@ -846,8 +835,8 @@ void Project::writeActuatorsXML(ComponentInstance* comp, QString& actuatorsOut) 
 
 
 void Project::writeSensorsXML(ComponentInstance* comp, QString& sensorsOut) {
-    if (comp->blueprint) {
-        sensorsOut += comp->blueprint->generateSensorXML(comp->uid);
+    if (comp->getBlueprint()) {
+        sensorsOut += comp->getBlueprint()->generateSensorXML(comp->uid);
     }
 
     for (ComponentInstance* child : comp->children) {
@@ -860,8 +849,8 @@ void Project::writeSensorsXML(ComponentInstance* comp, QString& sensorsOut) {
 
 
 void Project::writeConstraintXML(ComponentInstance* compA, const QString& connA, ComponentInstance* compB, const QString& connB, QString& constraintsOut, QString& contactsOut) {
-    if (!compA || !compB || !compA->blueprint || !compB->blueprint) return;
-    if (!compA->blueprint->connectors.contains(connA) || !compB->blueprint->connectors.contains(connB)) return;
+    if (!compA || !compB || !compA->getBlueprint() || !compB->getBlueprint()) return;
+    if (!compA->getBlueprint()->connectors.contains(connA) || !compB->getBlueprint()->connectors.contains(connB)) return;
 
     QString siteA = QString("comp_%1_conn_%2").arg(compA->uid).arg(connA);
     QString siteB = QString("comp_%1_conn_%2").arg(compB->uid).arg(connB);
@@ -870,8 +859,8 @@ void Project::writeConstraintXML(ComponentInstance* compA, const QString& connA,
                         .arg(siteA)
                         .arg(siteB);
 
-    QString bodyA = compA->blueprint->connectors.value(connA).body;
-    QString bodyB = compB->blueprint->connectors.value(connB).body;
+    QString bodyA = compA->getBlueprint()->connectors.value(connA).body;
+    QString bodyB = compB->getBlueprint()->connectors.value(connB).body;
 
     if (bodyA == "base") bodyA = "root";
     if (bodyB == "base") bodyB = "root";

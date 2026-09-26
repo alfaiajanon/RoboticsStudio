@@ -1,5 +1,8 @@
 // src/UI/Docking/Canvas.cpp
 #include "Canvas.h"
+#include "Application/Application.h"
+#include "Document/Components/ComponentInstance.h"
+#include "Telemetry/Storage/TimeSeriesBuffer.h"
 
 #include <QDialog>
 #include <QListWidget>
@@ -10,6 +13,12 @@
 #include <QFrame>
 #include <QComboBox>
 #include <QStackedWidget>
+#include <qobject.h>
+#include "Document/Components/ComponentBlueprint.h"
+#include "Telemetry/Sources/ComponentIOSource.h"
+
+
+
 
 #pragma region Helpers
 
@@ -46,6 +55,14 @@ static void applyDarkThemeToPlot(QCustomPlot* plot, const QString& yLabel) {
     plot->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom);
 }
 
+
+
+
+
+
+
+
+
 #pragma region CanvasWindow Base
 
 CanvasWindow::CanvasWindow(DataType type, const QString& title, QWidget* parent)
@@ -53,6 +70,16 @@ CanvasWindow::CanvasWindow(DataType type, const QString& title, QWidget* parent)
     setWindowTitle(title);
     resize(750, 450); // Slightly wider to accommodate the side panel
 }
+
+
+
+
+
+
+
+
+
+
 
 #pragma region ScalarCanvasWindow
 
@@ -91,15 +118,15 @@ ScalarCanvasWindow::~ScalarCanvasWindow() {
     updateTimer->stop();
 }
 
-void ScalarCanvasWindow::addTarget(int channelId, const QString& label) {
-    if (activeGraphs.contains(channelId)) return;
+void ScalarCanvasWindow::addTarget(QString sourceKey, const QString& label) {
+    if (activeGraphs.contains(sourceKey)) return;
 
     QCPGraph* newGraph = customPlot->addGraph();
     int hue = QRandomGenerator::global()->bounded(360);
     QColor initialColor = QColor::fromHsv(hue, 200, 240);
     newGraph->setPen(QPen(initialColor, 2));
 
-    activeGraphs.insert(channelId, newGraph);
+    activeGraphs.insert(sourceKey, newGraph);
 
     QWidget* rowWidget = new QWidget();
     QHBoxLayout* rowLayout = new QHBoxLayout(rowWidget);
@@ -127,17 +154,17 @@ void ScalarCanvasWindow::addTarget(int channelId, const QString& label) {
     rowLayout->addWidget(colorBtn);
 
     controlsLayout->addWidget(rowWidget);
-    controlRows.insert(channelId, rowWidget);
+    controlRows.insert(sourceKey, rowWidget);
 }
 
-void ScalarCanvasWindow::removeTarget(int channelId) {
-    if (activeGraphs.contains(channelId)) {
-        customPlot->removeGraph(activeGraphs[channelId]);
-        activeGraphs.remove(channelId);
+void ScalarCanvasWindow::removeTarget(QString sourceKey) {
+    if (activeGraphs.contains(sourceKey)) {
+        customPlot->removeGraph(activeGraphs[sourceKey]);
+        activeGraphs.remove(sourceKey);
         customPlot->replot();
     }
-    if (controlRows.contains(channelId)) {
-        QWidget* row = controlRows.take(channelId);
+    if (controlRows.contains(sourceKey)) {
+        QWidget* row = controlRows.take(sourceKey);
         row->deleteLater();
     }
 }
@@ -148,11 +175,17 @@ void ScalarCanvasWindow::onUpdateTimer() {
     bool hasNewData = false;
 
     for (auto it = activeGraphs.begin(); it != activeGraphs.end(); ++it) {
-        int id = it.key();
-        auto channel = registry.getScalar(id);
-        if (!channel) continue;
+        QString sourceKey = it.key();
+        auto source = registry.getSource(sourceKey);
+        if (!source) continue;
 
-        std::vector<ScalarPoint> points = channel->snapshot();
+        // std::vector<ScalarPoint> points = source->snapshot();
+
+        std::vector<TimeSeriesDataPoint> points;
+        points = std::any_cast<std::vector<TimeSeriesDataPoint>>(
+            source->snapshotAll()
+        );
+
         if (points.empty()) continue;
 
         size_t validStartIndex = 0;
@@ -168,7 +201,7 @@ void ScalarCanvasWindow::onUpdateTimer() {
 
         for (size_t i = validStartIndex; i < points.size(); ++i) {
             keys.append(points[i].time);
-            values.append(points[i].value);
+            values.append(points[i].values[0]);
             if (points[i].time > latestTime) latestTime = points[i].time;
         }
 
@@ -192,6 +225,24 @@ void ScalarCanvasWindow::onUpdateTimer() {
         customPlot->replot();
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 #pragma region VectorCanvasWindow
@@ -267,8 +318,8 @@ VectorCanvasWindow::~VectorCanvasWindow() {
     updateTimer->stop();
 }
 
-void VectorCanvasWindow::addTarget(int channelId, const QString& label) {
-    if (activeGraphs.contains(channelId)) return;
+void VectorCanvasWindow::addTarget(QString sourceKey, const QString& label) {
+    if (activeGraphs.contains(sourceKey)) return;
 
     VectorGraphs vg;
     int hue = QRandomGenerator::global()->bounded(360);
@@ -288,7 +339,7 @@ void VectorCanvasWindow::addTarget(int channelId, const QString& label) {
     vg.sepZ = zPlot->addGraph();
     vg.sepZ->setPen(QPen(baseColor, 2));
 
-    activeGraphs.insert(channelId, vg);
+    activeGraphs.insert(sourceKey, vg);
 
     QWidget* rowWidget = new QWidget();
     QHBoxLayout* rowLayout = new QHBoxLayout(rowWidget);
@@ -302,12 +353,12 @@ void VectorCanvasWindow::addTarget(int channelId, const QString& label) {
     colorBtn->setCursor(Qt::PointingHandCursor);
     colorBtn->setStyleSheet(QString("background-color: %1; border: 1px solid #555; border-radius: 2px;").arg(baseColor.name()));
 
-    connect(colorBtn, &QPushButton::clicked, this, [this, channelId, colorBtn]() {
-        if (!activeGraphs.contains(channelId)) return;
+    connect(colorBtn, &QPushButton::clicked, this, [this, sourceKey, colorBtn]() {
+        if (!activeGraphs.contains(sourceKey)) return;
 
-        QColor newCol = QColorDialog::getColor(activeGraphs[channelId].sepX->pen().color(), this, "Select Graph Color");
+        QColor newCol = QColorDialog::getColor(activeGraphs[sourceKey].sepX->pen().color(), this, "Select Graph Color");
         if (newCol.isValid()) {
-            VectorGraphs& g = activeGraphs[channelId];
+            VectorGraphs& g = activeGraphs[sourceKey];
             g.combinedX->setPen(QPen(newCol, 2, Qt::SolidLine));
             g.combinedY->setPen(QPen(newCol, 2, Qt::DashLine));
             g.combinedZ->setPen(QPen(newCol, 2, Qt::DotLine));
@@ -329,27 +380,27 @@ void VectorCanvasWindow::addTarget(int channelId, const QString& label) {
     rowLayout->addWidget(colorBtn);
 
     controlsLayout->addWidget(rowWidget);
-    controlRows.insert(channelId, rowWidget);
+    controlRows.insert(sourceKey, rowWidget);
 }
 
-void VectorCanvasWindow::removeTarget(int channelId) {
-    if (activeGraphs.contains(channelId)) {
-        VectorGraphs vg = activeGraphs[channelId];
+void VectorCanvasWindow::removeTarget(QString sourceKey) {
+    if (activeGraphs.contains(sourceKey)) {
+        VectorGraphs vg = activeGraphs[sourceKey];
         combinedPlot->removeGraph(vg.combinedX);
         combinedPlot->removeGraph(vg.combinedY);
         combinedPlot->removeGraph(vg.combinedZ);
         xPlot->removeGraph(vg.sepX);
         yPlot->removeGraph(vg.sepY);
         zPlot->removeGraph(vg.sepZ);
-        activeGraphs.remove(channelId);
+        activeGraphs.remove(sourceKey);
 
         combinedPlot->replot();
         xPlot->replot();
         yPlot->replot();
         zPlot->replot();
     }
-    if (controlRows.contains(channelId)) {
-        QWidget* row = controlRows.take(channelId);
+    if (controlRows.contains(sourceKey)) {
+        QWidget* row = controlRows.take(sourceKey);
         row->deleteLater();
     }
 }
@@ -360,11 +411,14 @@ void VectorCanvasWindow::onUpdateTimer() {
     bool hasNewData = false;
 
     for (auto it = activeGraphs.begin(); it != activeGraphs.end(); ++it) {
-        int id = it.key();
-        auto channel = registry.getVector(id);
-        if (!channel) continue;
+        QString sourceKey = it.key();
+        auto source = registry.getSource(sourceKey);
+        if (!source) continue;
 
-        std::vector<VectorPoint> points = channel->snapshot();
+        std::vector<TimeSeriesDataPoint> points;
+        points = std::any_cast<std::vector<TimeSeriesDataPoint>>(
+            source->snapshotAll()
+        );
         if (points.empty()) continue;
 
         size_t validStartIndex = 0;
@@ -381,9 +435,9 @@ void VectorCanvasWindow::onUpdateTimer() {
 
         for (size_t i = validStartIndex; i < points.size(); ++i) {
             keys.append(points[i].time);
-            xVals.append(points[i].value.size() > 0 ? points[i].value[0] : 0.0);
-            yVals.append(points[i].value.size() > 1 ? points[i].value[1] : 0.0);
-            zVals.append(points[i].value.size() > 2 ? points[i].value[2] : 0.0);
+            xVals.append(points[i].values.size() > 0 ? points[i].values[0] : 0.0);
+            yVals.append(points[i].values.size() > 1 ? points[i].values[1] : 0.0);
+            zVals.append(points[i].values.size() > 2 ? points[i].values[2] : 0.0);
             if (points[i].time > latestTime) latestTime = points[i].time;
         }
 
@@ -505,31 +559,39 @@ CanvasDockItem::CanvasDockItem(DataType type, const QString& name, QWidget* pare
         toggleBtn->setText(isEnabled ? "Disable" : "Enable");
 
         auto& registry = TelemetryRegistry::getInstance();
-        for (int id : subscribedChannels) {
-            if (dataType == DataType::SCALAR) {
-                if (auto ch = registry.getScalar(id)) {
-                    if (isEnabled) ch->subscribe();
-                    else ch->unsubscribe();
-                }
-            } else if (dataType == DataType::VECTOR) {
-                if (auto ch = registry.getVector(id)) {
-                    if (isEnabled) ch->subscribe();
-                    else ch->unsubscribe();
-                }
+        for (QString sourceKey : subscribedSources) {
+            if (auto ch = registry.getSource(sourceKey)) {
+                if (isEnabled) ch->subscribe();
+                else ch->unsubscribe();
             }
+            // if (dataType == DataType::SCALAR) {
+            //     if (auto ch = registry.getSource(sourceKey)) {
+            //         if (isEnabled) ch->subscribe();
+            //         else ch->unsubscribe();
+            //     }
+            // }
+            // else if (dataType == DataType::VECTOR) {
+            //     if (auto ch = registry.getSource(id)) {
+            //         if (isEnabled) ch->subscribe();
+            //         else ch->unsubscribe();
+            //     }
+            // }
         }
     });
 
     connect(deleteBtn, &QPushButton::clicked, this, [this]() {
         auto& registry = TelemetryRegistry::getInstance();
-        for (int id : subscribedChannels) {
-            if (dataType == DataType::SCALAR) {
-                if (auto ch = registry.getScalar(id)) ch->unsubscribe();
-            } else if (dataType == DataType::VECTOR) {
-                if (auto ch = registry.getVector(id)) ch->unsubscribe();
-            }
+        for (QString sourceKey : subscribedSources) {
+            if (auto ch = registry.getSource(sourceKey))
+                ch->unsubscribe();
+
+            // if (dataType == DataType::SCALAR) {
+            //     if (auto ch = registry.getScalar(id)) ch->unsubscribe();
+            // } else if (dataType == DataType::VECTOR) {
+            //     if (auto ch = registry.getVector(id)) ch->unsubscribe();
+            // }
         }
-        subscribedChannels.clear();
+        subscribedSources.clear();
 
         if (popUpWindow) {
             popUpWindow->close();
@@ -542,12 +604,14 @@ CanvasDockItem::CanvasDockItem(DataType type, const QString& name, QWidget* pare
 
 CanvasDockItem::~CanvasDockItem() {
     auto& registry = TelemetryRegistry::getInstance();
-    for (int id : subscribedChannels) {
-        if (dataType == DataType::SCALAR) {
-            if (auto ch = registry.getScalar(id)) ch->unsubscribe();
-        } else if (dataType == DataType::VECTOR) {
-            if (auto ch = registry.getVector(id)) ch->unsubscribe();
-        }
+    for (QString sourceKey : subscribedSources) {
+        if (auto ch = registry.getSource(sourceKey))
+            ch->unsubscribe();
+        // if (dataType == DataType::SCALAR) {
+        //     if (auto ch = registry.getScalar(id)) ch->unsubscribe();
+        // } else if (dataType == DataType::VECTOR) {
+        //     if (auto ch = registry.getVector(id)) ch->unsubscribe();
+        // }
     }
     if (popUpWindow) popUpWindow->deleteLater();
 }
@@ -565,23 +629,62 @@ void CanvasDockItem::showAddTargetDialog() {
     QListWidget* listWidget = new QListWidget();
     layout->addWidget(listWidget);
 
+    // old
+    // auto& registry = TelemetryRegistry::getInstance();
+    // QList<QString> availableKeys = registry.getKeysOfType(dataType);
+
+    // for (QString key : availableKeys) {
+    //     if (subscribedSources.contains(key)) continue;
+
+    //     QString label = "Unknown";
+    //     if (auto ch = registry.getSource(key))
+    //         label = ch->name;
+    //     // if (dataType == DataType::SCALAR) {
+    //     //     if (auto ch = registry.getSource(key)) label = ch->name;
+    //     // } else if (dataType == DataType::VECTOR) {
+    //     //     if (auto ch = registry.getSource(key)) label = ch->name;
+    //     // }
+
+    //     QListWidgetItem* item = new QListWidgetItem(label);
+    //     item->setData(Qt::UserRole, key);
+    //     listWidget->addItem(item);
+    // }
+
+    // new
     auto& registry = TelemetryRegistry::getInstance();
-    QList<int> availableIds = registry.getChannelsOfType(dataType);
 
-    for (int id : availableIds) {
-        if (subscribedChannels.contains(id)) continue;
+    QMap<int, ComponentInstance*> compMap=Application::getInstance()->getProject()->getComponentMap();
+    for(ComponentInstance* comp:compMap){
+        int uid=comp->uid;
+        for (const QString& key : comp->getBlueprint()->inputDefs.keys()){
+            auto source = registry.getOrCreateSource(
+                QString("io:%1:%2").arg(uid).arg(key),
+                [comp, key]() {
+                    return std::make_shared<ComponentIOSource>(comp, key, true);
+                }
+            );
+            if (subscribedSources.contains(source->getKey())) continue;
 
-        QString label = "Unknown";
-        if (dataType == DataType::SCALAR) {
-            if (auto ch = registry.getScalar(id)) label = ch->getMeta().name;
-        } else if (dataType == DataType::VECTOR) {
-            if (auto ch = registry.getVector(id)) label = ch->getMeta().name;
+            QListWidgetItem* item = new QListWidgetItem(key);
+            item->setData(Qt::UserRole, source->getKey());
+            listWidget->addItem(item);
+        }
+        for (const QString& key : comp->getBlueprint()->outputDefs.keys()){
+            auto source = registry.getOrCreateSource(
+                QString("io:%1:%2").arg(uid).arg(key),
+                [comp, key]() {
+                    return std::make_shared<ComponentIOSource>(comp, key, false);
+                }
+            );
+            if (subscribedSources.contains(source->getKey())) continue;
+
+            QListWidgetItem* item = new QListWidgetItem(key);
+            item->setData(Qt::UserRole, source->getKey());
+            listWidget->addItem(item);
         }
 
-        QListWidgetItem* item = new QListWidgetItem(label);
-        item->setData(Qt::UserRole, id);
-        listWidget->addItem(item);
     }
+
 
     QDialogButtonBox* buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
     layout->addWidget(buttonBox);
@@ -589,26 +692,26 @@ void CanvasDockItem::showAddTargetDialog() {
     connect(buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
 
     if (dialog.exec() == QDialog::Accepted && listWidget->currentItem()) {
-        int channelId = listWidget->currentItem()->data(Qt::UserRole).toInt();
+        QString sourceKey = listWidget->currentItem()->data(Qt::UserRole).toString();
         QString label = listWidget->currentItem()->text();
 
-        subscribedChannels.append(channelId);
+        subscribedSources.append(sourceKey);
 
         bool isEnabled = this->property("currentlyEnabled").toBool();
         if (isEnabled) {
-            if (dataType == DataType::SCALAR) {
-                if (auto ch = registry.getScalar(channelId)) ch->subscribe();
-            } else if (dataType == DataType::VECTOR) {
-                if (auto ch = registry.getVector(channelId)) ch->subscribe();
-            }
+            if (auto ch = registry.getSource(sourceKey)) ch->subscribe();
         }
+        // registry.clearInactive(); [TODO] important
 
-        popUpWindow->addTarget(channelId, label);
-        addTargetUI(channelId, label);
+        popUpWindow->addTarget(sourceKey, label);
+        addTargetUI(sourceKey, label);
     }
 }
 
-void CanvasDockItem::addTargetUI(int channelId, const QString& label) {
+
+
+
+void CanvasDockItem::addTargetUI(QString sourceKey, const QString& label) {
     QWidget* row = new QWidget();
     row->setStyleSheet("border: none;");
     QHBoxLayout* rowLayout = new QHBoxLayout(row);
@@ -626,16 +729,17 @@ void CanvasDockItem::addTargetUI(int channelId, const QString& label) {
 
     targetsLayout->addWidget(row);
 
-    connect(removeBtn, &QPushButton::clicked, this, [this, row, channelId]() {
-        subscribedChannels.removeOne(channelId);
-        popUpWindow->removeTarget(channelId);
+    connect(removeBtn, &QPushButton::clicked, this, [this, row, sourceKey]() {
+        subscribedSources.removeOne(sourceKey);
+        popUpWindow->removeTarget(sourceKey);
 
         auto& registry = TelemetryRegistry::getInstance();
-        if (dataType == DataType::SCALAR) {
-            if (auto ch = registry.getScalar(channelId)) ch->unsubscribe();
-        } else if (dataType == DataType::VECTOR) {
-            if (auto ch = registry.getVector(channelId)) ch->unsubscribe();
-        }
+        // if (auto ch = registry.getScalar(channelId)) ch->unsubscribe();
+        // if (dataType == DataType::SCALAR) {
+        //     if (auto ch = registry.getScalar(channelId)) ch->unsubscribe();
+        // } else if (dataType == DataType::VECTOR) {
+        //     if (auto ch = registry.getVector(channelId)) ch->unsubscribe();
+        // }
 
         row->deleteLater();
     });

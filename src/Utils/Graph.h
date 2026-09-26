@@ -11,6 +11,7 @@ struct Geom {
     QString material;
     QList<double> size;
     Position pos;
+    Rotation rot;
     QList<double> color;
 };
 

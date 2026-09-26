@@ -16,11 +16,11 @@ public:
 
     Q_INVOKABLE QJsonObject getAcceleration() const {
         QJsonObject accel;
-        IOData data = component->getSensorCurrent("acceleration");
+        BasicIOValue data = component->getSensorValue("acceleration");
 
         // Safely check if the variant is currently holding a vector
-        if (std::holds_alternative<std::vector<double>>(data)) {
-            const auto& vec = std::get<std::vector<double>>(data);
+        if (data.dim) {
+            const auto& vec = data.data;
             accel["x"] = vec.size() > 0 ? vec[0] : 0.0;
             accel["y"] = vec.size() > 1 ? vec[1] : 0.0;
             accel["z"] = vec.size() > 2 ? vec[2] : 0.0;
@@ -32,10 +32,10 @@ public:
 
     Q_INVOKABLE QJsonObject getRotation() const {
         QJsonObject gyro;
-        IOData data = component->getSensorCurrent("gyroscope");
+        BasicIOValue data = component->getSensorValue("gyroscope");
 
-        if (std::holds_alternative<std::vector<double>>(data)) {
-            const auto& vec = std::get<std::vector<double>>(data);
+        if (data.dim) {
+            const auto& vec = data.data;
             gyro["x"] = vec.size() > 0 ? vec[0] : 0.0;
             gyro["y"] = vec.size() > 1 ? vec[1] : 0.0;
             gyro["z"] = vec.size() > 2 ? vec[2] : 0.0;

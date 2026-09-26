@@ -42,8 +42,8 @@ class ServoEmulatorCpp : public Emulator {
         using Emulator::Emulator;
 
         void init() override {
-            if (component && component->blueprint) {
-                const auto& params = component->blueprint->emulatorDef.parameters;
+            if (component && component->getBlueprint()) {
+                const auto& params = component->getBlueprint()->emulatorDef.parameters;
                 deadbandThreshold = params.value("deadband_threshold", 0.0).toDouble();
                 noiseStdDev = params.value("noise_stddev", 0.0).toDouble();
             }
@@ -58,8 +58,9 @@ class ServoEmulatorCpp : public Emulator {
             // 2. Noise: fresh sample every tick, added on top of the held setpoint
             double effectiveTarget = heldTarget + noise(rng) * noiseStdDev;
 
-            IOData targetData = effectiveTarget;
-            component->setActuatorTarget("target_angle", targetData);
+            BasicIOValue targetData = component->getActuatorValue("target_angle");
+            targetData.data[0]= effectiveTarget;
+            component->setActuatorValue("target_angle", targetData);
         }
 
         void reset() override {
@@ -73,7 +74,7 @@ class ServoEmulatorCpp : public Emulator {
         }
 
         Q_INVOKABLE double read() {
-            IOData data = component->getSensorCurrent("target_angle");
-            return std::holds_alternative<double>(data) ? std::get<double>(data) : 0.0;
+            BasicIOValue data = component->getSensorValue("target_angle");
+            return data.dim==1 ? data.data[0] : 0.0;
         }
 };

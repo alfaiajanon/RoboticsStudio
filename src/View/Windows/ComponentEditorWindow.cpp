@@ -13,6 +13,7 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QFileInfo>
+#include <qlineedit.h>
 
 
 
@@ -179,16 +180,6 @@ ComponentEditorWindow::ComponentEditorWindow(ComponentData source, QWidget* pare
     bottomLayout->addWidget(saveBtn);
     rootLayout->addWidget(bottomBar);
     connect(saveBtn, &QPushButton::clicked, this, &ComponentEditorWindow::onSaveClicked);
-
-    // ---- load ----
-    // QFile file(rsdefPath);
-    // if (file.open(QFile::ReadOnly)) {
-    //     QJsonObject root = QJsonDocument::fromJson(file.readAll()).object();
-    //     file.close();
-    //     data = ComponentData::fromJson(root, QFileInfo(rsdefPath).absolutePath());
-    // } else {
-    //     Toast::showMessage(this, "Could not open: " + rsdefPath);
-    // }
 
 
     clearAndRebuild();
@@ -440,6 +431,7 @@ void ComponentEditorWindow::build_bodies(QVBoxLayout* parent) {
         });
 
         build_geoms(form, nodeId);
+        build_sites(form, nodeId);
 
         QPushButton* removeBtn = new QPushButton("Remove Body", content);
         form->addRow(removeBtn);
@@ -454,6 +446,22 @@ void ComponentEditorWindow::build_bodies(QVBoxLayout* parent) {
                 if (data.connectors[key].body == nodeId) {
                     Toast::showMessage(this, "Can't remove: connector '" + key + "' references this body.");
                     return;
+                }
+            }
+            // A body's sites can be referenced by IO even though the site
+            // itself lives one level deeper -- check before removing.
+            for (const Site& s : data.bodies.value(nodeId).sites) {
+                for (const QString& key : data.outputDefs.keys()) {
+                    if (data.outputDefs[key].targetSite == s.id) {
+                        Toast::showMessage(this, "Can't remove: output '" + key + "' targets site '" + s.id + "' on this body.");
+                        return;
+                    }
+                }
+                for (const QString& key : data.inputDefs.keys()) {
+                    if (data.inputDefs[key].targetSite == s.id) {
+                        Toast::showMessage(this, "Can't remove: input '" + key + "' targets site '" + s.id + "' on this body.");
+                        return;
+                    }
                 }
             }
             data.bodies.remove(nodeId);
@@ -523,13 +531,16 @@ void ComponentEditorWindow::build_geoms(QFormLayout* bodyForm, const QString& bo
         form->addRow("Size:", sizeEdit);
 
         QLineEdit* posEdit = new QLineEdit(posToString(g.pos), row);
-        form->addRow("Pos (x,y,z):", posEdit);
+        form->addRow("Position (x,y,z):", posEdit);
+
+        QLineEdit* rotEdit = new QLineEdit(posToString(g.pos), row);
+        form->addRow("Rotation (x,y,z):", rotEdit);
 
         QLineEdit* colorEdit = new QLineEdit(doubleListToString(g.color), row);
         colorEdit->setPlaceholderText("r, g, b[, a] -- only used if Material is (none)");
         form->addRow("Color:", colorEdit);
 
-        auto commit = [this, bodyId, geomIdx, typeCombo, meshCombo, materialCombo, sizeEdit, posEdit, colorEdit]() {
+        auto commit = [this, bodyId, geomIdx, typeCombo, meshCombo, materialCombo, sizeEdit, posEdit, rotEdit, colorEdit]() {
             if (!data.bodies.contains(bodyId) || geomIdx >= data.bodies[bodyId].geoms.size()) return;
             Geom& geom = data.bodies[bodyId].geoms[geomIdx];
 
@@ -538,6 +549,7 @@ void ComponentEditorWindow::build_geoms(QFormLayout* bodyForm, const QString& bo
             geom.material = (materialCombo->currentText() == "(none)") ? "" : materialCombo->currentText();
             geom.size = stringToDoubleList(sizeEdit->text());
             geom.pos = stringToPos(posEdit->text(), geom.pos);
+            geom.rot = stringToRot(rotEdit->text(), geom.rot);
             geom.color = stringToDoubleList(colorEdit->text());
 
             schedulePreviewReload();
@@ -547,6 +559,7 @@ void ComponentEditorWindow::build_geoms(QFormLayout* bodyForm, const QString& bo
         connect(materialCombo, &QComboBox::currentTextChanged, this, commit);
         connect(sizeEdit, &QLineEdit::editingFinished, this, commit);
         connect(posEdit, &QLineEdit::editingFinished, this, commit);
+        connect(rotEdit, &QLineEdit::editingFinished, this, commit);
         connect(colorEdit, &QLineEdit::editingFinished, this, commit);
 
         QPushButton* removeBtn = new QPushButton("Remove Geom", row);
@@ -570,6 +583,105 @@ void ComponentEditorWindow::build_geoms(QFormLayout* bodyForm, const QString& bo
         g.type = "box";
         g.size = {0.01, 0.01, 0.01};
         data.bodies[bodyId].geoms.append(g);
+        clearAndRebuild();
+    });
+
+    bodyForm->addRow(box);
+}
+
+
+
+
+/*
+ * Per-body site list. A Site is a mount point that carries an optional
+ * site-attached MuJoCo sensor (accelerometer/gyro/etc) -- distinct from a
+ * Connector (mechanical attachment point) and from a joint sensor (which
+ * lives on Edge, not here). IO outputs reference a site by id via
+ * target_site (see build_io_list).
+ */
+void ComponentEditorWindow::build_sites(QFormLayout* bodyForm, const QString& bodyId) {
+    QGroupBox* box = new QGroupBox("Sites", bodyForm->parentWidget());
+    QVBoxLayout* layout = new QVBoxLayout(box);
+
+    const QList<Site>& sites = data.bodies.value(bodyId).sites;
+    for (int i = 0; i < sites.size(); ++i) {
+        const Site& s = sites[i];
+        int siteIdx = i;
+
+        QFrame* row = new QFrame(box);
+        row->setFrameShape(QFrame::StyledPanel);
+        QFormLayout* form = new QFormLayout(row);
+
+        QLineEdit* idEdit = new QLineEdit(s.id, row);
+        // Referenced by IO's target_site -- same rename hazard as body/joint
+        // id, same read-only-for-now workaround.
+        idEdit->setReadOnly(true);
+        form->addRow("Id:", idEdit);
+
+        TransformFieldRefs xform = addTransformFields(form, s.localTransform);
+
+        QComboBox* sensorTypeCombo = new QComboBox(row);
+        sensorTypeCombo->addItems({"(none)", "accelerometer", "gyro", "magnetometer",
+                                    "velocimeter", "force", "torque", "framepos",
+                                    "framequat", "rangefinder"});
+        sensorTypeCombo->setCurrentText(s.sensor.type.isEmpty() ? "(none)" : s.sensor.type);
+        form->addRow("Sensor type:", sensorTypeCombo);
+
+        auto commit = [this, bodyId, siteIdx, xform, sensorTypeCombo]() {
+            if (!data.bodies.contains(bodyId) || siteIdx >= data.bodies[bodyId].sites.size()) return;
+            Site& site = data.bodies[bodyId].sites[siteIdx];
+            site.localTransform.position = stringToPos(xform.posEdit->text(), site.localTransform.position);
+            site.localTransform.rotation = stringToRot(xform.rotEdit->text(), site.localTransform.rotation);
+            site.sensor.type = (sensorTypeCombo->currentText() == "(none)") ? "" : sensorTypeCombo->currentText();
+            schedulePreviewReload();
+        };
+        connect(xform.posEdit, &QLineEdit::editingFinished, this, commit);
+        connect(xform.rotEdit, &QLineEdit::editingFinished, this, commit);
+        connect(sensorTypeCombo, &QComboBox::currentTextChanged, this, commit);
+
+        QPushButton* removeBtn = new QPushButton("Remove Site", row);
+        form->addRow(removeBtn);
+        QString siteId = s.id;
+        connect(removeBtn, &QPushButton::clicked, this, [this, bodyId, siteId]() {
+            for (const QString& key : data.outputDefs.keys()) {
+                if (data.outputDefs[key].targetSite == siteId) {
+                    Toast::showMessage(this, "Can't remove: output '" + key + "' targets this site.");
+                    return;
+                }
+            }
+            for (const QString& key : data.inputDefs.keys()) {
+                if (data.inputDefs[key].targetSite == siteId) {
+                    Toast::showMessage(this, "Can't remove: input '" + key + "' targets this site.");
+                    return;
+                }
+            }
+            if (data.bodies.contains(bodyId)) {
+                QList<Site>& siteList = data.bodies[bodyId].sites;
+                for (int j = 0; j < siteList.size(); ++j) {
+                    if (siteList[j].id == siteId) { siteList.removeAt(j); break; }
+                }
+            }
+            clearAndRebuild();
+        });
+
+        layout->addWidget(row);
+    }
+
+    QPushButton* addBtn = new QPushButton("+ Add Site", box);
+    addBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    layout->addWidget(addBtn, 0, Qt::AlignLeft);
+    connect(addBtn, &QPushButton::clicked, this, [this, bodyId]() {
+        if (!data.bodies.contains(bodyId)) return;
+
+        // Site ids are referenced globally (target_site dropdown flattens
+        // all bodies' sites into one list), so the auto-generated name must
+        // be unique across ALL bodies, not just this one.
+        int totalSites = 0;
+        for (const Node& n : data.bodies) totalSites += n.sites.size();
+
+        Site s;
+        s.id = QString("site_%1").arg(totalSites + 1);
+        data.bodies[bodyId].sites.append(s);
         clearAndRebuild();
     });
 
@@ -776,8 +888,22 @@ void ComponentEditorWindow::refreshBodyDropdown(QComboBox* combo) {
 
 void ComponentEditorWindow::refreshJointDropdown(QComboBox* combo) {
     combo->clear();
+    combo->addItem("(none)"); // only consumer is build_io_list's Target joint combo
     for (const Edge& e : data.joints) {
         combo->addItem(e.id);
+    }
+}
+
+
+
+
+void ComponentEditorWindow::refreshSiteDropdown(QComboBox* combo) {
+    combo->clear();
+    combo->addItem("(none)");
+    for (const Node& node : data.bodies) {
+        for (const Site& s : node.sites) {
+            combo->addItem(s.id);
+        }
     }
 }
 
@@ -818,21 +944,47 @@ void ComponentEditorWindow::build_connectors() {
         form->addRow("Snap angles:", snapAnglesEdit);
 
         QString connKey = key;
+
+        // --- 1. Handle ID (Key) changes specifically ---
+        connect(idEdit, &QLineEdit::editingFinished, this, [this, connKey, idEdit]() {
+            QString newId = idEdit->text().trimmed();
+
+            // Revert if empty, unchanged, or duplicate
+            if (newId.isEmpty() || newId == connKey || data.connectors.contains(newId)) {
+                idEdit->setText(connKey);
+                return;
+            }
+
+            // Extract the old def, update the ID, and insert it under the new key
+            ConnectorDef c = data.connectors.take(connKey);
+            c.id = newId;
+            data.connectors.insert(newId, c);
+
+            // Rebuild the UI because the old captured 'connKey' in other lambdas is now stale
+            clearAndRebuild();
+        });
+
+        // --- 2. Handle all other property changes ---
         auto commit = [this, connKey, bodyCombo, descEdit, xform, snapAnglesEdit]() {
+            if (!data.connectors.contains(connKey)) return; // Safety check
+
             ConnectorDef c = data.connectors[connKey];
             c.body = bodyCombo->currentText();
             c.description = descEdit->text();
             c.transform.position = stringToPos(xform.posEdit->text(), c.transform.position);
             c.transform.rotation = stringToRot(xform.rotEdit->text(), c.transform.rotation);
             c.mechanics.snapAngles.clear();
+
             for (const QString& part : snapAnglesEdit->text().split(',', Qt::SkipEmptyParts)) {
                 bool ok = false;
                 float val = part.trimmed().toFloat(&ok);
                 if (ok) c.mechanics.snapAngles.append(val);
             }
+
             data.connectors[connKey] = c;
             schedulePreviewReload();
         };
+
         connect(bodyCombo, &QComboBox::currentTextChanged, this, commit);
         connect(descEdit, &QLineEdit::editingFinished, this, commit);
         connect(xform.posEdit, &QLineEdit::editingFinished, this, commit);
@@ -861,9 +1013,13 @@ void ComponentEditorWindow::build_connectors() {
         }
         ConnectorDef def;
         def.id = QString("connector_%1").arg(data.connectors.size() + 1);
-        // Must reference a real body: the combo can't display an empty body
-        // (it would silently show the first one while the data stays empty),
-        // and a connector without a body has no marker in the preview.
+
+        // Ensure unique ID if user hasn't renamed previous default ones
+        int count = data.connectors.size() + 1;
+        while (data.connectors.contains(def.id)) {
+            def.id = QString("connector_%1").arg(++count);
+        }
+
         def.body = data.bodies.contains(data.defaultBodyId) ? data.defaultBodyId
                                                             : data.bodies.firstKey();
         data.connectors[def.id] = def;
@@ -872,6 +1028,7 @@ void ComponentEditorWindow::build_connectors() {
 
     leftLayout->addWidget(box);
 }
+
 
 
 
@@ -927,22 +1084,44 @@ void ComponentEditorWindow::build_io_list(QVBoxLayout* parent, const QString& ti
 
         QComboBox* jointCombo = new QComboBox(row);
         refreshJointDropdown(jointCombo);
-        jointCombo->setCurrentText(def.targetJoint);
+        jointCombo->setCurrentText(def.targetJoint.isEmpty() ? "(none)" : def.targetJoint);
         form->addRow("Target joint:", jointCombo);
 
+        QComboBox* siteCombo = new QComboBox(row);
+        refreshSiteDropdown(siteCombo);
+        siteCombo->setCurrentText(def.targetSite.isEmpty() ? "(none)" : def.targetSite);
+        form->addRow("Target site:", siteCombo);
+
         QString ioKey = key;
-        auto commit = [this, &target, ioKey, unitEdit, channelTypeCombo, physicalCheck, jointCombo]() {
+        auto commit = [this, &target, ioKey, unitEdit, channelTypeCombo, physicalCheck, jointCombo, siteCombo]() {
             IODef d = target[ioKey];
             d.unit = unitEdit->text();
             d.channelType = channelTypeCombo->currentText();
             d.physical = physicalCheck->isChecked();
-            d.targetJoint = jointCombo->currentText();
+
+            // A channel is bound to EITHER a joint OR a site, never both --
+            // site takes priority if somehow both are set (shouldn't happen
+            // via this UI, but keep the invariant explicit).
+            QString siteSel = siteCombo->currentText();
+            QString jointSel = jointCombo->currentText();
+            if (siteSel != "(none)") {
+                d.targetSite = siteSel;
+                d.targetJoint = "";
+            } else if (jointSel != "(none)") {
+                d.targetJoint = jointSel;
+                d.targetSite = "";
+            } else {
+                d.targetJoint = "";
+                d.targetSite = "";
+            }
+
             target[ioKey] = d;
         };
         connect(unitEdit, &QLineEdit::editingFinished, this, commit);
         connect(channelTypeCombo, &QComboBox::currentTextChanged, this, commit);
         connect(physicalCheck, &QCheckBox::toggled, this, commit);
         connect(jointCombo, &QComboBox::currentTextChanged, this, commit);
+        connect(siteCombo, &QComboBox::currentTextChanged, this, commit);
 
         QPushButton* removeBtn = new QPushButton("Remove", row);
         form->addRow(removeBtn);

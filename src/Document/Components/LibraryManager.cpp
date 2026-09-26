@@ -14,11 +14,6 @@
 
 
 
-
-const QString LibraryManager::CUSTOM_CATEGORY_ID   = "custom";
-const QString LibraryManager::CUSTOM_CATEGORY_NAME = "Custom Components";
-
-
 static QString computeCustomBasePath(const QString& dirPath, const QString& id) {
     QString customDir = dirPath + "/custom";
     return QDir(customDir).filePath(id);
@@ -44,124 +39,6 @@ QString LibraryManager::copyResourceFile(const QString& srcAbsPath, const QStrin
 }
 
 
-
-
-// JSON serialization for a component now lives entirely in
-// ComponentData::toJson() -- nothing in this file duplicates that mapping
-// anymore.
-
-// void LibraryManager::appendCustomCatalogEntry(const QString& relativeItemPath, const QString& modelId) {
-//     QString path = dir+"/Catalog.json";
-//     QFile file(path);
-//     if (!file.open(QFile::ReadWrite)) {
-//         Log::error("Failed to open Catalog.json for update: " + path);
-//         return;
-//     }
-
-//     QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
-//     QJsonObject catalogObj = doc.object();
-//     QJsonArray categoriesArr = catalogObj["Categories"].toArray();
-
-//     int customIdx = -1;
-//     for (int i = 0; i < categoriesArr.size(); ++i) {
-//         if (categoriesArr[i].toObject()["id"].toString() == CUSTOM_CATEGORY_ID) {
-//             customIdx = i;
-//             break;
-//         }
-//     }
-
-//     QJsonObject customCategoryObj;
-//     if (customIdx == -1) {
-//         customCategoryObj["id"] = CUSTOM_CATEGORY_ID;
-//         customCategoryObj["name"] = CUSTOM_CATEGORY_NAME;
-//         customCategoryObj["keys"] = QJsonArray{CUSTOM_CATEGORY_ID};
-//         customCategoryObj["items"] = QJsonArray{relativeItemPath};
-//         categoriesArr.append(customCategoryObj);
-
-//         CategoryDef newCat;
-//         newCat.id = CUSTOM_CATEGORY_ID;
-//         newCat.name = CUSTOM_CATEGORY_NAME;
-//         newCat.keys = {CUSTOM_CATEGORY_ID};
-//         newCat.modelIds.append(modelId);
-//         categories.append(newCat);
-//     } else {
-//         customCategoryObj = categoriesArr[customIdx].toObject();
-//         QJsonArray itemsArr = customCategoryObj["items"].toArray();
-//         if (!itemsArr.toVariantList().contains(relativeItemPath)) {
-//             itemsArr.append(relativeItemPath);
-//         }
-//         customCategoryObj["items"] = itemsArr;
-//         categoriesArr[customIdx] = customCategoryObj;
-
-//         for (CategoryDef& cat : categories) {
-//             if (cat.id == CUSTOM_CATEGORY_ID) {
-//                 if (!cat.modelIds.contains(modelId)) cat.modelIds.append(modelId);
-//                 break;
-//             }
-//         }
-//     }
-
-//     catalogObj["Categories"] = categoriesArr;
-
-//     file.resize(0);
-//     file.write(QJsonDocument(catalogObj).toJson(QJsonDocument::Indented));
-//     file.close();
-// }
-
-
-
-
-// bool LibraryManager::saveComponent(ComponentData data, bool isNewCatalogEntry) {
-//     if (data.modelId.trimmed().isEmpty()) {
-//         Log::error("Cannot save component: id is empty.");
-//         return false;
-//     }
-
-//     if (isNewCatalogEntry && blueprints.contains(data.modelId)) {
-//         Log::error("Cannot save component: id '" + data.modelId + "' is already in use.");
-//         return false;
-//     }
-
-//     if (isNewCatalogEntry) {
-//         data.basePath = computeCustomBasePath(dir, data.modelId);
-//     }
-//     if (data.basePath.isEmpty()) {
-//         Log::error("Cannot save component: basePath is not set.");
-//         return false;
-//     }
-
-//     QDir().mkpath(data.basePath);
-//     QString rsdefPath = QDir(data.basePath).filePath(data.modelId + ".rsdef");
-
-//     for (const QString& key : data.meshResources.keys()) {
-//         QString relPath = copyResourceFile(data.meshResources[key], data.basePath, "meshes");
-//         if (!relPath.isEmpty()) data.meshResources[key] = QDir(data.basePath).filePath(relPath);
-//     }
-//     for (const QString& key : data.materialResources.keys()) {
-//         QString relPath = copyResourceFile(data.materialResources[key], data.basePath, "textures");
-//         if (!relPath.isEmpty()) data.materialResources[key] = QDir(data.basePath).filePath(relPath);
-//     }
-
-//     QFile outFile(rsdefPath);
-//     if (!outFile.open(QFile::WriteOnly | QFile::Truncate)) {
-//         Log::error("Failed to write component file: " + rsdefPath);
-//         return false;
-//     }
-//     outFile.write(QJsonDocument(data.toJson()).toJson(QJsonDocument::Indented));
-//     outFile.close();
-
-//     if (isNewCatalogEntry) {
-//         QString baseModelsDir = dir;
-//         QString relativeItemPath = QDir(baseModelsDir).relativeFilePath(rsdefPath);
-//         appendCustomCatalogEntry(relativeItemPath, data.modelId);
-//     }
-
-//     ComponentBlueprint* freshBlueprint = new ComponentBlueprint(rsdefPath);
-//     blueprints.insert(data.modelId, freshBlueprint);
-
-//     emit componentSaved(data.modelId);
-//     return true;
-// }
 
 
 bool LibraryManager::saveLocalComponent(ComponentData data) {

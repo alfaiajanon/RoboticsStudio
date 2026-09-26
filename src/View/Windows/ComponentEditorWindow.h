@@ -71,6 +71,7 @@ private:
     void build_construction();
     void build_bodies(QVBoxLayout* parent);
     void build_geoms(QFormLayout* bodyForm, const QString& bodyId);
+    void build_sites(QFormLayout* bodyForm, const QString& bodyId);
     void build_joints(QVBoxLayout* parent);
     void build_connectors();
     void build_io();
@@ -80,6 +81,7 @@ private:
 
     void refreshBodyDropdown(QComboBox* combo);
     void refreshJointDropdown(QComboBox* combo);
+    void refreshSiteDropdown(QComboBox* combo);
 
     void clearAndRebuild();
 };

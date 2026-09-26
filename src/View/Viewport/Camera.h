@@ -23,9 +23,9 @@ class Camera{
         double dist = sqrt(dx*dx + dy*dy + dz*dz);
 
         if (dist <= 0.0001) {
-            dist = 0.0001; 
+            dist = 0.0001;
         }
-        
+
         cam->distance = dist;
         cam->azimuth   = atan2(dy, dx) * 180.0 / M_PI;
         cam->elevation = asin(dz / dist) * 180.0 / M_PI;
@@ -71,6 +71,7 @@ class Camera{
         mjvCamera* getMJCam(){
             return cam;
         }
+
 };
 
 

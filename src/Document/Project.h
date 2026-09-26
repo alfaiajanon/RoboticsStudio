@@ -2,7 +2,7 @@
 
 #include "Utils/Global.h"
 #include "Utils/Spatial.h"
-#include "Telemetry/PlotTarget.h"
+// #include "Telemetry/PlotTarget.h"
 #include "Simulation/MicroController/MicroController.h"
 #include <qobject.h>
 
@@ -36,7 +36,7 @@ class Project {
         QString currentScriptContent;
         QJsonArray scriptPaths;
 
-        QList<PlotTarget> activePlots;
+        // QList<PlotTarget> activePlots;
 
 
         void clear();
@@ -71,8 +71,8 @@ class Project {
         QJsonObject getProjectData();
         void setProjectData(QJsonObject data);
 
-        QList<PlotTarget> getActivePlotsVal(){ return activePlots; }
-        QList<PlotTarget>* getActivePlots(){ return &activePlots; }
+        // QList<PlotTarget> getActivePlotsVal(){ return activePlots; }
+        // QList<PlotTarget>* getActivePlots(){ return &activePlots; }
         ComponentInstance* getRootComponent();
         ComponentInstance* getComponentByUid(int uid);
         Rotation getRootRotation() const { return rootRotation; }

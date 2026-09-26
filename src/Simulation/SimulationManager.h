@@ -19,6 +19,14 @@ enum class SimulationState {
     EDITING
 };
 
+struct SimStatus {
+    int fps;
+    double simTime;
+    double timeScale;
+    int activeContacts; // mjData->ncon, read alongside fps/simTime in trackFps
+    int invasiveCollisions;
+};
+
 
 
 
@@ -50,6 +58,8 @@ class SimulationManager : public QObject {
     void physicsLoop();
     void mcuLoop();
 
+    SimStatus status;
+
     public:
         std::mutex physicsMutex;
 
@@ -77,5 +87,6 @@ class SimulationManager : public QObject {
         static void syncFromMujocoSensor(ComponentInstance* root, mjModel* m, mjData* d);
 
     signals:
-        void fpsUpdated(int currentFps);
+        // void fpsUpdated(int currentFps);
+        void statusUpdated(const SimStatus& status);
 };

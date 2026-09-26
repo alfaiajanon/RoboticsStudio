@@ -9,13 +9,15 @@
 #include <QDialogButtonBox>
 #include <QLabel>
 #include <QFrame>
+#include <memory>
 
 #include "Application/Application.h"
 #include "Document/Project.h"
 #include "Document/Components/ComponentInstance.h"
 #include "Document/Components/ComponentBlueprint.h"
+#include "Telemetry/Channel.h"
 #include "Telemetry/TelemetryRegistry.h"
-#include "Telemetry/BodyMotionSource.h"
+#include "Telemetry/Sources/BodyMotionSource.h"
 
 #pragma region Setup
 
@@ -61,12 +63,18 @@ MotionPanel::MotionPanel(QWidget* parent) : QWidget(parent) {
 
 MotionPanel::~MotionPanel() {
     auto& registry = TelemetryRegistry::getInstance();
-    for (int channelId : targetRows.keys()) {
-        if (auto ch = registry.getVector(channelId)) ch->unsubscribe();
-        registry.removeSource(channelId);
-    }
+    // for (int channelId : targetRows.keys()) {
+    //     if (auto ch = registry.getVector(channelId)) ch->unsubscribe();
+    //     registry.removeSource(channelId);
+    // }
+    registry.clearAll();
     if (plotWindow) plotWindow->deleteLater();
 }
+
+
+
+
+
 
 #pragma region Add Target
 
@@ -101,8 +109,8 @@ void MotionPanel::showAddTargetDialog() {
     auto fillBodies = [&componentMap, compCombo, bodyCombo]() {
         bodyCombo->clear();
         ComponentInstance* comp = componentMap.value(compCombo->currentData().toInt(), nullptr);
-        if (!comp || !comp->blueprint) return;
-        for (const QString& nodeId : comp->blueprint->kinematics.getNodes().keys()) {
+        if (!comp || !comp->getBlueprint()) return;
+        for (const QString& nodeId : comp->getBlueprint()->kinematics.getNodes().keys()) {
             bodyCombo->addItem(nodeId);
         }
     };
@@ -112,10 +120,10 @@ void MotionPanel::showAddTargetDialog() {
 
     layout->addWidget(new QLabel("Quantity:"));
     QComboBox* quantityCombo = new QComboBox();
-    quantityCombo->addItem("Linear Velocity (m/s)", QVariant::fromValue((int)BodyMotionSource::Quantity::LinearVelocity));
-    quantityCombo->addItem("Angular Velocity (rad/s)", QVariant::fromValue((int)BodyMotionSource::Quantity::AngularVelocity));
-    quantityCombo->addItem("Linear Acceleration (m/s²)", QVariant::fromValue((int)BodyMotionSource::Quantity::LinearAcceleration));
-    quantityCombo->addItem("Angular Acceleration (rad/s²)", QVariant::fromValue((int)BodyMotionSource::Quantity::AngularAcceleration));
+    quantityCombo->addItem("Linear Velocity (m/s)", QVariant::fromValue((int)BodyMotionSource::MotionType::LinearVelocity));
+    quantityCombo->addItem("Angular Velocity (rad/s)", QVariant::fromValue((int)BodyMotionSource::MotionType::AngularVelocity));
+    quantityCombo->addItem("Linear Acceleration (m/s²)", QVariant::fromValue((int)BodyMotionSource::MotionType::LinearAcceleration));
+    quantityCombo->addItem("Angular Acceleration (rad/s²)", QVariant::fromValue((int)BodyMotionSource::MotionType::AngularAcceleration));
     layout->addWidget(quantityCombo);
 
     QCheckBox* localFrameCheck = new QCheckBox("Local frame (default: world)");
@@ -130,25 +138,37 @@ void MotionPanel::showAddTargetDialog() {
 
     if (dialog.exec() != QDialog::Accepted || bodyCombo->currentText().isEmpty()) return;
 
-    auto source = std::make_shared<BodyMotionSource>(
-        compCombo->currentData().toInt(),
-        bodyCombo->currentText(),
-        static_cast<BodyMotionSource::Quantity>(quantityCombo->currentData().toInt()),
-        localFrameCheck->isChecked());
+    // auto source = std::make_shared<BodyMotionSource>(
+    //     compCombo->currentData().toInt(),
+    //     bodyCombo->currentText(),
+    //     static_cast<BodyMotionSource::MotionType>(quantityCombo->currentData().toInt()),
+    //     localFrameCheck->isChecked());
+
+    // auto& registry = TelemetryRegistry::getInstance();
+    // registry.addSource(source);
+    int comp_uid=compCombo->currentData().toInt();
+    QString bodyName=bodyCombo->currentText();
+    bool motionType=quantityCombo->currentData().toInt();
+    bool locality=localFrameCheck->isChecked();
 
     auto& registry = TelemetryRegistry::getInstance();
-    registry.addSource(source);
+    auto source = registry.getOrCreateSource(
+        QString("motion:%1:%2:%3:%4").arg(comp_uid).arg(bodyName).arg(motionType).arg(locality?"local":"global"),
+        [comp_uid, bodyName, motionType, locality]() {
+            return std::make_shared<BodyMotionSource>(comp_uid, bodyName, (BodyMotionSource::MotionType)motionType, locality);
+        }
+    );
+    source->subscribe();
 
-    int channelId = source->channelId();
-    if (auto ch = registry.getVector(channelId)) ch->subscribe();
-    plotWindow->addTarget(channelId, source->description());
+    QString sourceKey = source->getKey();
+    plotWindow->addTarget(sourceKey, source->description);
 
     // Row UI: label + remove button
     QWidget* row = new QWidget();
     QHBoxLayout* rowLayout = new QHBoxLayout(row);
     rowLayout->setContentsMargins(0, 2, 0, 2);
 
-    QLabel* textLabel = new QLabel("↳ " + source->description());
+    QLabel* textLabel = new QLabel("↳ " + source->description);
     QPushButton* removeBtn = new QPushButton("✖");
     removeBtn->setFixedSize(24, 24);
     removeBtn->setStyleSheet("color: #E53935; border: none; font-weight: bold; font-size: 14px; background: transparent;");
@@ -158,14 +178,16 @@ void MotionPanel::showAddTargetDialog() {
     rowLayout->addWidget(removeBtn);
 
     targetsLayout->addWidget(row);
-    targetRows.insert(channelId, row);
+    targetRows.insert(sourceKey, row);
 
-    connect(removeBtn, &QPushButton::clicked, this, [this, row, channelId]() {
+    connect(removeBtn, &QPushButton::clicked, this, [this, row, sourceKey]() {
         auto& registry = TelemetryRegistry::getInstance();
-        if (auto ch = registry.getVector(channelId)) ch->unsubscribe();
-        plotWindow->removeTarget(channelId);
-        registry.removeSource(channelId);
-        targetRows.remove(channelId);
+        if (auto ch = registry.getSource(sourceKey)){
+            ch->unsubscribe();
+            registry.clearInactive();
+        }
+        plotWindow->removeTarget(sourceKey);
+        targetRows.remove(sourceKey);
         row->deleteLater();
     });
 }

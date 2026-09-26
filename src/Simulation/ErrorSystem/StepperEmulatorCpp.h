@@ -17,8 +17,8 @@ class StepperEmulatorCpp : public Emulator {
 
 
         void init() override{
-            if (component->blueprint) {
-                auto params = component->blueprint->emulatorDef.parameters;
+            if (component->getBlueprint()) {
+                auto params = component->getBlueprint()->emulatorDef.parameters;
                 if (params.contains("step_angle_deg")) stepAngleDeg = params["step_angle_deg"].toDouble();
                 if (params.contains("microstepping")) microstepping = params["microstepping"].toInt();
             }
@@ -28,8 +28,9 @@ class StepperEmulatorCpp : public Emulator {
             // In a highly advanced emulator, you would use stepAngleDeg and the current simulation
             // delta-time to calculate discrete position steps and create a "choppy" velocity profile.
             // For now, we smoothly pass the requested target velocity to the MuJoCo actuator.
-            IOData val = logicalTargetVelocity;
-            component->setActuatorTarget("target_velocity", val);
+            BasicIOValue val = component->getActuatorValue("target_velocity");
+            val.data[0]=logicalTargetVelocity;
+            component->setActuatorValue("target_velocity", val);
         }
 
         void reset() override {
@@ -56,8 +57,8 @@ class StepperEmulatorCpp : public Emulator {
 
         Q_INVOKABLE double read_position() {
             // return component->getSensorCurrent("current_position");
-            if(std::holds_alternative<double>(component->getSensorCurrent("current_position"))) {
-                return std::get<double>(component->getSensorCurrent("current_position"));
+            if(component->getSensorValue("current_position").dim==1) {
+                return component->getSensorValue("current_position").data[0];
             } else {
                 return 0.0;
             }
@@ -65,8 +66,8 @@ class StepperEmulatorCpp : public Emulator {
 
         Q_INVOKABLE double read_velocity() {
             // return component->getSensorCurrent("current_velocity");
-            if(std::holds_alternative<double>(component->getSensorCurrent("current_velocity"))) {
-                return std::get<double>(component->getSensorCurrent("current_velocity"));
+            if(component->getSensorValue("current_velocity").dim==1) {
+                return component->getSensorValue("current_velocity").data[0];
             } else {
                 return 0.0;
             }

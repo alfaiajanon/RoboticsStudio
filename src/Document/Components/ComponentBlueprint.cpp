@@ -182,7 +182,10 @@ void ComponentBlueprint::traverseGraph(QString& outXML, const QString& currentNo
         const Geom& geom = currentNode.geoms[i];
 
         outXML += indent;
-        outXML += QString("  <geom type=\"%1\" pos=\"%2 %3 %4\"").arg(geom.type).arg(geom.pos.x).arg(geom.pos.y).arg(geom.pos.z);
+        outXML += QString("  <geom type=\"%1\" pos=\"%2 %3 %4\" quat=\"%5 %6 %7 %8\"")
+                            .arg(geom.type)
+                            .arg(geom.pos.x).arg(geom.pos.y).arg(geom.pos.z)
+                            .arg(geom.rot.w).arg(geom.rot.x).arg(geom.rot.y).arg(geom.rot.z);
 
         if (i == 0 && currentNode.mass > 0.0) {
             outXML += QString(" mass=\"%1\"").arg(currentNode.mass);

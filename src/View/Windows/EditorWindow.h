@@ -31,8 +31,11 @@ class EditorWindow : public QMainWindow{
         // handler can tell pushes/redos apart from undos.
         int lastUndoIndex = 0;
 
-        QPushButton* playBtn;
         QLabel* fpsLabel;
+        QLabel* simTimeLabel;
+        QLabel* collisionCountLabel;
+
+        QPushButton* playBtn;
         QMenu* editMenu = nullptr;
 
         void setupMenuBar();

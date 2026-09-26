@@ -26,10 +26,6 @@ class LibraryManager : public QObject {
         QMap<QString, ComponentBlueprint*> blueprints;
         QList<CategoryDef> categories;
 
-        static const QString CUSTOM_CATEGORY_ID;
-        static const QString CUSTOM_CATEGORY_NAME;
-
-        // void appendCustomCatalogEntry(const QString& relativeItemPath, const QString& modelId);
         QString copyResourceFile(const QString& srcAbsPath, const QString& destDir, const QString& subfolder);
 
 

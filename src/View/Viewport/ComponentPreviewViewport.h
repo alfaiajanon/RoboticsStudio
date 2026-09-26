@@ -3,6 +3,7 @@
 #include <QLabel>
 #include <QTimer>
 #include <QPoint>
+#include <qcheckbox.h>
 #include "Simulation/MujocoContext.h"
 #include "View/Viewport/OffscreenSim.h"
 #include "View/Viewport/Camera.h"
@@ -11,6 +12,7 @@
 
 class QFrame;
 
+enum class OrthoView { Top, Bottom, Left, Right, Front, Back };
 
 
 /*
@@ -25,6 +27,7 @@ class QFrame;
  *
  * Static pose only: mj_forward after load, no stepping.
  */
+
 class ComponentPreviewViewport : public QLabel {
     Q_OBJECT
 
@@ -53,13 +56,19 @@ class ComponentPreviewViewport : public QLabel {
         // frame -- nothing is baked into the MJCF) and the HUD toggle states.
         ComponentData currentData;
         QFrame* hud = nullptr;
+        QCheckBox* orthoBox = nullptr;
         bool showConnectors = true;
         bool showJoints = true;
+
 
         void applyCamera();
         void renderLoop();
         void positionHud();
         void drawOverlays(mjModel* m, mjData* d, mjvScene* scn);
+
+        bool orthographic = false;
+        void setOrthographic(bool on);
+        void snapView(OrthoView view);
 
     protected:
         void resizeEvent(QResizeEvent* event) override;

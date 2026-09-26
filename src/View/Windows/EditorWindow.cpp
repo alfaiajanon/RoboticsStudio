@@ -13,6 +13,7 @@
 #include <QUndoStack>
 #include <QTimer>
 #include <qjsondocument.h>
+#include <qlabel.h>
 
 #include "Application/Application.h"
 #include "Commands/GenericCommand.h"
@@ -62,13 +63,15 @@ void EditorWindow::setupSimConn(){
     simConnInitialized = true;
 
     SimulationManager* simManager = Application::getInstance()->getSimulationManager();
-    connect(simManager, &SimulationManager::fpsUpdated, this, [this](int fps) {
-        fpsLabel->setText(QString("FPS: %1").arg(fps));
-        if (fps < 30) {
-            fpsLabel->setStyleSheet("color: #ff5555; background-color: #2d2d2d; padding: 4px; border-radius: 4px;");
+    connect(simManager, &SimulationManager::statusUpdated, this, [this](SimStatus status) {
+        fpsLabel->setText(QString("FPS: %1").arg(status.fps));
+        if (status.fps < 30) {
+            fpsLabel->setStyleSheet("color: #ff5555;");
         } else {
-            fpsLabel->setStyleSheet("color: #cccccc; background-color: #2d2d2d; padding: 4px; border-radius: 4px;");
+            fpsLabel->setStyleSheet("color: #cccccc;");
         }
+        simTimeLabel->setText(QString("Sim Time: %1").arg(status.simTime));
+        collisionCountLabel->setText(QString("Contacts: %1").arg(status.activeContacts));
     });
 
     setupCameraControls();
@@ -466,10 +469,19 @@ void EditorWindow::setupMainViewport() {
     QVBoxLayout* hudLayout = new QVBoxLayout(viewport);
     hudLayout->setContentsMargins(15, 15, 15, 15);
 
-    fpsLabel = new QLabel("FPS: --", viewport);
-    fpsLabel->setStyleSheet("color: #8e8e8e; background-color: rgba(30, 30, 30, 150); padding: 5px; border-radius: 4px;");
+    QWidget* container = new QWidget(viewport);
+    container->setStyleSheet("background-color: rgba(30, 30, 30, 150); padding: 5px; border-radius: 4px;");
+    QVBoxLayout* containerLayout = new QVBoxLayout(container);
+    containerLayout->setContentsMargins(0, 0, 0, 0);
 
-    hudLayout->addWidget(fpsLabel, 0, Qt::AlignTop | Qt::AlignLeft);
+    fpsLabel = new QLabel("FPS: --", viewport);
+    simTimeLabel = new QLabel("Sim Time: --", viewport);
+    collisionCountLabel=new QLabel("Collisions: --", viewport);
+    containerLayout->addWidget(simTimeLabel);
+    containerLayout->addWidget(collisionCountLabel);
+    containerLayout->addWidget(fpsLabel);
+
+    hudLayout->addWidget(container, 0, Qt::AlignTop | Qt::AlignLeft);
     hudLayout->addStretch();
 
     playBtn = new QPushButton("▶ PLAY", viewport);

@@ -8,6 +8,8 @@
 #include <QFrame>
 #include <QCheckBox>
 #include <QVBoxLayout>
+#include <qcombobox.h>
+#include <qpushbutton.h>
 
 #include "Document/Components/ComponentBlueprint.h"
 
@@ -91,6 +93,26 @@ ComponentPreviewViewport::ComponentPreviewViewport(QWidget* parent) : QLabel(par
     hudLayout->addWidget(connectorsBox);
     hudLayout->addWidget(jointsBox);
 
+    QCheckBox* orthoBox = new QCheckBox("Orthographic", hud);  // becomes this->orthoBox now
+    orthoBox->setChecked(orthographic);
+    hudLayout->addWidget(orthoBox);
+    connect(orthoBox, &QCheckBox::toggled, this, [this](bool on) { setOrthographic(on); });
+    this->orthoBox = orthoBox;
+
+    QComboBox* viewCombo = new QComboBox(hud);
+    viewCombo->addItem("Top", static_cast<int>(OrthoView::Top));
+    viewCombo->addItem("Bottom", static_cast<int>(OrthoView::Bottom));
+    viewCombo->addItem("Front", static_cast<int>(OrthoView::Front));
+    viewCombo->addItem("Back", static_cast<int>(OrthoView::Back));
+    viewCombo->addItem("Left", static_cast<int>(OrthoView::Left));
+    viewCombo->addItem("Right", static_cast<int>(OrthoView::Right));
+    viewCombo->setPlaceholderText("Snap view...");
+    viewCombo->setCurrentIndex(-1);
+    hudLayout->addWidget(viewCombo);
+
+    connect(viewCombo, &QComboBox::activated, this, [this, viewCombo](int idx) {
+        snapView(static_cast<OrthoView>(viewCombo->itemData(idx).toInt()));
+    });
     connect(connectorsBox, &QCheckBox::toggled, this, [this](bool on) { showConnectors = on; });
     connect(jointsBox, &QCheckBox::toggled, this, [this](bool on) { showJoints = on; });
 
@@ -172,6 +194,11 @@ void ComponentPreviewViewport::loadComponentData(const ComponentData& data) {
     } else {
         statusMessage = "Preview failed to load -- fix the component definition.";
     }
+
+    if(orthographic){
+        mujocoContext.getModel()->vis.global.orthographic=1;  // reapply it
+        applyCamera();
+    }
 }
 
 
@@ -200,6 +227,9 @@ void ComponentPreviewViewport::applyCamera() {
         target.y + distance * qCos(el) * qSin(az),
         target.z + distance * qSin(el)
     ));
+    if(orthographic){
+        mujocoContext.getModel()->vis.global.fovy=distance;
+    }
 }
 
 
@@ -207,43 +237,64 @@ void ComponentPreviewViewport::applyCamera() {
 
 void ComponentPreviewViewport::mousePressEvent(QMouseEvent* event) {
     lastMousePos = event->pos();
-    if (event->button() == Qt::LeftButton) orbiting = true;
-    if (event->button() == Qt::RightButton) panning = true;
+
+    if (event->button() == Qt::MiddleButton) {
+        panning = true;
+    } else if (event->button() == Qt::LeftButton) {
+        if (event->modifiers() & Qt::ControlModifier) {
+            panning = true;
+        } else {
+            orbiting = true;
+        }
+    }
 }
 
-
+void ComponentPreviewViewport::mouseReleaseEvent(QMouseEvent* event) {
+    if (event->button() == Qt::LeftButton) {
+        orbiting = false;
+        panning = false; // also clears the Ctrl+Left-drag pan case
+    } else if (event->button() == Qt::MiddleButton) {
+        panning = false;
+    }
+}
 
 
 void ComponentPreviewViewport::mouseMoveEvent(QMouseEvent* event) {
     QPoint delta = event->pos() - lastMousePos;
     lastMousePos = event->pos();
 
-    // OffscreenSim flips the rendered frame vertically, which mirrors the
-    // apparent left-right motion -- compensate by negating horizontal drag.
-    int dx = -delta.x();
+    int dx = delta.x();
     int dy = delta.y();
 
     if (orbiting) {
-        azimuthDeg += dx * 0.5;
+        azimuthDeg -= dx * 0.5;
         elevationDeg = qBound(-89.0, elevationDeg + dy * 0.5, 89.0);
         applyCamera();
     } else if (panning) {
-        // Move the target in the camera's ground-plane frame
         double az = qDegreesToRadians(azimuthDeg);
+        double el = qDegreesToRadians(elevationDeg);
+
+        // Screen-space right/up in world coordinates, derived from the same
+        // spherical az/el applyCamera() already uses -- "up" varies with
+        // elevation on purpose: at el=90 (top-down) there is no vertical
+        // component left to pan along, only horizontal, which is exactly
+        // the case the old dy*cos/sin(az)-only formula got wrong.
+        Position right(-qSin(az), qCos(az), 0.0);
+        Position up(-qCos(az) * qSin(el), -qSin(az) * qSin(el), qCos(el));
+
+        // Grab/hand-tool semantics: content follows the cursor, so target
+        // moves opposite the screen-space drag direction along "right",
+        // and dy (Qt: positive = downward) inverts against "up".
         double scale = distance * 0.002;
-        target.x -= dx * scale * -qSin(az) + dy * scale * qCos(az);
-        target.y -= dx * scale * qCos(az) + dy * scale * qSin(az);
+        target.x += (-dx * right.x + dy * up.x) * scale;
+        target.y += (-dx * right.y + dy * up.y) * scale;
+        target.z += (-dx * right.z + dy * up.z) * scale;
+
         applyCamera();
     }
 }
 
 
-
-
-void ComponentPreviewViewport::mouseReleaseEvent(QMouseEvent* event) {
-    if (event->button() == Qt::LeftButton) orbiting = false;
-    if (event->button() == Qt::RightButton) panning = false;
-}
 
 
 
@@ -364,3 +415,49 @@ void ComponentPreviewViewport::drawOverlays(mjModel* m, mjData* d, mjvScene* scn
 }
 
 #pragma endregion
+
+
+
+
+
+void ComponentPreviewViewport::setOrthographic(bool on) {
+    orthographic = on;
+    if (mujocoContext.getModel()) {
+        mujocoContext.getModel()->vis.global.orthographic = on ? 1 : 0;
+    }
+    if (on) {
+        // See note on wheelEvent below -- fovy means something different in
+        // ortho mode and needs seeding here, not left at whatever MuJoCo's
+        // compiled default is.
+        mujocoContext.getModel()->vis.global.fovy=distance;
+    }else{
+        mujocoContext.getModel()->vis.global.fovy=45;
+    }
+    if (orthoBox) {
+        orthoBox->blockSignals(true);
+        orthoBox->setChecked(on);
+        orthoBox->blockSignals(false);
+    }
+}
+
+/*
+ * Elevation ±90 is a controlled, deliberate snap (not a user drag), so
+ * bypassing wheelEvent/mouseMoveEvent's [-89,89] clamp here is intentional
+ * -- azimuth becomes mathematically irrelevant at the poles anyway
+ * (cos(90)=0 kills its contribution in applyCamera's spherical formula).
+ */
+void ComponentPreviewViewport::snapView(OrthoView view) {
+    switch (view) {
+        case OrthoView::Top:    elevationDeg = 90.0;  break;
+        case OrthoView::Bottom: elevationDeg = -90.0; break;
+        case OrthoView::Right:  elevationDeg = 0.0; azimuthDeg = 0.0;   break;
+        case OrthoView::Left:   elevationDeg = 0.0; azimuthDeg = 180.0; break;
+        // GUESS: world +Y = "back", -Y = "front" -- nothing I've seen in
+        // this codebase states a forward convention. Flip these two if
+        // wrong; nothing else depends on this choice.
+        case OrthoView::Front:  elevationDeg = 0.0; azimuthDeg = -90.0; break;
+        case OrthoView::Back:   elevationDeg = 0.0; azimuthDeg = 90.0;  break;
+    }
+    setOrthographic(true);
+    applyCamera();
+}
