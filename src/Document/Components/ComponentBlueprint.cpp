@@ -177,15 +177,21 @@ void ComponentBlueprint::traverseGraph(QString& outXML, const QString& currentNo
     outXML += indent + "<body name=\"" + prefix + currentNodeId + "\" ";
     outXML += QString("pos=\"%1 %2 %3\" ").arg(relTransform.position.x).arg(relTransform.position.y).arg(relTransform.position.z);
     outXML += QString("quat=\"%1 %2 %3 %4\">\n").arg(relTransform.rotation.w).arg(relTransform.rotation.x).arg(relTransform.rotation.y).arg(relTransform.rotation.z);
+    if (currentNode.overrideGeom) {
+        outXML += indent + QString("  <inertial pos=\"0 0 0\" mass=\"%1\" diaginertia=\"%2 %2 %2\"/>\n")
+                                    .arg(currentNode.mass)
+                                    .arg(currentNode.inertia);
+    }
 
     for (int i = 0; i < currentNode.geoms.size(); ++i) {
         const Geom& geom = currentNode.geoms[i];
 
         outXML += indent;
-        outXML += QString("  <geom type=\"%1\" pos=\"%2 %3 %4\" quat=\"%5 %6 %7 %8\"")
+        outXML += QString("  <geom type=\"%1\" pos=\"%2 %3 %4\" quat=\"%5 %6 %7 %8\" mass=\"%9\"")
                             .arg(geom.type)
                             .arg(geom.pos.x).arg(geom.pos.y).arg(geom.pos.z)
-                            .arg(geom.rot.w).arg(geom.rot.x).arg(geom.rot.y).arg(geom.rot.z);
+                            .arg(geom.rot.w).arg(geom.rot.x).arg(geom.rot.y).arg(geom.rot.z)
+                            .arg(geom.mass);
 
         if (i == 0 && currentNode.mass > 0.0) {
             outXML += QString(" mass=\"%1\"").arg(currentNode.mass);

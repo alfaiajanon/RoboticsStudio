@@ -76,17 +76,6 @@
                 "tire"
             ],
             "name": "Wheels"
-        },
-        {
-            "id": "dummy",
-            "items": [
-                "dummy/base_rect/base_rect.rsdef"
-            ],
-            "keys": [
-                "dummy",
-                "placeholder"
-            ],
-            "name": "Dummy/Placeholder Models"
         }
     ],
     "version": "1.0.0"

@@ -1,7 +1,20 @@
 {
     "assembly": {
         "components": [
-
+            {
+                "connection": {
+                    "parent_connector": "root",
+                    "parent_uid": 0,
+                    "self_connector": "",
+                    "snap_angle": 0
+                },
+                "model_id": "servo_sg90",
+                "name": "TowerPro SG90 (1)",
+                "parameters": {
+                    "servo_joint": 0
+                },
+                "uid": 1
+            }
         ],
         "constraints": [
         ],
@@ -20,9 +33,10 @@
         "version": "1.0.0"
     },
     "script": {
-        "current": 0,
+        "current": 1,
         "paths": [
-            "demo1.js"
+            "demo1.js",
+            "dummy.js"
         ]
     },
     "simulation": {

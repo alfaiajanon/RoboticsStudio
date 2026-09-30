@@ -39,8 +39,9 @@ class LibraryManager : public QObject {
 
         QString getModelsDir();
         bool hasBlueprint(const QString& model_id);
-        ComponentBlueprint* getBlueprint(const QString& model_id);
-        const QList<CategoryDef>& getCategories() const { return categories; }
+        ComponentBlueprint* getBlueprint(QString model_id);
+        QList<ComponentBlueprint*> getBlueprints(QString categoryId);
+        const QList<CategoryDef> getCategories() const { return categories; }
 
     signals:
         void catalogLoaded();

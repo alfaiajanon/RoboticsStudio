@@ -14,16 +14,19 @@
 #include <QJsonDocument>
 #include <QFileInfo>
 #include <qlineedit.h>
+#include <QSplitter>
+#include <QTabWidget>
+#include <QEvent>
+#include <QWheelEvent>
+#include <QCoreApplication>
+#include <QAbstractSpinBox>
+#include <QAbstractSlider>
+#include <QSet>
 
 
 
 
 // ---------------- QList<Edge> helpers ----------------
-// ComponentData deliberately does not own a KinematicGraph (that's derived/
-// cached state, built once by ComponentBlueprint) -- joints are a plain
-// QList<Edge> here, so these small free functions stand in for the
-// find/update/remove-by-id operations KinematicGraph used to provide.
-
 static Edge findEdge(const QList<Edge>& joints, const QString& id) {
     for (const Edge& e : joints) if (e.id == id) return e;
     return Edge();
@@ -46,10 +49,6 @@ static void removeEdgeById(QList<Edge>& joints, const QString& id) {
 
 
 // ---------------- QVariant map <-> QJsonObject ----------------
-// EmulatorDef::parameters is still QMap<QString,QVariant>; KeyValueListWidget
-// only speaks QJsonObject. Converting at this UI boundary rather than
-// changing the shared struct.
-
 static QJsonObject variantMapToJson(const QMap<QString, QVariant>& map) {
     QJsonObject obj;
     for (auto it = map.constBegin(); it != map.constEnd(); ++it) {
@@ -70,10 +69,6 @@ static QMap<QString, QVariant> jsonToVariantMap(const QJsonObject& obj) {
 
 
 // ---------------- comma-list <-> Position/Rotation/QList<double> ----------------
-// Same "smart-enough freeform text" spirit as the rest of this editor
-// (size/color/snap-angles already work this way) -- not a full vector
-// widget, just parse-or-fall-back-to-previous-value.
-
 static QString posToString(const Position& p) {
     return QString("%1, %2, %3").arg(p.x).arg(p.y).arg(p.z);
 }
@@ -120,13 +115,23 @@ static QList<double> stringToDoubleList(const QString& s) {
     return result;
 }
 
+// Hides/shows a QFormLayout row given its field widget -- the label lives in
+// the layout, not in the field, so both have to be toggled together.
+static void setFormFieldVisible(QWidget* field, bool visible) {
+    if (QWidget* parent = field->parentWidget()) {
+        if (auto* form = qobject_cast<QFormLayout*>(parent->layout())) {
+            if (QWidget* label = form->labelForField(field)) label->setVisible(visible);
+        }
+    }
+    field->setVisible(visible);
+}
+
 
 
 
 ComponentEditorWindow::ComponentEditorWindow(ComponentData source, QWidget* parent)
     : QWidget(parent, Qt::Window) {
 
-    // process data
     data = source;
 
     if(!data.modelId.isEmpty()){
@@ -136,33 +141,46 @@ ComponentEditorWindow::ComponentEditorWindow(ComponentData source, QWidget* pare
         data.meta.name = "New Component";
     }
 
-
-
-    // show window
-
     setWindowTitle("Component Editor");
     resize(1100, 720);
 
     QVBoxLayout* rootLayout = new QVBoxLayout(this);
-    QHBoxLayout* body = new QHBoxLayout();
-    rootLayout->addLayout(body, 1);
 
-    // ---- left: scrollable section stack ----
-    QScrollArea* scrollArea = new QScrollArea(this);
-    scrollArea->setWidgetResizable(true);
-    scrollArea->setFrameShape(QFrame::NoFrame);
-    scrollArea->setMinimumWidth(420);
-    scrollArea->setMaximumWidth(480);
+    QSplitter* splitter = new QSplitter(Qt::Horizontal, this);
+    splitter->setChildrenCollapsible(false);
+    rootLayout->addWidget(splitter, 1);
 
-    QWidget* leftContent = new QWidget(scrollArea);
-    leftLayout = new QVBoxLayout(leftContent);
-    leftLayout->setAlignment(Qt::AlignTop);
-    scrollArea->setWidget(leftContent);
-    body->addWidget(scrollArea);
+    tabWidget = new QTabWidget(splitter);
+    tabWidget->setTabPosition(QTabWidget::West);
+    tabWidget->setMinimumWidth(360);
 
-    // ---- right: live 3D preview of the component being edited ----
-    preview = new ComponentPreviewViewport(this);
-    body->addWidget(preview, 1);
+    auto makeTabPage = [this](QVBoxLayout*& outLayout) -> QScrollArea* {
+        QScrollArea* scrollArea = new QScrollArea(tabWidget);
+        scrollArea->setWidgetResizable(true);
+        scrollArea->setFrameShape(QFrame::NoFrame);
+
+        QWidget* content = new QWidget(scrollArea);
+        outLayout = new QVBoxLayout(content);
+        outLayout->setAlignment(Qt::AlignTop);
+        outLayout->setSpacing(18);
+        outLayout->setContentsMargins(14, 14, 14, 14);
+
+        scrollArea->setWidget(content);
+        return scrollArea;
+    };
+
+    tabWidget->addTab(makeTabPage(metaLayout), "Meta");
+    tabWidget->addTab(makeTabPage(constructionLayout), "Construction");
+    tabWidget->addTab(makeTabPage(ioLayout), "IO");
+    tabWidget->addTab(makeTabPage(emulatorLayout), "Emulator");
+
+    splitter->addWidget(tabWidget);
+
+    preview = new ComponentPreviewViewport(splitter);
+    splitter->addWidget(preview);
+    splitter->setStretchFactor(0, 0);
+    splitter->setStretchFactor(1, 1);
+    splitter->setSizes({420, 680});
 
     previewReloadTimer = new QTimer(this);
     previewReloadTimer->setSingleShot(true);
@@ -171,7 +189,6 @@ ComponentEditorWindow::ComponentEditorWindow(ComponentData source, QWidget* pare
         preview->loadComponentData(data);
     });
 
-    // ---- bottom: pinned Save bar, outside the scroll area ----
     QWidget* bottomBar = new QWidget(this);
     QHBoxLayout* bottomLayout = new QHBoxLayout(bottomBar);
     bottomLayout->addStretch();
@@ -180,7 +197,6 @@ ComponentEditorWindow::ComponentEditorWindow(ComponentData source, QWidget* pare
     bottomLayout->addWidget(saveBtn);
     rootLayout->addWidget(bottomBar);
     connect(saveBtn, &QPushButton::clicked, this, &ComponentEditorWindow::onSaveClicked);
-
 
     clearAndRebuild();
 }
@@ -200,32 +216,101 @@ void ComponentEditorWindow::onSaveClicked() {
 
 
 
+/*
+ * The rebuild is DEFERRED to the next event-loop turn, never run inline.
+ * Nearly every caller is a lambda connected to a widget signal (a checkbox's
+ * toggled, a line edit's editingFinished, a button's clicked) and the rebuild
+ * deletes every widget -- including the one whose signal is still being
+ * emitted. Qt keeps touching that widget after the signal returns
+ * (QCheckBox::nextCheckState writes to its private data right after
+ * toggled), so deleting it synchronously is a use-after-free crash.
+ */
 void ComponentEditorWindow::clearAndRebuild() {
-    QLayoutItem* item;
-    while ((item = leftLayout->takeAt(0)) != nullptr) {
-        if (item->widget()) delete item->widget();
-        delete item;
+    QTimer::singleShot(0, this, [this]() {
+        auto clearLayout = [](QVBoxLayout* l) {
+            QLayoutItem* item;
+            while ((item = l->takeAt(0)) != nullptr) {
+                if (item->widget()) delete item->widget();
+                delete item;
+            }
+        };
+        clearLayout(metaLayout);
+        clearLayout(constructionLayout);
+        clearLayout(ioLayout);
+        clearLayout(emulatorLayout);
+
+        leftLayout = constructionLayout;
+        build_resources();
+        build_construction();
+        build_connectors();
+        constructionLayout->addStretch();
+
+        leftLayout = ioLayout;
+        build_io();
+        ioLayout->addStretch();
+
+        leftLayout = emulatorLayout;
+        build_emulator();
+        emulatorLayout->addStretch();
+
+        leftLayout = metaLayout;
+        build_data();
+        metaLayout->addStretch();
+
+        // Scoped to the tab panel: the 3D preview's own HUD dropdown must keep
+        // behaving normally.
+        installScrollGuards(tabWidget);
+
+        schedulePreviewReload();
+    });
+}
+
+
+
+
+/*
+ * Wheel events over these widgets never change their value -- they are
+ * handed to the enclosing scroll area instead, so scrolling a long property
+ * list can't silently edit whatever the cursor happens to pass over.
+ *
+ * (The earlier version only blocked the wheel while the widget was NOT
+ * focused. That check could never be true: with Qt's default WheelFocus
+ * policy, Qt gives the widget focus on the wheel event itself, before any
+ * event filter runs -- so hasFocus() was always already true.)
+ */
+bool ComponentEditorWindow::eventFilter(QObject* obj, QEvent* event) {
+    if (event->type() == QEvent::Wheel) {
+        if (QWidget* widget = qobject_cast<QWidget*>(obj)) {
+            event->ignore();
+            if (widget->parentWidget()) {
+                QCoreApplication::sendEvent(widget->parentWidget(), event);
+            }
+            return true;
+        }
     }
+    return QWidget::eventFilter(obj, event);
+}
 
-    build_resources();
-    build_construction();
-    build_connectors();
-    build_io();
-    build_emulator();
-    build_data();
-    leftLayout->addStretch();
 
-    schedulePreviewReload();
+
+
+void ComponentEditorWindow::installScrollGuards(QWidget* root) {
+    auto guard = [this](QWidget* w) {
+        // Tab/click focus only, so a wheel tick can't steal focus either.
+        w->setFocusPolicy(Qt::StrongFocus);
+        w->installEventFilter(this);
+    };
+    for (QComboBox* cb : root->findChildren<QComboBox*>()) guard(cb);
+    for (QAbstractSpinBox* sb : root->findChildren<QAbstractSpinBox*>()) guard(sb); // spin + double spin
+    for (QAbstractSlider* sl : root->findChildren<QAbstractSlider*>()) guard(sl);
 }
 
 
 
 
 void ComponentEditorWindow::schedulePreviewReload() {
-    // Markers redraw from the data immediately (next frame); the model
-    // reload stays debounced since it's expensive.
     if (preview) preview->setOverlayData(data);
-    if (previewReloadTimer) previewReloadTimer->start(); // restarts the debounce
+    if (previewReloadTimer) previewReloadTimer->start();
 }
 
 
@@ -248,33 +333,38 @@ ComponentEditorWindow::TransformFieldRefs ComponentEditorWindow::addTransformFie
 
 
 
-/*
- * Wraps content in a toggleable header, collapsed by default -- this is
- * what keeps Bodies/Joints/Connectors navigable once there's more than a
- * couple of each; expanding one at a time beats scrolling past a full form
- * per item just to find the one you want.
- */
 QWidget* ComponentEditorWindow::makeCollapsible(const QString& headerText, QWidget* content, QWidget* parent) {
     QWidget* wrapper = new QWidget(parent);
     QVBoxLayout* wrapperLayout = new QVBoxLayout(wrapper);
     wrapperLayout->setContentsMargins(0, 0, 0, 0);
     wrapperLayout->setSpacing(2);
 
+    // Fold state lives in foldedSections, not in the widgets: every rebuild
+    // recreates them, so a widget-only state would snap back on any edit.
+    // Everything starts unfolded; only sections the USER folded are recorded.
+    // Callers identify a section by setting a "foldKey" property on `content`.
+    const QString foldKey = content->property("foldKey").toString();
+    const bool startFolded = !foldKey.isEmpty() && foldedSections.contains(foldKey);
+
     QToolButton* toggle = new QToolButton(wrapper);
-    toggle->setText("▸ " + headerText);
+    toggle->setText((startFolded ? "▸ " : "▾ ") + headerText);
     toggle->setCheckable(true);
-    toggle->setChecked(false);
+    toggle->setChecked(!startFolded);
     toggle->setStyleSheet("border: none; text-align: left; font-weight: bold;");
     toggle->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     wrapperLayout->addWidget(toggle);
 
     content->setParent(wrapper);
-    content->setVisible(false);
+    content->setVisible(!startFolded);
     wrapperLayout->addWidget(content);
 
-    connect(toggle, &QToolButton::toggled, this, [toggle, content, headerText](bool checked) {
+    connect(toggle, &QToolButton::toggled, this, [this, toggle, content, headerText, foldKey](bool checked) {
         content->setVisible(checked);
         toggle->setText((checked ? "▾ " : "▸ ") + headerText);
+        if (!foldKey.isEmpty()) {
+            if (checked) foldedSections.remove(foldKey);
+            else foldedSections.insert(foldKey);
+        }
     });
 
     return wrapper;
@@ -340,13 +430,11 @@ void ComponentEditorWindow::build_resource_list(QVBoxLayout* parent, const QStri
 
     QString filter = (title == "Meshes") ? "Meshes (*.obj)" : "Images (*.png *.jpg)";
     connect(addBtn, &QPushButton::clicked, this, [this, &target, filter]() {
-        // DontUseNativeDialog: the native GTK dialog competes with the
-        // 60 FPS GL render loops and can lag/freeze the whole app.
         QString path = QFileDialog::getOpenFileName(this, "Import", QString(), filter,
                                                     nullptr, QFileDialog::DontUseNativeDialog);
         if (path.isEmpty()) return;
         QString key = QFileInfo(path).completeBaseName();
-        target[key] = path; // absolute source path -- copied at Save time
+        target[key] = path;
         clearAndRebuild();
     });
 
@@ -362,8 +450,6 @@ void ComponentEditorWindow::build_construction() {
     QGroupBox* box = new QGroupBox("Construction", this);
     QVBoxLayout* layout = new QVBoxLayout(box);
 
-    // Root of the kinematic tree -- ComponentBlueprint::parseKinematics
-    // needs this, and without it the preview has nothing to render.
     QWidget* defaultBodyRow = new QWidget(box);
     QHBoxLayout* defaultBodyLayout = new QHBoxLayout(defaultBodyRow);
     defaultBodyLayout->setContentsMargins(0, 0, 0, 0);
@@ -400,20 +486,82 @@ void ComponentEditorWindow::build_bodies(QVBoxLayout* parent) {
         QFormLayout* form = new QFormLayout(content);
 
         QLineEdit* idEdit = new QLineEdit(node.id, content);
-        // Body id is referenced by joints/connectors/io elsewhere -- renaming
-        // in place would require cascading the update. Left read-only for
-        // this first pass; delete-and-recreate is the current workaround.
-        idEdit->setReadOnly(true);
         form->addRow("Id:", idEdit);
 
-        QDoubleSpinBox* massSpin = new QDoubleSpinBox(content);
+        QString oldNodeId = nodeId;
+        connect(idEdit, &QLineEdit::editingFinished, this, [this, oldNodeId, idEdit]() {
+            QString newId = idEdit->text().trimmed();
+            if (newId.isEmpty() || newId == oldNodeId || data.bodies.contains(newId)) {
+                idEdit->setText(oldNodeId);
+                return;
+            }
+            Node n = data.bodies.take(oldNodeId);
+            n.id = newId;
+            data.bodies.insert(newId, n);
+
+            if (data.defaultBodyId == oldNodeId) data.defaultBodyId = newId;
+
+            // Migrate override flag key
+            if (bodyGeomOverride.contains(oldNodeId)) {
+                bodyGeomOverride.insert(newId, bodyGeomOverride.take(oldNodeId));
+            }
+            // Keep the user's fold choice attached to the renamed body
+            if (foldedSections.remove("body:" + oldNodeId)) foldedSections.insert("body:" + newId);
+            clearAndRebuild();
+        });
+
+        // One shared switch decides who owns mass/inertia for this body:
+        //   checked   -> the body's own mass/inertia fields are live, and the
+        //                per-geom mass fields are hidden;
+        //   unchecked -> the geoms carry the mass, and the body's fields are
+        //                greyed out.
+        const bool bodyOwnsMass = bodyGeomOverride.value(nodeId, false);
+
+        QWidget* massRow = new QWidget(content);
+        QHBoxLayout* massLayout = new QHBoxLayout(massRow);
+        massLayout->setContentsMargins(0, 0, 0, 0);
+
+        QDoubleSpinBox* massSpin = new QDoubleSpinBox(massRow);
         massSpin->setRange(0.0, 1000.0);
         massSpin->setDecimals(4);
         massSpin->setValue(node.mass);
-        form->addRow("Mass (kg):", massSpin);
+        massSpin->setEnabled(bodyOwnsMass);
+        massLayout->addWidget(massSpin, 1);
+
+        QCheckBox* overrideGeomsCheck = new QCheckBox("Override", massRow);
+        overrideGeomsCheck->setChecked(bodyOwnsMass); // before the connect below, so nothing fires at build time
+        massLayout->addWidget(overrideGeomsCheck);
+
+        form->addRow("Mass (kg):", massRow);
+
+        QDoubleSpinBox* inertiaSpin = new QDoubleSpinBox(content);
+        inertiaSpin->setRange(0.0, 1000.0);
+        inertiaSpin->setDecimals(6);
+        inertiaSpin->setValue(node.inertia);
+        inertiaSpin->setEnabled(bodyOwnsMass);
+        form->addRow("Inertia:", inertiaSpin);
+
         connect(massSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this, nodeId](double val) {
             if (data.bodies.contains(nodeId)) data.bodies[nodeId].mass = val;
             schedulePreviewReload();
+        });
+
+        connect(inertiaSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this, nodeId](double val) {
+            if (data.bodies.contains(nodeId)) data.bodies[nodeId].inertia = val;
+            schedulePreviewReload();
+        });
+
+        // Applied in place -- no rebuild. The geoms' mass fields are tagged
+        // "geomMassInertia" in build_geoms, so they can be found and hidden or
+        // shown right here, on the fly.
+        connect(overrideGeomsCheck, &QCheckBox::toggled, this, [this, nodeId, content, massSpin, inertiaSpin](bool checked) {
+            data.bodies[nodeId].overrideGeom=checked;
+            bodyGeomOverride[nodeId] = checked;
+            massSpin->setEnabled(checked);
+            inertiaSpin->setEnabled(checked);
+            for (QWidget* w : content->findChildren<QWidget*>("geomMassInertia")) {
+                setFormFieldVisible(w, !checked);
+            }
         });
 
         TransformFieldRefs xform = addTransformFields(form, node.localTransform);
@@ -448,8 +596,6 @@ void ComponentEditorWindow::build_bodies(QVBoxLayout* parent) {
                     return;
                 }
             }
-            // A body's sites can be referenced by IO even though the site
-            // itself lives one level deeper -- check before removing.
             for (const Site& s : data.bodies.value(nodeId).sites) {
                 for (const QString& key : data.outputDefs.keys()) {
                     if (data.outputDefs[key].targetSite == s.id) {
@@ -465,10 +611,12 @@ void ComponentEditorWindow::build_bodies(QVBoxLayout* parent) {
                 }
             }
             data.bodies.remove(nodeId);
+            bodyGeomOverride.remove(nodeId);
             clearAndRebuild();
         });
 
         QString header = QString("%1  (mass %2 kg)").arg(node.id).arg(node.mass);
+        content->setProperty("foldKey", "body:" + nodeId);
         layout->addWidget(makeCollapsible(header, content, box));
     }
 
@@ -490,12 +638,6 @@ void ComponentEditorWindow::build_bodies(QVBoxLayout* parent) {
 
 
 
-/*
- * Per-body geom list. Mesh/material are dropdowns sourced from this
- * component's own meshResources/materialResources keys -- a geom can only
- * reference a resource that's already been imported in the Resources
- * section, never free text.
- */
 void ComponentEditorWindow::build_geoms(QFormLayout* bodyForm, const QString& bodyId) {
     QGroupBox* box = new QGroupBox("Geoms", bodyForm->parentWidget());
     QVBoxLayout* layout = new QVBoxLayout(box);
@@ -526,6 +668,25 @@ void ComponentEditorWindow::build_geoms(QFormLayout* bodyForm, const QString& bo
         materialCombo->setCurrentText(g.material.isEmpty() ? "(none)" : g.material);
         form->addRow("Material:", materialCombo);
 
+        QDoubleSpinBox* gMassSpin = new QDoubleSpinBox(row);
+        gMassSpin->setRange(0.0, 1000.0);
+        gMassSpin->setDecimals(4);
+        gMassSpin->setValue(g.mass);
+        gMassSpin->setObjectName("geomMassInertia"); // found by the body's Override checkbox
+        form->addRow("Mass (kg):", gMassSpin);
+        if (bodyGeomOverride.value(bodyId, false)) setFormFieldVisible(gMassSpin, false);
+
+        // QLineEdit* gInertiaEdit = new QLineEdit(g.intertia, row);
+        // gInertiaEdit->setPlaceholderText("diaginertia (3 values)");
+        // form->addRow("Inertia:", gInertiaEdit);
+
+        // if (bodyGeomOverride.value(bodyId, false)) {
+        //     form->labelForField(gMassSpin)->setVisible(false);
+        //     gMassSpin->setVisible(false);
+        //     form->labelForField(gInertiaEdit)->setVisible(false);
+        //     gInertiaEdit->setVisible(false);
+        // }
+
         QLineEdit* sizeEdit = new QLineEdit(doubleListToString(g.size), row);
         sizeEdit->setPlaceholderText("comma-separated, meaning depends on type");
         form->addRow("Size:", sizeEdit);
@@ -533,14 +694,14 @@ void ComponentEditorWindow::build_geoms(QFormLayout* bodyForm, const QString& bo
         QLineEdit* posEdit = new QLineEdit(posToString(g.pos), row);
         form->addRow("Position (x,y,z):", posEdit);
 
-        QLineEdit* rotEdit = new QLineEdit(posToString(g.pos), row);
+        QLineEdit* rotEdit = new QLineEdit(rotToString(g.rot), row);
         form->addRow("Rotation (x,y,z):", rotEdit);
 
         QLineEdit* colorEdit = new QLineEdit(doubleListToString(g.color), row);
         colorEdit->setPlaceholderText("r, g, b[, a] -- only used if Material is (none)");
         form->addRow("Color:", colorEdit);
 
-        auto commit = [this, bodyId, geomIdx, typeCombo, meshCombo, materialCombo, sizeEdit, posEdit, rotEdit, colorEdit]() {
+        auto commit = [this, bodyId, geomIdx, typeCombo, meshCombo, materialCombo, sizeEdit, posEdit, rotEdit, colorEdit, gMassSpin/*, gInertiaEdit*/]() {
             if (!data.bodies.contains(bodyId) || geomIdx >= data.bodies[bodyId].geoms.size()) return;
             Geom& geom = data.bodies[bodyId].geoms[geomIdx];
 
@@ -551,6 +712,8 @@ void ComponentEditorWindow::build_geoms(QFormLayout* bodyForm, const QString& bo
             geom.pos = stringToPos(posEdit->text(), geom.pos);
             geom.rot = stringToRot(rotEdit->text(), geom.rot);
             geom.color = stringToDoubleList(colorEdit->text());
+            geom.mass = gMassSpin->value();
+            // geom.intertia = gInertiaEdit->text();
 
             schedulePreviewReload();
         };
@@ -561,6 +724,8 @@ void ComponentEditorWindow::build_geoms(QFormLayout* bodyForm, const QString& bo
         connect(posEdit, &QLineEdit::editingFinished, this, commit);
         connect(rotEdit, &QLineEdit::editingFinished, this, commit);
         connect(colorEdit, &QLineEdit::editingFinished, this, commit);
+        connect(gMassSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, commit);
+        // connect(gInertiaEdit, &QLineEdit::editingFinished, this, commit);
 
         QPushButton* removeBtn = new QPushButton("Remove Geom", row);
         form->addRow(removeBtn);
@@ -582,6 +747,7 @@ void ComponentEditorWindow::build_geoms(QFormLayout* bodyForm, const QString& bo
         Geom g;
         g.type = "box";
         g.size = {0.01, 0.01, 0.01};
+        g.mass = 0.0; // Geom::mass has no default initializer
         data.bodies[bodyId].geoms.append(g);
         clearAndRebuild();
     });
@@ -592,13 +758,6 @@ void ComponentEditorWindow::build_geoms(QFormLayout* bodyForm, const QString& bo
 
 
 
-/*
- * Per-body site list. A Site is a mount point that carries an optional
- * site-attached MuJoCo sensor (accelerometer/gyro/etc) -- distinct from a
- * Connector (mechanical attachment point) and from a joint sensor (which
- * lives on Edge, not here). IO outputs reference a site by id via
- * target_site (see build_io_list).
- */
 void ComponentEditorWindow::build_sites(QFormLayout* bodyForm, const QString& bodyId) {
     QGroupBox* box = new QGroupBox("Sites", bodyForm->parentWidget());
     QVBoxLayout* layout = new QVBoxLayout(box);
@@ -613,10 +772,19 @@ void ComponentEditorWindow::build_sites(QFormLayout* bodyForm, const QString& bo
         QFormLayout* form = new QFormLayout(row);
 
         QLineEdit* idEdit = new QLineEdit(s.id, row);
-        // Referenced by IO's target_site -- same rename hazard as body/joint
-        // id, same read-only-for-now workaround.
-        idEdit->setReadOnly(true);
         form->addRow("Id:", idEdit);
+
+        QString oldSiteId = s.id;
+        connect(idEdit, &QLineEdit::editingFinished, this, [this, bodyId, siteIdx, oldSiteId, idEdit]() {
+            QString newId = idEdit->text().trimmed();
+            if (newId.isEmpty() || newId == oldSiteId) {
+                idEdit->setText(oldSiteId);
+                return;
+            }
+            if (!data.bodies.contains(bodyId) || siteIdx >= data.bodies[bodyId].sites.size()) return;
+            data.bodies[bodyId].sites[siteIdx].id = newId;
+            clearAndRebuild();
+        });
 
         TransformFieldRefs xform = addTransformFields(form, s.localTransform);
 
@@ -673,9 +841,6 @@ void ComponentEditorWindow::build_sites(QFormLayout* bodyForm, const QString& bo
     connect(addBtn, &QPushButton::clicked, this, [this, bodyId]() {
         if (!data.bodies.contains(bodyId)) return;
 
-        // Site ids are referenced globally (target_site dropdown flattens
-        // all bodies' sites into one list), so the auto-generated name must
-        // be unique across ALL bodies, not just this one.
         int totalSites = 0;
         for (const Node& n : data.bodies) totalSites += n.sites.size();
 
@@ -702,8 +867,24 @@ void ComponentEditorWindow::build_joints(QVBoxLayout* parent) {
         QString edgeId = edge.id;
 
         QLineEdit* idEdit = new QLineEdit(edge.id, content);
-        idEdit->setReadOnly(true); // same rename hazard as body id
         form->addRow("Id:", idEdit);
+
+        QString oldEdgeId = edge.id;
+        connect(idEdit, &QLineEdit::editingFinished, this, [this, oldEdgeId, idEdit]() {
+            QString newId = idEdit->text().trimmed();
+            if (newId.isEmpty() || newId == oldEdgeId) {
+                idEdit->setText(oldEdgeId);
+                return;
+            }
+            for (int i = 0; i < data.joints.size(); ++i) {
+                if (data.joints[i].id == oldEdgeId) {
+                    data.joints[i].id = newId;
+                    break;
+                }
+            }
+            if (foldedSections.remove("joint:" + oldEdgeId)) foldedSections.insert("joint:" + newId);
+            clearAndRebuild();
+        });
 
         QComboBox* bodyACombo = new QComboBox(content);
         refreshBodyDropdown(bodyACombo);
@@ -787,7 +968,6 @@ void ComponentEditorWindow::build_joints(QVBoxLayout* parent) {
             advToggle->setText(checked ? "Advanced ▾" : "Advanced ▸");
         });
 
-        // All fields on one Edge -- commit together.
         auto commit = [this, edgeId, bodyACombo, bodyBCombo, typeCombo, xform, rangeEdit,
                        dampingSpin, armatureSpin, frictionSpin, collisionCheck, actuatorTypeCombo,
                        kpSpin, kvSpin, ctrlRangeEdit, forceRangeEdit, sensorTypeCombo]() {
@@ -848,6 +1028,7 @@ void ComponentEditorWindow::build_joints(QVBoxLayout* parent) {
         });
 
         QString header = QString("%1 — %2 (%3 → %4)").arg(edge.id, edge.type, edge.bodyA, edge.bodyB);
+        content->setProperty("foldKey", "joint:" + edgeId);
         layout->addWidget(makeCollapsible(header, content, box));
     }
 
@@ -888,7 +1069,7 @@ void ComponentEditorWindow::refreshBodyDropdown(QComboBox* combo) {
 
 void ComponentEditorWindow::refreshJointDropdown(QComboBox* combo) {
     combo->clear();
-    combo->addItem("(none)"); // only consumer is build_io_list's Target joint combo
+    combo->addItem("(none)");
     for (const Edge& e : data.joints) {
         combo->addItem(e.id);
     }
@@ -945,28 +1126,23 @@ void ComponentEditorWindow::build_connectors() {
 
         QString connKey = key;
 
-        // --- 1. Handle ID (Key) changes specifically ---
         connect(idEdit, &QLineEdit::editingFinished, this, [this, connKey, idEdit]() {
             QString newId = idEdit->text().trimmed();
 
-            // Revert if empty, unchanged, or duplicate
             if (newId.isEmpty() || newId == connKey || data.connectors.contains(newId)) {
                 idEdit->setText(connKey);
                 return;
             }
 
-            // Extract the old def, update the ID, and insert it under the new key
             ConnectorDef c = data.connectors.take(connKey);
             c.id = newId;
             data.connectors.insert(newId, c);
-
-            // Rebuild the UI because the old captured 'connKey' in other lambdas is now stale
+            if (foldedSections.remove("connector:" + connKey)) foldedSections.insert("connector:" + newId);
             clearAndRebuild();
         });
 
-        // --- 2. Handle all other property changes ---
         auto commit = [this, connKey, bodyCombo, descEdit, xform, snapAnglesEdit]() {
-            if (!data.connectors.contains(connKey)) return; // Safety check
+            if (!data.connectors.contains(connKey)) return;
 
             ConnectorDef c = data.connectors[connKey];
             c.body = bodyCombo->currentText();
@@ -999,6 +1175,7 @@ void ComponentEditorWindow::build_connectors() {
         });
 
         QString header = QString("%1 on %2").arg(def.id, def.body.isEmpty() ? "(no body)" : def.body);
+        content->setProperty("foldKey", "connector:" + connKey);
         layout->addWidget(makeCollapsible(header, content, box));
     }
 
@@ -1014,7 +1191,6 @@ void ComponentEditorWindow::build_connectors() {
         ConnectorDef def;
         def.id = QString("connector_%1").arg(data.connectors.size() + 1);
 
-        // Ensure unique ID if user hasn't renamed previous default ones
         int count = data.connectors.size() + 1;
         while (data.connectors.contains(def.id)) {
             def.id = QString("connector_%1").arg(++count);
@@ -1036,13 +1212,8 @@ void ComponentEditorWindow::build_connectors() {
 #pragma region io
 
 void ComponentEditorWindow::build_io() {
-    QGroupBox* box = new QGroupBox("IO (control-surface channels)", this);
-    QVBoxLayout* layout = new QVBoxLayout(box);
-
-    build_io_list(layout, "Inputs", data.inputDefs);
-    build_io_list(layout, "Outputs", data.outputDefs);
-
-    leftLayout->addWidget(box);
+    build_io_list(leftLayout, "Inputs", data.inputDefs);
+    build_io_list(leftLayout, "Outputs", data.outputDefs);
 }
 
 
@@ -1051,6 +1222,8 @@ void ComponentEditorWindow::build_io() {
 void ComponentEditorWindow::build_io_list(QVBoxLayout* parent, const QString& title, QMap<QString, IODef>& target) {
     QGroupBox* box = new QGroupBox(title, parent->parentWidget());
     QVBoxLayout* layout = new QVBoxLayout(box);
+
+    const bool isInput = (title == "Inputs");
 
     for (const QString& key : target.keys()) {
         IODef def = target[key];
@@ -1073,6 +1246,20 @@ void ComponentEditorWindow::build_io_list(QVBoxLayout* parent, const QString& ti
         QLineEdit* unitEdit = new QLineEdit(def.unit, row);
         form->addRow("Unit:", unitEdit);
 
+        QComboBox* rangeModeCombo = nullptr;
+        QLineEdit* rangeEdit = nullptr;
+        if (isInput) {
+            rangeModeCombo = new QComboBox(row);
+            rangeModeCombo->addItems({"ranged", "unranged"});
+            rangeModeCombo->setCurrentText(def.ranged ? "ranged" : "unranged");
+            form->addRow("Range mode:", rangeModeCombo);
+
+            rangeEdit = new QLineEdit(QString("%1, %2").arg(def.range.first).arg(def.range.second), row);
+            rangeEdit->setPlaceholderText("min, max");
+            rangeEdit->setEnabled(def.ranged);
+            form->addRow("Range:", rangeEdit);
+        }
+
         QComboBox* channelTypeCombo = new QComboBox(row);
         channelTypeCombo->addItems({"scalar", "vector", "image"});
         channelTypeCombo->setCurrentText(def.channelType.isEmpty() ? "scalar" : def.channelType);
@@ -1093,15 +1280,22 @@ void ComponentEditorWindow::build_io_list(QVBoxLayout* parent, const QString& ti
         form->addRow("Target site:", siteCombo);
 
         QString ioKey = key;
-        auto commit = [this, &target, ioKey, unitEdit, channelTypeCombo, physicalCheck, jointCombo, siteCombo]() {
+        auto commit = [this, &target, ioKey, unitEdit, rangeModeCombo, rangeEdit, channelTypeCombo,
+                       physicalCheck, jointCombo, siteCombo]() {
             IODef d = target[ioKey];
             d.unit = unitEdit->text();
             d.channelType = channelTypeCombo->currentText();
             d.physical = physicalCheck->isChecked();
 
-            // A channel is bound to EITHER a joint OR a site, never both --
-            // site takes priority if somehow both are set (shouldn't happen
-            // via this UI, but keep the invariant explicit).
+            if (rangeModeCombo && rangeEdit) {
+                d.ranged = (rangeModeCombo->currentText() == "ranged");
+                rangeEdit->setEnabled(d.ranged);
+                QList<double> r = stringToDoubleList(rangeEdit->text());
+                if (r.size() == 2) {
+                    d.range = qMakePair(static_cast<float>(r[0]), static_cast<float>(r[1]));
+                }
+            }
+
             QString siteSel = siteCombo->currentText();
             QString jointSel = jointCombo->currentText();
             if (siteSel != "(none)") {
@@ -1118,6 +1312,8 @@ void ComponentEditorWindow::build_io_list(QVBoxLayout* parent, const QString& ti
             target[ioKey] = d;
         };
         connect(unitEdit, &QLineEdit::editingFinished, this, commit);
+        if (rangeModeCombo) connect(rangeModeCombo, &QComboBox::currentTextChanged, this, commit);
+        if (rangeEdit) connect(rangeEdit, &QLineEdit::editingFinished, this, commit);
         connect(channelTypeCombo, &QComboBox::currentTextChanged, this, commit);
         connect(physicalCheck, &QCheckBox::toggled, this, commit);
         connect(jointCombo, &QComboBox::currentTextChanged, this, commit);
@@ -1183,11 +1379,7 @@ void ComponentEditorWindow::build_emulator() {
 #pragma region data
 
 void ComponentEditorWindow::build_data() {
-    QGroupBox* box = new QGroupBox("Data", this);
-    QVBoxLayout* layout = new QVBoxLayout(box);
-
-    // ---- meta ----
-    QGroupBox* metaBox = new QGroupBox("Meta", box);
+    QGroupBox* metaBox = new QGroupBox("Meta", this);
     QFormLayout* metaForm = new QFormLayout(metaBox);
 
     QLineEdit* idEdit = new QLineEdit(data.modelId, metaBox);
@@ -1226,21 +1418,19 @@ void ComponentEditorWindow::build_data() {
     });
     connect(iconEdit, &QLineEdit::editingFinished, this, [this, iconEdit]() { data.meta.iconPath = iconEdit->text(); });
 
-    layout->addWidget(metaBox);
+    leftLayout->addWidget(metaBox);
 
     // ---- specs ----
-    QGroupBox* specsBox = new QGroupBox("Specs (freeform)", box);
+    QGroupBox* specsBox = new QGroupBox("Specs (freeform)", this);
     QVBoxLayout* specsLayout = new QVBoxLayout(specsBox);
     KeyValueListWidget* specsWidget = new KeyValueListWidget(specsBox);
     specsWidget->setValue(data.specs);
     specsLayout->addWidget(specsWidget);
     connect(specsWidget, &KeyValueListWidget::changed, this, [this, specsWidget]() { data.specs = specsWidget->value(); });
-    layout->addWidget(specsBox);
+    leftLayout->addWidget(specsBox);
 
     // ---- pins ----
-    // Structured list matching the real .rsdef pins format (array of
-    // {id, description, voltage_range}) -- see ComponentData::parsePins.
-    QGroupBox* pinsBox = new QGroupBox("Pins", box);
+    QGroupBox* pinsBox = new QGroupBox("Pins", this);
     QVBoxLayout* pinsLayout = new QVBoxLayout(pinsBox);
 
     for (int i = 0; i < data.pins.size(); ++i) {
@@ -1300,7 +1490,5 @@ void ComponentEditorWindow::build_data() {
         clearAndRebuild();
     });
 
-    layout->addWidget(pinsBox);
-
-    leftLayout->addWidget(box);
+    leftLayout->addWidget(pinsBox);
 }

@@ -3,19 +3,8 @@
 #include <QString>
 #include <QList>
 #include <QMap>
+#include <qobject.h>
 #include "Spatial.h"
-
-struct Geom {
-    QString type;
-    QString mesh;
-    QString material;
-    QList<double> size;
-    Position pos;
-    Rotation rot;
-    QList<double> color;
-};
-
-
 
 
 struct ActuatorDef {
@@ -27,14 +16,24 @@ struct ActuatorDef {
     double kv = 0.0;
 };
 
-
-
-
 struct SensorDef {
     QString type;               // e.g. "jointpos", "jointvel", "accelerometer" -- empty means no sensor
 };
 
 
+
+struct Geom {
+    Position pos;
+    Rotation rot;
+    double mass;
+
+    QString type;
+    QString mesh;
+    QList<double> size;
+
+    QString material;
+    QList<double> color;
+};
 
 
 struct Site {
@@ -49,6 +48,8 @@ struct Site {
 struct Node {
     QString id;
     double mass = 0.0;
+    double inertia = 0.0;
+    bool overrideGeom =false;
     Transform localTransform;
     QList<Geom> geoms;
     QList<Site> sites;

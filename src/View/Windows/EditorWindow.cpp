@@ -17,6 +17,7 @@
 
 #include "Application/Application.h"
 #include "Commands/GenericCommand.h"
+#include "Document/Components/ComponentBlueprint.h"
 #include "Document/Components/ComponentData.h"
 #include "Document/Components/LibraryManager.h"
 #include "Simulation/SimulationManager.h"
@@ -263,6 +264,21 @@ void EditorWindow::setupMenuBar() {
         ComponentEditorWindow* dialog = new ComponentEditorWindow(data,this);
         dialog->show();
     });
+
+    connect(editComponentAct, &QAction::triggered, this, [this]() {
+        QList<ComponentBlueprint*> customComponents=LibraryManager::getInstance().getBlueprints("custom");
+        QList<ComponentData> customComponentsData;
+        for(ComponentBlueprint* blueprint : customComponents){
+            customComponentsData.append((ComponentData)(*blueprint));
+        }
+        if(customComponentsData.size()){
+            ComponentData compData=customComponentsData.first();
+            ComponentEditorWindow* dialog = new ComponentEditorWindow(compData,this);
+            dialog->show();
+        }else Log::error("No component found");
+    });
+
+
 
     connect(dumpXMLActSim, &QAction::triggered, this, []() {
         Project* project = Application::getInstance()->getProject();

@@ -15,7 +15,6 @@
 #include "Document/Project.h"
 #include "Document/Components/ComponentInstance.h"
 #include "Document/Components/ComponentBlueprint.h"
-#include "Telemetry/Channel.h"
 #include "Telemetry/TelemetryRegistry.h"
 #include "Telemetry/Sources/BodyMotionSource.h"
 

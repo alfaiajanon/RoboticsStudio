@@ -1,12 +1,9 @@
-// src/Simulation/Telemetry/TelemetryRegistry.h
-
 #pragma once
 
 #include <QMap>
 #include <QList>
 #include <memory>
 #include <mutex>
-#include "Channel.h"
 #include "Sources/TelemetrySource.h"
 
 using namespace std;

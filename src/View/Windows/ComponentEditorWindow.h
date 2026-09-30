@@ -12,10 +12,13 @@
 #include <QPushButton>
 #include <QLabel>
 #include <QTimer>
+#include <QMap>
 #include "Document/Components/ComponentData.h"
 #include "View/Viewport/ComponentPreviewViewport.h"
 
 class KeyValueListWidget;
+
+
 
 /*
  * Standalone window for creating/editing a component (.rsdef). Works
@@ -50,6 +53,7 @@ public:
 private:
     ComponentData data;
     bool lockedComponent = false;
+    QMap<QString, bool> bodyGeomOverride; // Tracks the state of mass/inertia override checkboxes
 
     struct TransformFieldRefs { QLineEdit* posEdit; QLineEdit* rotEdit; };
     TransformFieldRefs addTransformFields(QFormLayout* form, const Transform& t);
@@ -58,6 +62,18 @@ private:
     QVBoxLayout* leftLayout;
     ComponentPreviewViewport* preview;
     QTimer* previewReloadTimer; // debounce -- regenerating MJCF per keystroke is wasteful
+
+    // new members
+    QTabWidget* tabWidget;
+    QVBoxLayout* metaLayout;
+    QVBoxLayout* constructionLayout;
+    QVBoxLayout* ioLayout;
+    QVBoxLayout* emulatorLayout;
+    QSet<QString> foldedSections;
+
+    // new methods
+    bool eventFilter(QObject* obj, QEvent* event) override;
+    void installScrollGuards(QWidget* root);
 
     // Debounced preview refresh: structural edits come through
     // clearAndRebuild(), field edits through their commit lambdas.

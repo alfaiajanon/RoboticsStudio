@@ -59,16 +59,22 @@ static QMap<QString, Node> parseBodies(const QJsonArray& bodiesArr) {
         QJsonObject bObj = val.toObject();
         Node node;
         node.id = bObj["id"].toString();
-        node.mass = bObj["mass"].toDouble(0.0);
+        node.overrideGeom=bObj["overrideGeom"].toBool(false);
+        if(node.overrideGeom){
+            node.inertia=bObj["inertia"].toDouble();
+            node.mass = bObj["mass"].toDouble(0.0);
+        }
         node.localTransform = parseTransform(bObj);
 
         QJsonArray geomsArr = bObj["geoms"].toArray();
         for (const auto& gVal : geomsArr) {
             QJsonObject gObj = gVal.toObject();
             Geom geom;
-            geom.type = gObj["type"].toString();
+            geom.mass = gObj["mass"].toDouble(0.0);
 
+            geom.type = gObj["type"].toString();
             if (gObj.contains("mesh")) geom.mesh = gObj["mesh"].toString();
+
             if (gObj.contains("material")) geom.material = gObj["material"].toString();
             if (gObj.contains("color") && gObj["material"].toString().isEmpty()) {
                 QJsonArray colorArr = gObj["color"].toArray();
@@ -122,6 +128,7 @@ static QJsonObject geomToJson(const Geom& g) {
     if (!g.mesh.isEmpty()) obj["mesh"] = g.mesh;         // raw resource key -- see parseBodies note
     if (!g.material.isEmpty()) obj["material"] = g.material; // raw resource key
     if (!g.size.isEmpty()) obj["size"] = doubleListToJson(g.size);
+    obj["mass"] = g.mass;
     obj["pos"] = QJsonArray{g.pos.x, g.pos.y, g.pos.z};
     obj["quat"] = QJsonArray{g.rot.w, g.rot.x, g.rot.y, g.rot.z};
     if (g.material.isEmpty() && !g.color.isEmpty()) obj["color"] = doubleListToJson(g.color);
@@ -145,7 +152,9 @@ static QJsonObject siteToJson(const Site& s) {
 static QJsonObject nodeToJson(const Node& n) {
     QJsonObject obj;
     obj["id"] = n.id;
+    obj["overrideGeom"]=n.overrideGeom;
     obj["mass"] = n.mass;
+    obj["inertia"]=n.inertia;
     obj["transform"] = transformToJson(n.localTransform);
 
     QJsonArray geomsArr;
@@ -310,6 +319,7 @@ static QMap<QString, IODef> parseIO(const QJsonArray& ioArr) {
         if (ioObj.contains("range")) {
             QJsonArray rangeArr = ioObj["range"].toArray();
             if (rangeArr.size() == 2) {
+                def.ranged=true;
                 def.range = qMakePair(static_cast<float>(rangeArr[0].toDouble()), static_cast<float>(rangeArr[1].toDouble()));
             }
         }

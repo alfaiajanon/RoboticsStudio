@@ -5,7 +5,10 @@
 #include <QJsonArray>
 #include <QFileInfo>
 #include <QDir>
+#include <qcontainerfwd.h>
 #include <qdir.h>
+#include <qlist.h>
+#include <qobject.h>
 #include <qstandardpaths.h>
 #include "Application/Application.h"
 #include "Document/Project.h"
@@ -46,46 +49,62 @@ bool LibraryManager::saveLocalComponent(ComponentData data) {
         Log::error("Cannot save component: id is empty.");
         return false;
     }
-    if (hasBlueprint(data.modelId)) {
-        Log::error("Cannot save component: id '" + data.modelId + "' is already in use.");
-        return false;
+
+    const bool overwrite = hasBlueprint(data.modelId);
+    if (overwrite) {
+        Log::warning("Overwriting existing component: id '" + data.modelId + "'");
     }
 
     QString projDir = Application::getInstance()->getProject()->getProjectDirectory();
-    data.basePath = projDir+"/Components/"+data.modelId;
+    data.basePath = projDir + "/Components/" + data.modelId;
 
     QDir().mkpath(data.basePath);
     QString rsdefPath = QDir(data.basePath).filePath(data.modelId + ".rsdef");
 
+    // Trailing slash matters: a bare startsWith(basePath) would also match a
+    // sibling component like "servo_sg90" when saving "servo".
+    const QString ownDir = data.basePath + "/";
+
     for (const QString& key : data.meshResources.keys()) {
-        // skip if same path
-        if(data.meshResources[key].startsWith(data.basePath))
-            continue;
+        if (data.meshResources[key].startsWith(ownDir)) continue;   // already inside this component
         QString relPath = copyResourceFile(data.meshResources[key], data.basePath, "meshes");
         if (!relPath.isEmpty())
             data.meshResources[key] = QDir(data.basePath).filePath(relPath);
     }
     for (const QString& key : data.materialResources.keys()) {
-        if(data.materialResources[key].startsWith(data.basePath))
-            continue;
+        if (data.materialResources[key].startsWith(ownDir)) continue;
         QString relPath = copyResourceFile(data.materialResources[key], data.basePath, "textures");
         if (!relPath.isEmpty())
             data.materialResources[key] = QDir(data.basePath).filePath(relPath);
     }
 
-    QFile outFile(rsdefPath);
-    if (!outFile.open(QFile::WriteOnly | QFile::Truncate)) {
+    // QSaveFile writes to a temp file and renames on commit(). With
+    // QFile + Truncate the existing definition is destroyed the moment the
+    // file opens, so a failed write (disk full, crash) would leave an empty
+    // .rsdef that breaks the next project load.
+    QSaveFile outFile(rsdefPath);
+    if (!outFile.open(QIODevice::WriteOnly)) {
         Log::error("Failed to write component file: " + rsdefPath);
         return false;
     }
     outFile.write(QJsonDocument(data.toJson()).toJson(QJsonDocument::Indented));
-    outFile.close();
+    if (!outFile.commit()) {
+        Log::error("Failed to finalize component file: " + rsdefPath);
+        return false;
+    }
 
+    // Overwrite: disk only. The registered blueprint, category list and every
+    // placed instance are left untouched, so the new definition takes effect
+    // when the project is reloaded.
+    if (overwrite) {
+        Log::info("Component '" + data.modelId + "' saved to disk. Reload the project to apply the changes.");
+        emit componentSaved(data.modelId);
+        return true;
+    }
 
-    // add to Library
+    // ---- new component only: register it ----
     ComponentBlueprint* freshBlueprint = new ComponentBlueprint(rsdefPath);
     blueprints.insert(data.modelId, freshBlueprint);
-
 
     auto it = std::find_if(categories.begin(), categories.end(), [](const CategoryDef& cat) {
         return cat.id == "custom";
@@ -138,7 +157,7 @@ QString LibraryManager::getModelsDir(){
 
 
 
-ComponentBlueprint* LibraryManager::getBlueprint(const QString& modelId) {
+ComponentBlueprint* LibraryManager::getBlueprint(const QString modelId) {
     return blueprints.value(modelId, nullptr);
 }
 
@@ -148,6 +167,24 @@ bool LibraryManager::hasBlueprint(const QString& model_id){
     return blueprints.contains(model_id);
 }
 
+
+QList<ComponentBlueprint*> LibraryManager::getBlueprints(QString categoryId){
+    // int idx = categories.indexOf(categoryId);
+    CategoryDef catDef;
+    for(CategoryDef def:categories){
+        if(def.id==categoryId){
+            catDef=def;
+            break;
+        }
+    }
+
+    QStringList list=catDef.modelIds;
+    QList<ComponentBlueprint*> result;
+    for(QString id:list){
+        result.append(blueprints.value(id));
+    }
+    return result;
+}
 
 
 

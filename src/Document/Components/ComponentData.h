@@ -41,7 +41,9 @@ struct IODef {
     QString channelType;
     bool physical = true;
 
+    bool ranged;
     QPair<float, float> range;
+
     QString targetJoint;
     QString targetSite;
 
