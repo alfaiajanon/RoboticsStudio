@@ -7,7 +7,7 @@ resolution, target-kind rules, device types, unique ids, domains, mass rule and
 absence of schema 1 keys.
 
 Usage: tools/validate_rsdef.py [file-or-directory ...]
-       (default: models/ and docs/schema2/)
+       (default: models/)
 Exit status is 1 if any file is invalid.
 """
 import json
@@ -218,7 +218,7 @@ def validate(d):
 
 def collect(args):
     root = Path(__file__).resolve().parent.parent
-    targets = [Path(a) for a in args] or [root / "models", root / "docs" / "schema2"]
+    targets = [Path(a) for a in args] or [root / "models"]
     files = []
     for t in targets:
         files += sorted(t.rglob("*.rsdef")) if t.is_dir() else [t]

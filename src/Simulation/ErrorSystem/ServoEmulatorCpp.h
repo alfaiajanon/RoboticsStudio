@@ -74,7 +74,7 @@ class ServoEmulatorCpp : public Emulator {
         }
 
         Q_INVOKABLE double read() {
-            BasicIOValue data = component->getSensorValue("target_angle");
+            BasicIOValue data = component->getSensorValue("current_angle");
             return data.dim==1 ? data.data[0] : 0.0;
         }
 };
