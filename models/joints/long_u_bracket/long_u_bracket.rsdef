@@ -1,67 +1,188 @@
 {
-    "id": "joints_long_u_bracket",
-    "meta": {
-        "name": "Long U-Bracket",
-        "version": "1.0.0",
-        "author": "Anon",
-        "icon_path": "long_u_bracket.png"
-    },
-
-    "resources": {
-        "meshes": {
-            "mesh_body": "meshes/body.obj"
-        },
-        "materials": {
-            "mat_bracket": "textures/tex_tt_motor.png"
-        }
-    },
-
-    "specs": {
-    },
-
-    "pins": [
-    ],
-
-    "kinematics": {
-        "default_body": "base",
-        "bodies": [
-            {
-                "id": "base",
-                "mass": 0.030,
-                "transform": {
-                    "pos": [0, 0, 0],
-                    "quat": [1, 0, 0, 0]
-                },
-                "geoms": [
-                    { "type": "mesh", "mesh": "mesh_body" , "color": [0.6, 0.6, 0.6, 1.0] }
+    "connectors": [
+        {
+            "body": "body_1",
+            "description": "",
+            "id": "base_outside",
+            "transform": {
+                "pos": [
+                    0,
+                    0,
+                    0
+                ],
+                "quat": [
+                    3.749399456654644e-33,
+                    6.123233995736766e-17,
+                    1,
+                    6.123233995736766e-17
                 ]
             }
+        },
+        {
+            "body": "body_1",
+            "description": "",
+            "id": "base_inside",
+            "transform": {
+                "pos": [
+                    0,
+                    0,
+                    0.002
+                ],
+                "quat": [
+                    1,
+                    0,
+                    0,
+                    0
+                ]
+            }
+        },
+        {
+            "body": "body_1",
+            "description": "",
+            "id": "right_outside",
+            "transform": {
+                "pos": [
+                    0.028,
+                    0,
+                    0.05
+                ],
+                "quat": [
+                    0.7071067811865476,
+                    -2.7755575615628914e-17,
+                    0.7071067811865475,
+                    -2.7755575615628914e-17
+                ]
+            }
+        },
+        {
+            "body": "body_1",
+            "description": "",
+            "id": "right_inside",
+            "transform": {
+                "pos": [
+                    0.0259,
+                    0,
+                    0.05
+                ],
+                "quat": [
+                    0.7071067811865476,
+                    -2.7755575615628914e-17,
+                    -0.7071067811865475,
+                    2.7755575615628914e-17
+                ]
+            }
+        },
+        {
+            "body": "body_1",
+            "description": "",
+            "id": "left_outside",
+            "transform": {
+                "pos": [
+                    -0.028,
+                    0,
+                    0.05
+                ],
+                "quat": [
+                    0.7071067811865475,
+                    5.551115123125783e-17,
+                    -0.7071067811865475,
+                    -5.551115123125783e-17
+                ]
+            }
+        },
+        {
+            "body": "body_1",
+            "description": "",
+            "id": "left_inside",
+            "transform": {
+                "pos": [
+                    -0.0259,
+                    0,
+                    0.05
+                ],
+                "quat": [
+                    0.7071067811865475,
+                    -5.551115123125783e-17,
+                    0.7071067811865475,
+                    -5.551115123125783e-17
+                ]
+            }
+        }
+    ],
+    "emulator": {
+        "parameters": {
+        },
+        "source": null,
+        "type": ""
+    },
+    "id": "joints_long_u_bracket",
+    "io": {
+        "inputs": [
         ],
+        "outputs": [
+        ]
+    },
+    "kinematics": {
+        "bodies": [
+            {
+                "geoms": [
+                    {
+                        "mesh": "body",
+                        "pos": [
+                            0,
+                            0,
+                            0
+                        ],
+                        "quat": [
+                            6.123233995736766e-17,
+                            0,
+                            1,
+                            0
+                        ],
+                        "size": [
+                            0.01,
+                            0.01,
+                            0.01
+                        ],
+                        "type": "mesh"
+                    }
+                ],
+                "id": "body_1",
+                "mass": 0,
+                "transform": {
+                    "pos": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "quat": [
+                        1,
+                        0,
+                        0,
+                        0
+                    ]
+                }
+            }
+        ],
+        "default_body": "body_1",
         "joints": [
         ]
     },
-
-    "connectors": [
-        {
-            "id": "back_mount",
-            "body": "base",
-            "description": "",
-            "mechanics": { "snap_angles": [0, 180] },
-            "transform": {
-                "pos": [0, 0, 0],
-                "quat": [1, 0, 0, 0]
-            }
+    "meta": {
+        "author": "Anon",
+        "icon_path": "long_u_bracket.png",
+        "name": "Long U-Bracket",
+        "version": "1.0.0"
+    },
+    "pins": [
+    ],
+    "resources": {
+        "materials": {
         },
-        {
-            "id": "inside_mount",
-            "body": "base",
-            "description": "",
-            "mechanics": { "snap_angles": [0, 180] },
-            "transform": {
-                "pos": [0.0259, 0, -0.0500],
-                "quat": [0.7071, 0, -0.7071, 0]
-            }
+        "meshes": {
+            "body": "meshes/body.obj"
         }
-    ]
-
+    },
+    "specs": {
+    }
 }

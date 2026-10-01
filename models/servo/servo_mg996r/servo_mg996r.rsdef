@@ -213,8 +213,9 @@
         "type": "servo_emulator",
         "source": null,
         "parameters": {
-            "noise_stddev": 1.0,
-            "delay_ms": 30
+            "noise_stddev": 0.5,
+            "delay_ms": 0,
+            "deadband_threshold":2
         }
     }
 }
