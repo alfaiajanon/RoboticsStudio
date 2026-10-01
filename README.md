@@ -68,9 +68,9 @@ function loop() {
     let accel_x = imu.read_accel_x();
 
     if (accel_x > 2.0) {
-        servo.write_angle(45.0);
+        servo.write(45.0);
     } else {
-        servo.write_angle(0.0);
+        servo.write(0.0);
     }
 
     delay(100); // Standard Arduino-equivalent delay

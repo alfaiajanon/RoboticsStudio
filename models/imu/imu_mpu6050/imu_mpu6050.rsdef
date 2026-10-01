@@ -1,4 +1,5 @@
 {
+    "schema": 2,
     "id": "sensor_mpu6050",
     "meta": {
         "name": "MPU-6050 IMU Sensor",
@@ -6,7 +7,6 @@
         "author": "Anon",
         "icon_path": "mpu6050.png"
     },
-
     "resources": {
         "meshes": {
             "mesh_body": "meshes/mpu6050.obj"
@@ -15,18 +15,19 @@
             "mat_body": "textures/mpu6050-2.png"
         }
     },
-
     "specs": {
         "voltage_max": 3.3,
         "voltage_min": 2.3,
         "current_ma": 3.9,
         "weight_kg": 0.005
     },
-
     "pins": [
         {
             "id": "vcc",
-            "voltage_range": [2.3, 3.3],
+            "voltage_range": [
+                2.3,
+                3.3
+            ],
             "description": "Power input pin for IMU sensor"
         },
         {
@@ -58,39 +59,49 @@
             "description": "Interrupt pin for motion detection"
         }
     ],
-
     "kinematics": {
         "default_body": "base",
         "bodies": [
             {
                 "id": "base",
-                "mass": 0.005,
+                "overrideGeom": false,
                 "transform": {
-                    "pos": [0, 0, 0],
-                    "quat": [1, 0, 0, 0]
+                    "pos": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "quat": [
+                        1,
+                        0,
+                        0,
+                        0
+                    ]
                 },
                 "geoms": [
-                    { "type": "mesh", "mesh": "mesh_body", "material": "mat_body" }
+                    {
+                        "id": "base_geom",
+                        "type": "mesh",
+                        "mesh": "mesh_body",
+                        "material": "mat_body",
+                        "mass": 0.005
+                    }
                 ],
                 "sites": [
                     {
-                        "id": "imu_accel",
+                        "id": "imu",
                         "transform": {
-                            "pos": [0, 0, 0],
-                            "quat": [1, 0, 0, 0]
-                        },
-                        "sensor": {
-                            "type": "accelerometer"
-                        }
-                    },
-                    {
-                        "id": "imu_gyro",
-                        "transform": {
-                            "pos": [0, 0, 0],
-                            "quat": [1, 0, 0, 0]
-                        },
-                        "sensor": {
-                            "type": "gyro"
+                            "pos": [
+                                0,
+                                0,
+                                0
+                            ],
+                            "quat": [
+                                1,
+                                0,
+                                0,
+                                0
+                            ]
                         }
                     }
                 ]
@@ -98,59 +109,110 @@
         ],
         "joints": []
     },
-
     "connectors": [
         {
             "id": "connector_1",
             "body": "base",
             "description": "Connector 1 for mounting the MPU-6050 sensor",
-            "mechanics": { "snap_angles": [0, 180] },
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    180
+                ]
+            },
             "transform": {
-                "pos": [0.008, 0.0058, -0.0015],
-                "quat": [0, 1, 0, 0]
+                "pos": [
+                    0.008,
+                    0.0058,
+                    -0.0015
+                ],
+                "quat": [
+                    0,
+                    1,
+                    0,
+                    0
+                ]
             }
         },
         {
             "id": "connector_2",
             "body": "base",
             "description": "Connector 2 for mounting the MPU-6050 sensor",
-            "mechanics": { "snap_angles": [0, 180] },
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    180
+                ]
+            },
             "transform": {
-                "pos": [-0.008, 0.0058, -0.0015],
-                "quat": [0, 1, 0, 0]
+                "pos": [
+                    -0.008,
+                    0.0058,
+                    -0.0015
+                ],
+                "quat": [
+                    0,
+                    1,
+                    0,
+                    0
+                ]
             }
         }
     ],
-
-    "io": {
-        "inputs": [
-        ],
+    "devices": {
+        "sensors": [
+            {
+                "id": "imu_accel",
+                "type": "accelerometer",
+                "target": {
+                    "kind": "site",
+                    "id": "imu"
+                }
+            },
+            {
+                "id": "imu_gyro",
+                "type": "gyro",
+                "target": {
+                    "kind": "site",
+                    "id": "imu"
+                }
+            }
+        ]
+    },
+    "interface": {
+        "inputs": [],
         "outputs": [
             {
                 "name": "acceleration",
                 "unit": "m/s^2",
-                "data_type": "float",
-                "channel_type": "vector",
                 "physical": true,
-                "dim": 3,
-                "componentLabels": ["x", "y", "z"],
-                "target_site": "imu_accel",
-                "pin_required": ["vcc", "gnd", "sda", "scl"]
+                "target": {
+                    "kind": "sensor",
+                    "id": "imu_accel"
+                },
+                "componentLabels": [
+                    "x",
+                    "y",
+                    "z"
+                ]
             },
             {
                 "name": "gyroscope",
                 "unit": "degrees/s",
-                "data_type": "float",
-                "channel_type": "vector",
                 "physical": true,
-                "dim": 3,
-                "componentLabels": ["x", "y", "z"],
-                "target_site": "imu_gyro",
-                "pin_required": ["vcc", "gnd", "sda", "scl"]
+                "target": {
+                    "kind": "sensor",
+                    "id": "imu_gyro"
+                },
+                "componentLabels": [
+                    "x",
+                    "y",
+                    "z"
+                ]
             }
         ]
     },
-    "emulator":{
+    "emulator": {
         "type": "imu_emulator",
         "source": null,
         "parameters": {

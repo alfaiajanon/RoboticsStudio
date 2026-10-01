@@ -268,13 +268,13 @@ bool Project::saveProject() {
 void Project::saveDefaults() {
     for (ComponentInstance* comp : componentMap) {
         if (comp->getBlueprint()) {
-            for (const QString& key : comp->getBlueprint()->inputDefs.keys()) {
-                QString jkey = comp->getBlueprint()->inputDefs[key].targetJoint;
+            for (const InterfaceDef& def : comp->getBlueprint()->interfaceInputs) {
+                if (def.target.kind != "joint") continue;
+                QString jkey = def.target.id;
 
-                if (!jkey.isEmpty()) {
-                    BasicIOValue currentValueIOData = comp->getJointValue(jkey);
-                    double currentValue = currentValueIOData.data[0];
-                    comp->parameters.insert(jkey, currentValue);
+                BasicIOValue currentValueIOData = comp->getJointValue(jkey);
+                if (!jkey.isEmpty() && !currentValueIOData.data.empty()) {
+                    comp->parameters.insert(jkey, currentValueIOData.data[0]);
                 }
             }
         }
@@ -417,12 +417,11 @@ void Project::applyTransforms() {
         q.pop();
 
         if (current->parentUid == 0) {
-            // Transform pConnRelTrans(Position(0, 0, 0), rootRotation);
-            // Rotation mateRot(0, 1, 0, 0);
-            // double halfAngle = current->snapAngle * 0.5 * (M_PI / 180.0);
-            // Rotation snapRot(std::cos(halfAngle), 0, 0, std::sin(halfAngle));
-            // Transform alignTransform(Position(0,0,0), mateRot * snapRot);
-            // current->transform = pConnRelTrans * alignTransform;
+            Transform pConnRelTrans(Position(0, 0, 0), rootRotation);
+            double halfAngle = current->snapAngle * 0.5 * (M_PI / 180.0);
+            Rotation snapRot(std::cos(halfAngle), 0, 0, std::sin(halfAngle));
+            Transform alignTransform(Position(0,0,0), snapRot);
+            current->transform = pConnRelTrans * alignTransform;
 
         } else if (componentMap.contains(current->parentUid)) {
             ComponentInstance* parent = componentMap[current->parentUid];
@@ -462,11 +461,13 @@ void Project::applyDefaults() {
     // apply joint params
     for (ComponentInstance* comp : componentMap) {
         if (comp->getBlueprint()) {
-            for (const QString& key : comp->getBlueprint()->inputDefs.keys()) {
-                QString jkey=comp->getBlueprint()->inputDefs[key].targetJoint;
+            for (const InterfaceDef& def : comp->getBlueprint()->interfaceInputs) {
+                if (def.target.kind != "joint") continue;
+                QString jkey = def.target.id;
                 if (comp->parameters.contains(jkey)) {
                     double val=comp->parameters.value(jkey).toDouble();
                     BasicIOValue data = comp->getJointValue(jkey);
+                    if (data.data.empty()) continue;
                     data.data[0]=val;
                     comp->setJointValue(jkey, data);
                 }
@@ -679,8 +680,11 @@ void Project::adoptSubtree(ComponentInstance* root) {
  * Injects procedural skybox, a solid color floor, and dynamically scaled coordinate axes.
  */
 
+static void writeTendonsXML(ComponentInstance* comp, QString& tendonsOut);
+
+
 QString Project::generateMujocoXML(bool isSimulation) {
-    QString worldbody, constraints, contacts, assets, actuators, sensors;
+    QString worldbody, constraints, contacts, assets, actuators, sensors, tendons;
     QSet<QString> processedModels;
     QSet<int> visitedComps;
 
@@ -713,6 +717,7 @@ QString Project::generateMujocoXML(bool isSimulation) {
         writeAssetsXML(rootComponent, assets, processedModels);
         writeActuatorsXML(rootComponent, actuators);
         writeSensorsXML(rootComponent, sensors);
+        writeTendonsXML(rootComponent, tendons);
     }
 
     QString xml = QString(
@@ -721,6 +726,7 @@ QString Project::generateMujocoXML(bool isSimulation) {
         "  <worldbody>\n%4%5  </worldbody>\n\n"
         "  <equality>\n%6  </equality>\n\n"
         "  <contact>\n%7  </contact>\n\n"
+        "  <tendon>\n%10  </tendon>\n\n"
         "  <actuator>\n%8  </actuator>\n\n"
         "  <sensor>\n%9  </sensor>\n"
         "</mujoco>"
@@ -729,7 +735,7 @@ QString Project::generateMujocoXML(bool isSimulation) {
         baseAssets, assets,
         baseWorldBody, worldbody,
         constraints, contacts, actuators, sensors
-    );
+    ).arg(tendons);   // %10: QString::arg(a1..a9) is the most a single call takes
 
     Log::info("Generated internal Mujoco XML successfully");
     // Log::info("Generated Mujoco XML successfully : \n" + xml);
@@ -834,9 +840,24 @@ void Project::writeActuatorsXML(ComponentInstance* comp, QString& actuatorsOut) 
 
 
 
+// Same recursion as the writers above.
+static void writeTendonsXML(ComponentInstance* comp, QString& tendonsOut) {
+    if (comp->getBlueprint()) {
+        tendonsOut += comp->getBlueprint()->generateTendonXML(comp->uid);
+    }
+
+    for (ComponentInstance* child : comp->children) {
+        writeTendonsXML(child, tendonsOut);
+    }
+}
+
+
+
+
+
 void Project::writeSensorsXML(ComponentInstance* comp, QString& sensorsOut) {
     if (comp->getBlueprint()) {
-        sensorsOut += comp->getBlueprint()->generateSensorXML(comp->uid);
+        sensorsOut += comp->getBlueprint()->generateBasicSensorXML(comp->uid);
     }
 
     for (ComponentInstance* child : comp->children) {

@@ -360,44 +360,72 @@ void SimulationManager::resetEmulators(ComponentInstance* comp) {
 
 #pragma region mujoco stuff
 
+static bool isDegreeUnit(const QString& unit) {
+    QString u = unit.toLower();
+    return u == "degree" || u == "deg" || u == "degrees";
+}
+
+
 /*
- * One-time setup to map string names to MuJoCo's internal C-array indices.
- * Traverses the component tree recursively to cache actuator and sensor IDs.
+ * One-time setup to map signals to MuJoCo's internal C-array indices.
+ * Signal -> device -> MJCF name comp_<uid>_<deviceId> (D9). Traverses the
+ * component tree recursively.
+ *
+ *   input  kind joint    : joint id from the joint name; actuator id from the first
+ *                          actuator targeting that joint (none: logged, no ctrl written)
+ *   input  kind actuator : actuator id from the actuator name
+ *   output kind sensor   : sensor id from the sensor name (dimension cross-checked
+ *                          against the model once, here)
+ *   emulator / camera / display kinds have no MuJoCo id and are left at -1.
  */
 void SimulationManager::cacheMujocoIds(ComponentInstance* root, mjModel* m) {
     if (!m || !root) return;
 
     QString prefix = "comp_" + QString::number(root->uid) + "_";
 
-    if (root->getBlueprint()) {
-        for (const QString& key : root->getBlueprint()->inputDefs.keys()) {
-            QString targetJoint = root->getBlueprint()->inputDefs[key].targetJoint;
-            QString actuatorName = prefix + targetJoint + "_actuator";
-            int id = mj_name2id(m, mjOBJ_ACTUATOR, actuatorName.toStdString().c_str());
-            // root->setMujocoActuatorId(key, id);
-            BasicIOValue value = root->getActuatorValue(key);
-            value.mujocoId = id;
-            root->setActuatorValue(key, value);
+    if (ComponentBlueprint* bp = root->getBlueprint()) {
+        for (auto it = bp->interfaceInputs.constBegin(); it != bp->interfaceInputs.constEnd(); ++it) {
+            const QString& key = it.key();
+            const InterfaceDef& def = it.value();
+
+            QString actuatorId;
+            if (def.target.kind == "joint") {
+                int jointMjId = mj_name2id(m, mjOBJ_JOINT, (prefix + def.target.id).toStdString().c_str());
+                BasicIOValue jvalue = root->getJointValue(def.target.id);
+                jvalue.mujocoId = jointMjId;
+                root->setJointValue(def.target.id, jvalue);
+
+                for (const ActuatorDef& a : bp->actuators) {
+                    if (a.target.kind == "joint" && a.target.id == def.target.id) { actuatorId = a.id; break; }
+                }
+                if (actuatorId.isEmpty()) {
+                    Log::warning(QString("SimulationManager: component %1 (%2): input '%3' targets joint '%4' which has no actuator; commands will not drive it")
+                                    .arg(root->uid).arg(root->modelId, key, def.target.id));
+                }
+            } else if (def.target.kind == "actuator") {
+                actuatorId = def.target.id;
+            }
+
+            if (!actuatorId.isEmpty()) {
+                int id = mj_name2id(m, mjOBJ_ACTUATOR, (prefix + actuatorId).toStdString().c_str());
+                BasicIOValue value = root->getActuatorValue(key);
+                value.mujocoId = id;
+                root->setActuatorValue(key, value);
+            }
         }
 
-        for(const QString& key : root->getBlueprint()->inputDefs.keys()) {
-            QString jkey = root->getBlueprint()->inputDefs[key].targetJoint;
-            QString jointName = prefix + jkey;
-            int id = mj_name2id(m, mjOBJ_JOINT, jointName.toStdString().c_str());
-            // root->setMujocoJointId(jkey, id);
-            // Log::info(QString("jointName %1, %2").arg(jointName).arg(id));
-            BasicIOValue value = root->getJointValue(jkey);
-            value.mujocoId = id;
-            root->setJointValue(jkey, value);
-        }
+        for (auto it = bp->interfaceOutputs.constBegin(); it != bp->interfaceOutputs.constEnd(); ++it) {
+            const QString& key = it.key();
+            const InterfaceDef& def = it.value();
+            if (def.target.kind != "sensor") continue;
 
-        for (const QString& key : root->getBlueprint()->outputDefs.keys()) {
-            // FIXED: Fallback to targetSite if targetJoint is empty (Crucial for IMU)
-            const IODef& def = root->getBlueprint()->outputDefs[key];
-            QString target = def.targetJoint.isEmpty() ? def.targetSite : def.targetJoint;
-            QString sensorName = prefix + target + "_sensor";
-            int id = mj_name2id(m, mjOBJ_SENSOR, sensorName.toStdString().c_str());
-            // root->setMujocoSensorId(key, id);
+            int id = mj_name2id(m, mjOBJ_SENSOR, (prefix + def.target.id).toStdString().c_str());
+            int dim = bp->interfaceDim(def);
+            if (id >= 0 && m->sensor_dim[id] != dim) {
+                Log::error(QString("SimulationManager: component %1 (%2): sensor '%3' has dimension %4 in MuJoCo but %5 in the device table; signal '%6' disabled")
+                                .arg(root->uid).arg(root->modelId, def.target.id).arg(m->sensor_dim[id]).arg(dim).arg(key));
+                id = -1;
+            }
             BasicIOValue value = root->getSensorValue(key);
             value.mujocoId = id;
             root->setSensorValue(key, value);
@@ -414,21 +442,24 @@ void SimulationManager::cacheMujocoIds(ComponentInstance* root, mjModel* m) {
 
 /*
  * Pre-step hook to push live input commands into the engine.
- * Safely extracts the double from IOData and writes to d->ctrl.
+ * Writes d->ctrl for every input signal that resolved to an actuator.
+ * The unit conversion comes from the interface signal.
  */
 void SimulationManager::syncToMujocoActuator(ComponentInstance* root, mjModel* m, mjData* d) {
     if (!m || !d || !root) return;
 
-    if (root->getBlueprint()) {
-        for (const QString& key : root->getBlueprint()->inputDefs.keys()) {
-            int mujocoId = root->getActuatorValue(key).mujocoId;
+    if (ComponentBlueprint* bp = root->getBlueprint()) {
+        for (auto it = bp->interfaceInputs.constBegin(); it != bp->interfaceInputs.constEnd(); ++it) {
+            BasicIOValue data = root->getActuatorValue(it.key());
+            // Signals without a runtime slot (display/camera) come back as a default value whose
+            // mujocoId is 0, not -1 -- skip them or they would overwrite ctrl[0].
+            if (data.data.empty()) continue;
+            int mujocoId = data.mujocoId;
             if (mujocoId >= 0 && mujocoId < m->nu) {
 
-                BasicIOValue data = root->getActuatorValue(key);
-                double val = data.dim==1 ? data.data[0] : 0.0;
+                double val = data.dim == 1 ? data.data[0] : 0.0;
 
-                QString unit = root->getBlueprint()->inputDefs[key].unit.toLower();
-                if (unit == "degree" || unit == "deg" || unit == "degrees") {
+                if (isDegreeUnit(it.value().unit)) {
                     val = val * (M_PI / 180.0);
                 }
 
@@ -447,22 +478,26 @@ void SimulationManager::syncToMujocoActuator(ComponentInstance* root, mjModel* m
 
 
 
+/*
+ * Edit-mode posing: lerps qpos of the joint each kind-joint input targets.
+ */
 void SimulationManager::syncToMujocoJoint(ComponentInstance* root, mjModel* m, mjData* d) {
     if (!m || !d || !root) return;
 
-    if (root->getBlueprint()) {
-        for (const QString& key : root->getBlueprint()->inputDefs.keys()) {
-            QString jkey = root->getBlueprint()->inputDefs[key].targetJoint;
-            int mujocoId = root->getJointValue(jkey).mujocoId;
-            // Log::info(QString("syncToMujocoJoint: %1 %2 %3").arg(key).arg(jkey).arg(mujocoId));
+    if (ComponentBlueprint* bp = root->getBlueprint()) {
+        for (auto it = bp->interfaceInputs.constBegin(); it != bp->interfaceInputs.constEnd(); ++it) {
+            const InterfaceDef& def = it.value();
+            if (def.target.kind != "joint") continue;
+
+            BasicIOValue data = root->getJointValue(def.target.id);
+            if (data.data.empty()) continue;
+            int mujocoId = data.mujocoId;
 
             if (mujocoId >= 0 && mujocoId < m->njnt) {
 
-                BasicIOValue data = root->getJointValue(jkey);
-                double targetVal = data.dim==1 ? data.data[0] : 0.0;
+                double targetVal = data.dim == 1 ? data.data[0] : 0.0;
 
-                QString unit = root->getBlueprint()->inputDefs[key].unit.toLower();
-                if (unit == "degree" || unit == "deg" || unit == "degrees") {
+                if (isDegreeUnit(def.unit)) {
                     targetVal = targetVal * (M_PI / 180.0);
                 }
 
@@ -489,40 +524,43 @@ void SimulationManager::syncToMujocoJoint(ComponentInstance* root, mjModel* m, m
 
 /*
  * Post-step hook to pull live physics telemetry out of the engine.
- * Safely extracts scalars or vectors based on dimension, packing them into IOData.
+ * Reads each output signal that resolved to a sensor; the dimension comes
+ * from the device type (checked against sensor_dim in cacheMujocoIds) and the
+ * unit conversion from the interface signal.
  */
 void SimulationManager::syncFromMujocoSensor(ComponentInstance* root, mjModel* m, mjData* d) {
     if (!m || !d || !root) return;
 
-    if (root->getBlueprint()) {
-        for (const QString& key : root->getBlueprint()->outputDefs.keys()) {
-            int sensorId = root->getSensorValue(key).mujocoId;
+    if (ComponentBlueprint* bp = root->getBlueprint()) {
+        for (auto it = bp->interfaceOutputs.constBegin(); it != bp->interfaceOutputs.constEnd(); ++it) {
+            const QString& key = it.key();
+            const InterfaceDef& def = it.value();
+
+            BasicIOValue data = root->getSensorValue(key);
+            if (data.data.empty()) continue;   // no runtime slot (camera); see syncToMujocoActuator
+            int sensorId = data.mujocoId;
 
             if (sensorId >= 0 && sensorId < m->nsensor) {
                 int adr = m->sensor_adr[sensorId];
-                int dim = root->getBlueprint()->outputDefs[key].dim;
-                QString channelType = root->getBlueprint()->outputDefs[key].channelType;
+                int dim = bp->interfaceDim(def);
 
-                if (adr + dim <= m->nsensordata) {
-                    QString unit = root->getBlueprint()->outputDefs[key].unit.toLower();
-                    bool isDegree = (unit == "degree" || unit == "deg" || unit == "degrees");
+                if (dim > 0 && adr + dim <= m->nsensordata) {
+                    bool isDegree = isDegreeUnit(def.unit);
 
-                    if (channelType == "vector" || dim > 1) {
+                    if (dim > 1 || bp->interfaceShape(def) == SignalShape::Vector) {
                         std::vector<double> vec(dim);
                         for (int i = 0; i < dim; ++i) {
                             double val = d->sensordata[adr + i];
                             if (isDegree) val *= (180.0 / M_PI);
                             vec[i] = val;
                         }
-                        BasicIOValue data = root->getSensorValue(key);
-                        data.data=vec;
+                        data.data = vec;
                         root->setSensorValue(key, data);
                     } else {
                         double val = d->sensordata[adr];
                         if (isDegree) val *= (180.0 / M_PI);
 
-                        BasicIOValue data = root->getSensorValue(key);
-                        data.data[0]=val;
+                        data.data[0] = val;
                         root->setSensorValue(key, data);
                     }
                 }

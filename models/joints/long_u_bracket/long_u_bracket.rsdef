@@ -1,4 +1,67 @@
 {
+    "schema": 2,
+    "id": "joints_long_u_bracket",
+    "meta": {
+        "author": "Anon",
+        "icon_path": "long_u_bracket.png",
+        "name": "Long U-Bracket",
+        "version": "1.0.0"
+    },
+    "resources": {
+        "materials": {},
+        "meshes": {
+            "body": "meshes/body.obj"
+        }
+    },
+    "specs": {},
+    "pins": [],
+    "kinematics": {
+        "default_body": "body_1",
+        "bodies": [
+            {
+                "id": "body_1",
+                "overrideGeom": false,
+                "transform": {
+                    "pos": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "quat": [
+                        1,
+                        0,
+                        0,
+                        0
+                    ]
+                },
+                "geoms": [
+                    {
+                        "id": "body_1_geom",
+                        "mesh": "body",
+                        "pos": [
+                            0,
+                            0,
+                            0
+                        ],
+                        "quat": [
+                            6.123233995736766e-17,
+                            0,
+                            1,
+                            0
+                        ],
+                        "size": [
+                            0.01,
+                            0.01,
+                            0.01
+                        ],
+                        "type": "mesh",
+                        "mass": 0
+                    }
+                ]
+            }
+        ],
+        "joints": []
+    },
     "connectors": [
         {
             "body": "body_1",
@@ -109,80 +172,13 @@
             }
         }
     ],
+    "interface": {
+        "inputs": [],
+        "outputs": []
+    },
     "emulator": {
-        "parameters": {
-        },
+        "parameters": {},
         "source": null,
         "type": ""
-    },
-    "id": "joints_long_u_bracket",
-    "io": {
-        "inputs": [
-        ],
-        "outputs": [
-        ]
-    },
-    "kinematics": {
-        "bodies": [
-            {
-                "geoms": [
-                    {
-                        "mesh": "body",
-                        "pos": [
-                            0,
-                            0,
-                            0
-                        ],
-                        "quat": [
-                            6.123233995736766e-17,
-                            0,
-                            1,
-                            0
-                        ],
-                        "size": [
-                            0.01,
-                            0.01,
-                            0.01
-                        ],
-                        "type": "mesh"
-                    }
-                ],
-                "id": "body_1",
-                "mass": 0,
-                "transform": {
-                    "pos": [
-                        0,
-                        0,
-                        0
-                    ],
-                    "quat": [
-                        1,
-                        0,
-                        0,
-                        0
-                    ]
-                }
-            }
-        ],
-        "default_body": "body_1",
-        "joints": [
-        ]
-    },
-    "meta": {
-        "author": "Anon",
-        "icon_path": "long_u_bracket.png",
-        "name": "Long U-Bracket",
-        "version": "1.0.0"
-    },
-    "pins": [
-    ],
-    "resources": {
-        "materials": {
-        },
-        "meshes": {
-            "body": "meshes/body.obj"
-        }
-    },
-    "specs": {
     }
 }

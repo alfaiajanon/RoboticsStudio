@@ -226,10 +226,20 @@ void InspectorPanel::buildUI() {
     infoLayout->addRow("UID:", createShrinkableLabel(QString::number(comp->uid), infoBox));
     mainLayout->addWidget(infoBox);
 
-    if (!comp->getBlueprint()->inputDefs.isEmpty()) {
+    // Controls come from kind-joint inputs, readouts from outputs that have a runtime slot
+    // (camera signals have none yet).
+    bool hasControls = false;
+    for (const InterfaceDef& def : comp->getBlueprint()->interfaceInputs) {
+        if (def.target.kind == "joint") { hasControls = true; break; }
+    }
+    bool hasReadouts = false;
+    for (auto it = comp->getBlueprint()->interfaceOutputs.constBegin(); it != comp->getBlueprint()->interfaceOutputs.constEnd(); ++it) {
+        if (!comp->getSensorValue(it.key()).data.empty()) { hasReadouts = true; break; }
+    }
+    if (hasControls) {
         build_inputs(comp);
     }
-    if (!comp->getBlueprint()->outputDefs.isEmpty()) {
+    if (hasReadouts) {
         build_outputs(comp);
     }
     if (!comp->getBlueprint()->connectors.isEmpty()) {
@@ -253,8 +263,13 @@ void InspectorPanel::build_inputs(ComponentInstance* comp) {
     };
     QList<InputRow> rows;
 
-    for (const QString& key : comp->getBlueprint()->inputDefs.keys()) {
-        IODef def = comp->getBlueprint()->inputDefs[key];
+    for (const QString& key : comp->getBlueprint()->interfaceInputs.keys()) {
+        InterfaceDef def = comp->getBlueprint()->interfaceInputs[key];
+        if (def.target.kind != "joint") continue;   // only joint inputs have a control (edit-mode posing)
+        const QString jointId = def.target.id;
+
+        // Domain is advisory: ranged -> slider + bounded spin box, unbounded -> spin box only.
+        const bool ranged = def.domain.type == "ranged";
 
         QWidget* itemWidget = new QWidget(inputBox);
         QVBoxLayout* itemVBox = new QVBoxLayout(itemWidget);
@@ -267,40 +282,50 @@ void InspectorPanel::build_inputs(ComponentInstance* comp) {
         QHBoxLayout* targetHBox = new QHBoxLayout(targetWidget);
         targetHBox->setContentsMargins(0, 0, 0, 0);
 
-        double currentVal = (comp->getJointValue(def.targetJoint)).data[0];
+        BasicIOValue jointValue = comp->getJointValue(jointId);
+        double currentVal = jointValue.data.empty() ? 0.0 : jointValue.data[0];
 
-        QSlider* slider = new QSlider(Qt::Horizontal, targetWidget);
-        slider->setObjectName("inp_slider_" + def.targetJoint); // for updateJointValues()
-        slider->setRange(def.range.first, def.range.second);
-        slider->setValue(currentVal);
-        slider->setFocusPolicy(Qt::StrongFocus);
-        slider->installEventFilter(this);
+        QSlider* slider = nullptr;
+        if (ranged) {
+            slider = new QSlider(Qt::Horizontal, targetWidget);
+            slider->setObjectName("inp_slider_" + jointId); // for updateJointValues()
+            slider->setRange(static_cast<int>(def.domain.parameters.value("min")), static_cast<int>(def.domain.parameters.value("max")));
+            slider->setValue(currentVal);
+            slider->setFocusPolicy(Qt::StrongFocus);
+            slider->installEventFilter(this);
+        }
 
         QDoubleSpinBox* spinBox = new QDoubleSpinBox(targetWidget);
-        spinBox->setObjectName("inp_spin_" + def.targetJoint); // for updateJointValues()
-        spinBox->setRange(def.range.first, def.range.second);
+        spinBox->setObjectName("inp_spin_" + jointId); // for updateJointValues()
+        if (ranged) {
+            spinBox->setRange(def.domain.parameters.value("min"), def.domain.parameters.value("max"));
+        } else {
+            spinBox->setRange(-1e9, 1e9);   // QDoubleSpinBox defaults to 0..99.99
+        }
         spinBox->setValue(currentVal);
         spinBox->setFocusPolicy(Qt::StrongFocus);
         spinBox->installEventFilter(this);
 
-        targetHBox->addWidget(slider);
+        if (slider) targetHBox->addWidget(slider);
         targetHBox->addWidget(spinBox);
 
         itemVBox->addWidget(titleLabel);
         itemVBox->addWidget(targetWidget);
         inputLayout->addWidget(itemWidget);
 
-        rows.append({def.targetJoint, slider, spinBox});
+        rows.append({jointId, slider, spinBox});
     }
     mainLayout->addWidget(inputBox);
 
     for (const InputRow& row : rows) {
-        connect(row.slider, &QSlider::valueChanged, row.spinBox, [spinBox = row.spinBox](int val) {
-            spinBox->setValue(val);
-        });
-        connect(row.spinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), row.slider, [slider = row.slider](double val) {
-            slider->setValue(val);
-        });
+        if (row.slider) {
+            connect(row.slider, &QSlider::valueChanged, row.spinBox, [spinBox = row.spinBox](int val) {
+                spinBox->setValue(val);
+            });
+            connect(row.spinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), row.slider, [slider = row.slider](double val) {
+                slider->setValue(val);
+            });
+        }
 
         QString jkey = row.jkey;
         QSlider* slider = row.slider;
@@ -339,7 +364,7 @@ void InspectorPanel::build_inputs(ComponentInstance* comp) {
 
         // Mouse drag: capture the pre-drag value, seal the session with a
         // unique merge key, and switch to live preview.
-        connect(slider, &QSlider::sliderPressed, this, [this, capturedUid, jkey]() {
+        if (slider) connect(slider, &QSlider::sliderPressed, this, [this, capturedUid, jkey]() {
             ComponentInstance* c = Application::getInstance()->getProject()->getComponentByUid(capturedUid);
             if (!c) return;
             dragStartValue = c->getJointValue(jkey).data[0];
@@ -347,7 +372,7 @@ void InspectorPanel::build_inputs(ComponentInstance* comp) {
             dragInProgress = true;
         });
 
-        connect(slider, &QSlider::valueChanged, this,
+        if (slider) connect(slider, &QSlider::valueChanged, this,
                 [this, capturedUid, jkey, slider, nudgeMergeKey, pushJointCommand](int val) {
             ComponentInstance* c = Application::getInstance()->getProject()->getComponentByUid(capturedUid);
             if (!c) return;
@@ -369,7 +394,7 @@ void InspectorPanel::build_inputs(ComponentInstance* comp) {
         // drag's unique key, finalizing the session. Value-only commands don't
         // trigger an editor refresh -- the widgets already show the value --
         // so no rebuild happens unless one was suppressed mid-drag.
-        connect(slider, &QSlider::sliderReleased, this, [this, slider, capturedUid, jkey, pushJointCommand]() {
+        if (slider) connect(slider, &QSlider::sliderReleased, this, [this, slider, capturedUid, jkey, pushJointCommand]() {
             dragInProgress = false;
             pushJointCommand(dragStartValue, static_cast<double>(slider->value()), dragMergeKey);
             if (rebuildPending) {
@@ -391,24 +416,28 @@ void InspectorPanel::build_inputs(ComponentInstance* comp) {
 }
 
 
+// Text for a readout: one value, or all components comma-separated for vectors.
+// Empty data (signal without a runtime slot) gives an empty string.
+static QString formatReadout(const BasicIOValue& data, bool singleFull) {
+    if (data.data.empty()) return QString();
+    if (data.data.size() == 1) return singleFull ? QString::number(data.data[0]) : QString::number(data.data[0], 'f', 2);
+    QStringList parts;
+    for (double v : data.data) parts << QString::number(v, 'f', 2);
+    return parts.join(", ");
+}
+
+
 void InspectorPanel::build_outputs(ComponentInstance* comp) {
     QGroupBox* outputBox = new QGroupBox("Sensor Outputs", this);
     QFormLayout* outputLayout = new QFormLayout(outputBox);
-    for (const QString& key : comp->getBlueprint()->outputDefs.keys()) {
+    for (const QString& key : comp->getBlueprint()->interfaceOutputs.keys()) {
         BasicIOValue data = comp->getSensorValue(key);
+        if (data.data.empty()) continue;   // no runtime slot (camera): nothing to read out yet
         QLineEdit* valueLabel = createShrinkableLabel("", outputBox);
         valueLabel->setObjectName("lbl_out_" + key);
+        valueLabel->setText(formatReadout(data, true));
 
-        if (data.dim==1) {
-            valueLabel->setText(QString::number(data.data[0]));
-        } else if (data.dim==3) {
-            const auto& vec = data.data;
-            QStringList parts;
-            for (double v : vec) parts << QString::number(v, 'f', 2);
-            valueLabel->setText(parts.join(", "));
-        }
-
-        outputLayout->addRow(comp->getBlueprint()->outputDefs[key].name + " (" + comp->getBlueprint()->outputDefs[key].unit + "):", valueLabel);
+        outputLayout->addRow(comp->getBlueprint()->interfaceOutputs[key].name + " (" + comp->getBlueprint()->interfaceOutputs[key].unit + "):", valueLabel);
     }
     mainLayout->addWidget(outputBox);
 }
@@ -1067,9 +1096,12 @@ void InspectorPanel::updateJointValues() {
     ComponentInstance* comp = Application::getInstance()->getProject()->getComponentByUid(currentUid);
     if (!comp || !comp->getBlueprint()) return;
 
-    for (const QString& key : comp->getBlueprint()->inputDefs.keys()) {
-        QString jkey = comp->getBlueprint()->inputDefs[key].targetJoint;
-        double val = comp->getJointValue(jkey).data[0];
+    for (const InterfaceDef& def : comp->getBlueprint()->interfaceInputs) {
+        if (def.target.kind != "joint") continue;
+        QString jkey = def.target.id;
+        BasicIOValue jointValue = comp->getJointValue(jkey);
+        if (jointValue.data.empty()) continue;
+        double val = jointValue.data[0];
 
         if (QSlider* slider = this->findChild<QSlider*>("inp_slider_" + jkey)) {
             slider->setValue(static_cast<int>(val));
@@ -1085,17 +1117,10 @@ void InspectorPanel::updateLiveValues() {
     if (currentUid <= 0) return;
 
     if (ComponentInstance* comp = Application::getInstance()->getProject()->getComponentByUid(currentUid)) {
-        for (const QString& key : comp->getBlueprint()->outputDefs.keys()) {
+        for (const QString& key : comp->getBlueprint()->interfaceOutputs.keys()) {
             if (QLineEdit* label = this->findChild<QLineEdit*>("lbl_out_" + key)) {
                 BasicIOValue data = comp->getSensorValue(key);
-                if (data.dim==1) {
-                    label->setText(QString::number(data.data[0], 'f', 2));
-                } else if (data.dim==3) {
-                    const auto& vec = data.data;
-                    QStringList parts;
-                    for (double v : vec) parts << QString::number(v, 'f', 2);
-                    label->setText(parts.join(", "));
-                }
+                if (!data.data.empty()) label->setText(formatReadout(data, false));
                 label->setCursorPosition(0);
             }
         }

@@ -179,6 +179,7 @@ void ComponentPreviewViewport::loadComponentData(const ComponentData& data) {
         "%3"
         "  </worldbody>\n\n"
         "  <contact>\n%4  </contact>\n\n"
+        "  <tendon>\n%7  </tendon>\n\n"
         "  <actuator>\n%5  </actuator>\n\n"
         "  <sensor>\n%6  </sensor>\n"
         "</mujoco>\n")
@@ -187,7 +188,8 @@ void ComponentPreviewViewport::loadComponentData(const ComponentData& data) {
         .arg(blueprint.generateTreeXML(0, QString(), Transform()))
         .arg(blueprint.generateContactsXML(0))
         .arg(blueprint.generateActuatorXML(0))
-        .arg(blueprint.generateSensorXML(0));
+        .arg(blueprint.generateBasicSensorXML(0))
+        .arg(blueprint.generateTendonXML(0));
 
     if (mujocoContext.loadModelFromString(xml.toStdString())) {
         statusMessage.clear();

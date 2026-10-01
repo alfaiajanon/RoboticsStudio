@@ -22,6 +22,8 @@
 #include <QAbstractSpinBox>
 #include <QAbstractSlider>
 #include <QSet>
+#include <QSpinBox>
+#include <functional>
 
 
 
@@ -129,6 +131,66 @@ static void setFormFieldVisible(QWidget* field, bool visible) {
 
 
 
+// ---------------- reference helpers (schema 2 targets) ----------------
+
+// Every id a target of `kind` can point to: physical objects (joint, tendon,
+// site, geom) or devices (actuator, sensor, camera, display).
+static QStringList idsForKind(const ComponentData& d, const QString& kind) {
+    QStringList ids;
+    if (kind == "joint") { for (const Edge& e : d.joints) ids << e.id; }
+    else if (kind == "tendon") { for (const TendonDef& t : d.tendons) ids << t.id; }
+    else if (kind == "site") { for (const Node& n : d.bodies) for (const Site& s : n.sites) ids << s.id; }
+    else if (kind == "geom") { for (const Node& n : d.bodies) for (const Geom& g : n.geoms) ids << g.id; }
+    else if (kind == "actuator") { for (const ActuatorDef& a : d.actuators) ids << a.id; }
+    else if (kind == "sensor") { for (const SensorDef& s : d.sensors) ids << s.id; }
+    else if (kind == "camera") { for (const CameraDef& cam : d.cameras) ids << cam.id; }
+    else if (kind == "display") { for (const DisplayDef& x : d.displays) ids << x.id; }
+    return ids;
+}
+
+// Description of the first thing that references (kind, id) -- a device target,
+// a tendon term or an interface signal -- or an empty string if nothing does.
+// Used to refuse removals, like the joint/connector checks always did.
+static QString findTargetUser(const ComponentData& d, const QString& kind, const QString& id) {
+    for (const ActuatorDef& a : d.actuators) if (a.target.kind == kind && a.target.id == id) return "actuator '" + a.id + "'";
+    for (const SensorDef& s : d.sensors) if (s.target.kind == kind && s.target.id == id) return "sensor '" + s.id + "'";
+    for (const CameraDef& cam : d.cameras) if (cam.target.kind == kind && cam.target.id == id) return "camera '" + cam.id + "'";
+    for (const DisplayDef& x : d.displays) if (x.target.kind == kind && x.target.id == id) return "display '" + x.id + "'";
+    if (kind == "joint") {
+        for (const TendonDef& t : d.tendons) for (const TendonTerm& term : t.terms) if (term.joint == id) return "tendon '" + t.id + "'";
+    }
+    for (const InterfaceDef& s : d.interfaceInputs) if (s.target.kind == kind && s.target.id == id) return "input signal '" + s.name + "'";
+    for (const InterfaceDef& s : d.interfaceOutputs) if (s.target.kind == kind && s.target.id == id) return "output signal '" + s.name + "'";
+    return QString();
+}
+
+static bool deviceIdTaken(const ComponentData& d, const QString& id) {
+    for (const QString& kind : {"actuator", "sensor", "camera", "display"}) {
+        if (idsForKind(d, kind).contains(id)) return true;
+    }
+    return false;
+}
+
+static QString uniqueId(const QString& base, const std::function<bool(const QString&)>& taken) {
+    int n = 1;
+    QString id = QString("%1_%2").arg(base).arg(n);
+    while (taken(id)) id = QString("%1_%2").arg(base).arg(++n);
+    return id;
+}
+
+static QString resolutionToString(const QPair<int, int>& r) {
+    return (r.first > 0 && r.second > 0) ? QString("%1, %2").arg(r.first).arg(r.second) : QString();
+}
+
+static QPair<int, int> stringToResolution(const QString& s, const QPair<int, int>& fallback) {
+    QList<double> v = stringToDoubleList(s);
+    if (v.size() != 2 || v[0] < 1 || v[1] < 1) return fallback;
+    return qMakePair(static_cast<int>(v[0]), static_cast<int>(v[1]));
+}
+
+
+
+
 ComponentEditorWindow::ComponentEditorWindow(ComponentData source, QWidget* parent)
     : QWidget(parent, Qt::Window) {
 
@@ -171,7 +233,8 @@ ComponentEditorWindow::ComponentEditorWindow(ComponentData source, QWidget* pare
 
     tabWidget->addTab(makeTabPage(metaLayout), "Meta");
     tabWidget->addTab(makeTabPage(constructionLayout), "Construction");
-    tabWidget->addTab(makeTabPage(ioLayout), "IO");
+    tabWidget->addTab(makeTabPage(devicesLayout), "Devices");
+    tabWidget->addTab(makeTabPage(interfaceLayout), "Interface");
     tabWidget->addTab(makeTabPage(emulatorLayout), "Emulator");
 
     splitter->addWidget(tabWidget);
@@ -236,7 +299,8 @@ void ComponentEditorWindow::clearAndRebuild() {
         };
         clearLayout(metaLayout);
         clearLayout(constructionLayout);
-        clearLayout(ioLayout);
+        clearLayout(devicesLayout);
+        clearLayout(interfaceLayout);
         clearLayout(emulatorLayout);
 
         leftLayout = constructionLayout;
@@ -245,9 +309,13 @@ void ComponentEditorWindow::clearAndRebuild() {
         build_connectors();
         constructionLayout->addStretch();
 
-        leftLayout = ioLayout;
-        build_io();
-        ioLayout->addStretch();
+        leftLayout = devicesLayout;
+        build_devices();
+        devicesLayout->addStretch();
+
+        leftLayout = interfaceLayout;
+        build_interface();
+        interfaceLayout->addStretch();
 
         leftLayout = emulatorLayout;
         build_emulator();
@@ -467,6 +535,7 @@ void ComponentEditorWindow::build_construction() {
 
     build_bodies(layout);
     build_joints(layout);
+    build_tendons(layout);
 
     leftLayout->addWidget(box);
 }
@@ -480,6 +549,7 @@ void ComponentEditorWindow::build_bodies(QVBoxLayout* parent) {
 
     for (const QString& nodeId : data.bodies.keys()) {
         const Node& node = data.bodies[nodeId];
+        bodyGeomOverride[nodeId] = node.overrideGeom;   // the data is the source of truth
 
         QFrame* content = new QFrame(box);
         content->setFrameShape(QFrame::StyledPanel);
@@ -597,17 +667,17 @@ void ComponentEditorWindow::build_bodies(QVBoxLayout* parent) {
                 }
             }
             for (const Site& s : data.bodies.value(nodeId).sites) {
-                for (const QString& key : data.outputDefs.keys()) {
-                    if (data.outputDefs[key].targetSite == s.id) {
-                        Toast::showMessage(this, "Can't remove: output '" + key + "' targets site '" + s.id + "' on this body.");
-                        return;
-                    }
+                QString user = findTargetUser(data, "site", s.id);
+                if (!user.isEmpty()) {
+                    Toast::showMessage(this, "Can't remove: " + user + " targets site '" + s.id + "' on this body.");
+                    return;
                 }
-                for (const QString& key : data.inputDefs.keys()) {
-                    if (data.inputDefs[key].targetSite == s.id) {
-                        Toast::showMessage(this, "Can't remove: input '" + key + "' targets site '" + s.id + "' on this body.");
-                        return;
-                    }
+            }
+            for (const Geom& g : data.bodies.value(nodeId).geoms) {
+                QString user = findTargetUser(data, "geom", g.id);
+                if (!user.isEmpty()) {
+                    Toast::showMessage(this, "Can't remove: " + user + " targets geom '" + g.id + "' on this body.");
+                    return;
                 }
             }
             data.bodies.remove(nodeId);
@@ -615,7 +685,9 @@ void ComponentEditorWindow::build_bodies(QVBoxLayout* parent) {
             clearAndRebuild();
         });
 
-        QString header = QString("%1  (mass %2 kg)").arg(node.id).arg(node.mass);
+        double totalMass = node.mass;
+        if (!node.overrideGeom) { totalMass = 0.0; for (const Geom& g : node.geoms) totalMass += g.mass; }
+        QString header = QString("%1  (mass %2 kg)").arg(node.id).arg(totalMass);
         content->setProperty("foldKey", "body:" + nodeId);
         layout->addWidget(makeCollapsible(header, content, box));
     }
@@ -650,6 +722,20 @@ void ComponentEditorWindow::build_geoms(QFormLayout* bodyForm, const QString& bo
         QFrame* row = new QFrame(box);
         row->setFrameShape(QFrame::StyledPanel);
         QFormLayout* form = new QFormLayout(row);
+
+        QLineEdit* geomIdEdit = new QLineEdit(g.id, row);
+        form->addRow("Id:", geomIdEdit);
+        QString oldGeomId = g.id;
+        connect(geomIdEdit, &QLineEdit::editingFinished, this, [this, bodyId, geomIdx, oldGeomId, geomIdEdit]() {
+            QString newId = geomIdEdit->text().trimmed();
+            if (newId.isEmpty() || newId == oldGeomId || idsForKind(data, "geom").contains(newId)) {
+                geomIdEdit->setText(oldGeomId);
+                return;
+            }
+            if (!data.bodies.contains(bodyId) || geomIdx >= data.bodies[bodyId].geoms.size()) return;
+            data.bodies[bodyId].geoms[geomIdx].id = newId;   // references are not rewritten (renames never cascade)
+            clearAndRebuild();
+        });
 
         QComboBox* typeCombo = new QComboBox(row);
         typeCombo->addItems({"mesh", "box", "sphere", "capsule", "cylinder"});
@@ -731,6 +817,11 @@ void ComponentEditorWindow::build_geoms(QFormLayout* bodyForm, const QString& bo
         form->addRow(removeBtn);
         connect(removeBtn, &QPushButton::clicked, this, [this, bodyId, geomIdx]() {
             if (data.bodies.contains(bodyId) && geomIdx < data.bodies[bodyId].geoms.size()) {
+                QString user = findTargetUser(data, "geom", data.bodies[bodyId].geoms[geomIdx].id);
+                if (!user.isEmpty()) {
+                    Toast::showMessage(this, "Can't remove: " + user + " targets this geom.");
+                    return;
+                }
                 data.bodies[bodyId].geoms.removeAt(geomIdx);
                 clearAndRebuild();
             }
@@ -745,9 +836,9 @@ void ComponentEditorWindow::build_geoms(QFormLayout* bodyForm, const QString& bo
     connect(addBtn, &QPushButton::clicked, this, [this, bodyId]() {
         if (!data.bodies.contains(bodyId)) return;
         Geom g;
+        g.id = uniqueId("geom", [this](const QString& id) { return idsForKind(data, "geom").contains(id); });
         g.type = "box";
         g.size = {0.01, 0.01, 0.01};
-        g.mass = 0.0; // Geom::mass has no default initializer
         data.bodies[bodyId].geoms.append(g);
         clearAndRebuild();
     });
@@ -788,40 +879,24 @@ void ComponentEditorWindow::build_sites(QFormLayout* bodyForm, const QString& bo
 
         TransformFieldRefs xform = addTransformFields(form, s.localTransform);
 
-        QComboBox* sensorTypeCombo = new QComboBox(row);
-        sensorTypeCombo->addItems({"(none)", "accelerometer", "gyro", "magnetometer",
-                                    "velocimeter", "force", "torque", "framepos",
-                                    "framequat", "rangefinder"});
-        sensorTypeCombo->setCurrentText(s.sensor.type.isEmpty() ? "(none)" : s.sensor.type);
-        form->addRow("Sensor type:", sensorTypeCombo);
-
-        auto commit = [this, bodyId, siteIdx, xform, sensorTypeCombo]() {
+        auto commit = [this, bodyId, siteIdx, xform]() {
             if (!data.bodies.contains(bodyId) || siteIdx >= data.bodies[bodyId].sites.size()) return;
             Site& site = data.bodies[bodyId].sites[siteIdx];
             site.localTransform.position = stringToPos(xform.posEdit->text(), site.localTransform.position);
             site.localTransform.rotation = stringToRot(xform.rotEdit->text(), site.localTransform.rotation);
-            site.sensor.type = (sensorTypeCombo->currentText() == "(none)") ? "" : sensorTypeCombo->currentText();
             schedulePreviewReload();
         };
         connect(xform.posEdit, &QLineEdit::editingFinished, this, commit);
         connect(xform.rotEdit, &QLineEdit::editingFinished, this, commit);
-        connect(sensorTypeCombo, &QComboBox::currentTextChanged, this, commit);
 
         QPushButton* removeBtn = new QPushButton("Remove Site", row);
         form->addRow(removeBtn);
         QString siteId = s.id;
         connect(removeBtn, &QPushButton::clicked, this, [this, bodyId, siteId]() {
-            for (const QString& key : data.outputDefs.keys()) {
-                if (data.outputDefs[key].targetSite == siteId) {
-                    Toast::showMessage(this, "Can't remove: output '" + key + "' targets this site.");
-                    return;
-                }
-            }
-            for (const QString& key : data.inputDefs.keys()) {
-                if (data.inputDefs[key].targetSite == siteId) {
-                    Toast::showMessage(this, "Can't remove: input '" + key + "' targets this site.");
-                    return;
-                }
+            QString user = findTargetUser(data, "site", siteId);
+            if (!user.isEmpty()) {
+                Toast::showMessage(this, "Can't remove: " + user + " targets this site.");
+                return;
             }
             if (data.bodies.contains(bodyId)) {
                 QList<Site>& siteList = data.bodies[bodyId].sites;
@@ -934,34 +1009,6 @@ void ComponentEditorWindow::build_joints(QVBoxLayout* parent) {
         collisionCheck->setChecked(edge.collision);
         advForm->addRow("Collision:", collisionCheck);
 
-        QComboBox* actuatorTypeCombo = new QComboBox(advPanel);
-        actuatorTypeCombo->addItems({"(none)", "position", "velocity", "motor"});
-        actuatorTypeCombo->setCurrentText(edge.actuator.type.isEmpty() ? "(none)" : edge.actuator.type);
-        advForm->addRow("Actuator type:", actuatorTypeCombo);
-
-        QDoubleSpinBox* kpSpin = new QDoubleSpinBox(advPanel);
-        kpSpin->setRange(0.0, 10000.0);
-        kpSpin->setValue(edge.actuator.kp);
-        advForm->addRow("kp:", kpSpin);
-
-        QDoubleSpinBox* kvSpin = new QDoubleSpinBox(advPanel);
-        kvSpin->setRange(0.0, 10000.0);
-        kvSpin->setValue(edge.actuator.kv);
-        advForm->addRow("kv:", kvSpin);
-
-        QLineEdit* ctrlRangeEdit = new QLineEdit(doubleListToString(edge.actuator.ctrlrange), advPanel);
-        ctrlRangeEdit->setPlaceholderText("min, max");
-        advForm->addRow("Ctrl range:", ctrlRangeEdit);
-
-        QLineEdit* forceRangeEdit = new QLineEdit(doubleListToString(edge.actuator.forceRange), advPanel);
-        forceRangeEdit->setPlaceholderText("min, max");
-        advForm->addRow("Force range:", forceRangeEdit);
-
-        QComboBox* sensorTypeCombo = new QComboBox(advPanel);
-        sensorTypeCombo->addItems({"(none)", "jointpos", "jointvel"});
-        sensorTypeCombo->setCurrentText(edge.sensor.type.isEmpty() ? "(none)" : edge.sensor.type);
-        advForm->addRow("Sensor type:", sensorTypeCombo);
-
         form->addRow(advPanel);
         connect(advToggle, &QToolButton::toggled, this, [advToggle, advPanel](bool checked) {
             advPanel->setVisible(checked);
@@ -969,8 +1016,7 @@ void ComponentEditorWindow::build_joints(QVBoxLayout* parent) {
         });
 
         auto commit = [this, edgeId, bodyACombo, bodyBCombo, typeCombo, xform, rangeEdit,
-                       dampingSpin, armatureSpin, frictionSpin, collisionCheck, actuatorTypeCombo,
-                       kpSpin, kvSpin, ctrlRangeEdit, forceRangeEdit, sensorTypeCombo]() {
+                       dampingSpin, armatureSpin, frictionSpin, collisionCheck]() {
             Edge e = findEdge(data.joints, edgeId);
             e.bodyA = bodyACombo->currentText();
             e.bodyB = bodyBCombo->currentText();
@@ -982,12 +1028,6 @@ void ComponentEditorWindow::build_joints(QVBoxLayout* parent) {
             e.armature = armatureSpin->value();
             e.frictionloss = frictionSpin->value();
             e.collision = collisionCheck->isChecked();
-            e.actuator.type = (actuatorTypeCombo->currentText() == "(none)") ? "" : actuatorTypeCombo->currentText();
-            e.actuator.kp = kpSpin->value();
-            e.actuator.kv = kvSpin->value();
-            e.actuator.ctrlrange = stringToDoubleList(ctrlRangeEdit->text());
-            e.actuator.forceRange = stringToDoubleList(forceRangeEdit->text());
-            e.sensor.type = (sensorTypeCombo->currentText() == "(none)") ? "" : sensorTypeCombo->currentText();
             upsertEdge(data.joints, e);
             schedulePreviewReload();
         };
@@ -1001,27 +1041,14 @@ void ComponentEditorWindow::build_joints(QVBoxLayout* parent) {
         connect(armatureSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, commit);
         connect(frictionSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, commit);
         connect(collisionCheck, &QCheckBox::toggled, this, commit);
-        connect(actuatorTypeCombo, &QComboBox::currentTextChanged, this, commit);
-        connect(kpSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, commit);
-        connect(kvSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, commit);
-        connect(ctrlRangeEdit, &QLineEdit::editingFinished, this, commit);
-        connect(forceRangeEdit, &QLineEdit::editingFinished, this, commit);
-        connect(sensorTypeCombo, &QComboBox::currentTextChanged, this, commit);
 
         QPushButton* removeBtn = new QPushButton("Remove Joint", content);
         form->addRow(removeBtn);
         connect(removeBtn, &QPushButton::clicked, this, [this, edgeId]() {
-            for (const QString& key : data.inputDefs.keys()) {
-                if (data.inputDefs[key].targetJoint == edgeId) {
-                    Toast::showMessage(this, "Can't remove: input '" + key + "' targets this joint.");
-                    return;
-                }
-            }
-            for (const QString& key : data.outputDefs.keys()) {
-                if (data.outputDefs[key].targetJoint == edgeId) {
-                    Toast::showMessage(this, "Can't remove: output '" + key + "' targets this joint.");
-                    return;
-                }
+            QString user = findTargetUser(data, "joint", edgeId);
+            if (!user.isEmpty()) {
+                Toast::showMessage(this, "Can't remove: " + user + " targets this joint.");
+                return;
             }
             removeEdgeById(data.joints, edgeId);
             clearAndRebuild();
@@ -1209,24 +1236,548 @@ void ComponentEditorWindow::build_connectors() {
 
 
 
-#pragma region io
+#pragma region tendons
 
-void ComponentEditorWindow::build_io() {
-    build_io_list(leftLayout, "Inputs", data.inputDefs);
-    build_io_list(leftLayout, "Outputs", data.outputDefs);
+void ComponentEditorWindow::build_tendons(QVBoxLayout* parent) {
+    QGroupBox* box = new QGroupBox("Tendons", parent->parentWidget());
+    QVBoxLayout* layout = new QVBoxLayout(box);
+
+    for (int i = 0; i < data.tendons.size(); ++i) {
+        const TendonDef& tendon = data.tendons[i];
+        const int tendonIdx = i;
+        const QString tendonId = tendon.id;
+
+        QFrame* content = new QFrame(box);
+        content->setFrameShape(QFrame::StyledPanel);
+        QFormLayout* form = new QFormLayout(content);
+
+        QLineEdit* idEdit = new QLineEdit(tendon.id, content);
+        form->addRow("Id:", idEdit);
+        connect(idEdit, &QLineEdit::editingFinished, this, [this, tendonIdx, tendonId, idEdit]() {
+            QString newId = idEdit->text().trimmed();
+            if (newId.isEmpty() || newId == tendonId || idsForKind(data, "tendon").contains(newId)) {
+                idEdit->setText(tendonId);
+                return;
+            }
+            if (tendonIdx >= data.tendons.size()) return;
+            data.tendons[tendonIdx].id = newId;   // references are not rewritten (renames never cascade)
+            if (foldedSections.remove("tendon:" + tendonId)) foldedSections.insert("tendon:" + newId);
+            clearAndRebuild();
+        });
+
+        form->addRow("Type:", new QLabel("fixed (sum of coef x joint value)", content));
+
+        for (int k = 0; k < tendon.terms.size(); ++k) {
+            const TendonTerm& term = tendon.terms[k];
+            const int termIdx = k;
+
+            QWidget* termRow = new QWidget(content);
+            QHBoxLayout* termLayout = new QHBoxLayout(termRow);
+            termLayout->setContentsMargins(0, 0, 0, 0);
+
+            QComboBox* jointCombo = new QComboBox(termRow);
+            jointCombo->addItems(idsForKind(data, "joint"));
+            if (jointCombo->findText(term.joint) < 0) jointCombo->addItem(term.joint);   // keep a dangling reference visible
+            jointCombo->setCurrentText(term.joint);
+            termLayout->addWidget(jointCombo, 1);
+
+            QDoubleSpinBox* coefSpin = new QDoubleSpinBox(termRow);
+            coefSpin->setRange(-1000.0, 1000.0);
+            coefSpin->setDecimals(4);
+            coefSpin->setValue(term.coef);
+            coefSpin->setToolTip("Written in the joint's logical direction (body_a -> body_b)");
+            termLayout->addWidget(coefSpin);
+
+            QPushButton* removeTermBtn = new QPushButton("✖", termRow);
+            removeTermBtn->setFixedSize(20, 20);
+            termLayout->addWidget(removeTermBtn);
+
+            form->addRow(QString("Term %1:").arg(k + 1), termRow);
+
+            auto commit = [this, tendonIdx, termIdx, jointCombo, coefSpin]() {
+                if (tendonIdx >= data.tendons.size() || termIdx >= data.tendons[tendonIdx].terms.size()) return;
+                TendonTerm& t = data.tendons[tendonIdx].terms[termIdx];
+                t.joint = jointCombo->currentText();
+                t.coef = coefSpin->value();
+                schedulePreviewReload();
+            };
+            connect(jointCombo, &QComboBox::currentTextChanged, this, commit);
+            connect(coefSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, commit);
+            connect(removeTermBtn, &QPushButton::clicked, this, [this, tendonIdx, termIdx]() {
+                if (tendonIdx >= data.tendons.size() || termIdx >= data.tendons[tendonIdx].terms.size()) return;
+                if (data.tendons[tendonIdx].terms.size() == 1) {
+                    Toast::showMessage(this, "A tendon needs at least one term.");
+                    return;
+                }
+                data.tendons[tendonIdx].terms.removeAt(termIdx);
+                clearAndRebuild();
+            });
+        }
+
+        QPushButton* addTermBtn = new QPushButton("+ Add Term", content);
+        addTermBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        form->addRow(addTermBtn);
+        connect(addTermBtn, &QPushButton::clicked, this, [this, tendonIdx]() {
+            if (tendonIdx >= data.tendons.size()) return;
+            QStringList joints = idsForKind(data, "joint");
+            if (joints.isEmpty()) {
+                Toast::showMessage(this, "Add a joint first.");
+                return;
+            }
+            TendonTerm t;
+            t.joint = joints.first();
+            t.coef = 1.0;
+            data.tendons[tendonIdx].terms.append(t);
+            clearAndRebuild();
+        });
+
+        QPushButton* removeBtn = new QPushButton("Remove Tendon", content);
+        form->addRow(removeBtn);
+        connect(removeBtn, &QPushButton::clicked, this, [this, tendonId]() {
+            QString user = findTargetUser(data, "tendon", tendonId);
+            if (!user.isEmpty()) {
+                Toast::showMessage(this, "Can't remove: " + user + " targets this tendon.");
+                return;
+            }
+            for (int j = 0; j < data.tendons.size(); ++j) {
+                if (data.tendons[j].id == tendonId) { data.tendons.removeAt(j); break; }
+            }
+            clearAndRebuild();
+        });
+
+        content->setProperty("foldKey", "tendon:" + tendonId);
+        layout->addWidget(makeCollapsible(QString("%1 — fixed (%2 terms)").arg(tendon.id).arg(tendon.terms.size()), content, box));
+    }
+
+    QPushButton* addBtn = new QPushButton("+ Add Tendon", box);
+    addBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    layout->addWidget(addBtn, 0, Qt::AlignLeft);
+    connect(addBtn, &QPushButton::clicked, this, [this]() {
+        QStringList joints = idsForKind(data, "joint");
+        if (joints.isEmpty()) {
+            Toast::showMessage(this, "Add a joint before creating a tendon.");
+            return;
+        }
+        TendonDef t;
+        t.id = uniqueId("tendon", [this](const QString& id) { return idsForKind(data, "tendon").contains(id); });
+        TendonTerm term;
+        term.joint = joints.first();
+        term.coef = 1.0;
+        t.terms.append(term);
+        data.tendons.append(t);
+        clearAndRebuild();
+    });
+
+    parent->addWidget(box);
 }
 
 
 
 
-void ComponentEditorWindow::build_io_list(QVBoxLayout* parent, const QString& title, QMap<QString, IODef>& target) {
+#pragma region devices
+
+/*
+ * One "target" editor for a device: a kind dropdown (limited to what the device
+ * type allows -- DeviceTypes) and a target-id dropdown filtered by that kind.
+ * A single allowed kind hides the kind dropdown. Changing the kind resets the id
+ * and rebuilds; changing the id only stores it.
+ */
+struct ComponentEditorWindow::TargetRefs { QComboBox* kindCombo; QComboBox* idCombo; };
+
+ComponentEditorWindow::TargetRefs ComponentEditorWindow::addTargetFields(QFormLayout* form, QWidget* parent, const TargetRef& target,
+                                                                         const QStringList& allowedKinds) {
+    QComboBox* kindCombo = new QComboBox(parent);
+    kindCombo->addItems(allowedKinds);
+    if (kindCombo->findText(target.kind) < 0) kindCombo->addItem(target.kind);
+    kindCombo->setCurrentText(target.kind);
+    if (allowedKinds.size() > 1) form->addRow("Target kind:", kindCombo);
+    else kindCombo->setVisible(false);
+
+    QComboBox* idCombo = new QComboBox(parent);
+    idCombo->addItems(idsForKind(data, target.kind));
+    if (idCombo->findText(target.id) < 0) idCombo->addItem(target.id);   // keep a dangling reference visible
+    idCombo->setCurrentText(target.id);
+    form->addRow(QString("Target %1:").arg(target.kind), idCombo);
+    return {kindCombo, idCombo};
+}
+
+
+void ComponentEditorWindow::build_devices() {
+    // ---------------- actuators ----------------
+    {
+        QGroupBox* box = new QGroupBox("Actuators", this);
+        QVBoxLayout* layout = new QVBoxLayout(box);
+
+        for (int i = 0; i < data.actuators.size(); ++i) {
+            const ActuatorDef a = data.actuators[i];
+            const int idx = i;
+
+            QFrame* row = new QFrame(box);
+            row->setFrameShape(QFrame::StyledPanel);
+            QFormLayout* form = new QFormLayout(row);
+
+            QLineEdit* idEdit = new QLineEdit(a.id, row);
+            form->addRow("Id:", idEdit);
+            const QString oldId = a.id;
+            connect(idEdit, &QLineEdit::editingFinished, this, [this, idx, oldId, idEdit]() {
+                QString newId = idEdit->text().trimmed();
+                if (newId.isEmpty() || newId == oldId || deviceIdTaken(data, newId)) { idEdit->setText(oldId); return; }
+                if (idx >= data.actuators.size()) return;
+                data.actuators[idx].id = newId;   // references are not rewritten (renames never cascade)
+                clearAndRebuild();
+            });
+
+            QComboBox* typeCombo = new QComboBox(row);
+            typeCombo->addItems(DeviceTypes::typeNames(DeviceFamily::Actuator));
+            typeCombo->setCurrentText(a.type);
+            form->addRow("Type:", typeCombo);
+
+            const DeviceTypeInfo* info = DeviceTypes::find(DeviceFamily::Actuator, a.type);
+            TargetRefs target = addTargetFields(form, row, a.target, info ? info->allowedTargets : QStringList{a.target.kind});
+
+            QDoubleSpinBox* kpSpin = new QDoubleSpinBox(row);
+            kpSpin->setRange(0.0, 10000.0);
+            kpSpin->setValue(a.kp);
+            form->addRow("kp:", kpSpin);
+
+            QDoubleSpinBox* kvSpin = new QDoubleSpinBox(row);
+            kvSpin->setRange(0.0, 10000.0);
+            kvSpin->setValue(a.kv);
+            form->addRow("kv:", kvSpin);
+
+            QLineEdit* ctrlRangeEdit = new QLineEdit(doubleListToString(a.ctrlrange), row);
+            ctrlRangeEdit->setPlaceholderText("min, max");
+            form->addRow("Ctrl range:", ctrlRangeEdit);
+
+            QLineEdit* forceRangeEdit = new QLineEdit(doubleListToString(a.forceRange), row);
+            forceRangeEdit->setPlaceholderText("min, max");
+            form->addRow("Force range:", forceRangeEdit);
+
+            auto commit = [this, idx, target, kpSpin, kvSpin, ctrlRangeEdit, forceRangeEdit]() {
+                if (idx >= data.actuators.size()) return;
+                ActuatorDef& d = data.actuators[idx];
+                d.target.id = target.idCombo->currentText();
+                d.kp = kpSpin->value();
+                d.kv = kvSpin->value();
+                d.ctrlrange = stringToDoubleList(ctrlRangeEdit->text());
+                d.forceRange = stringToDoubleList(forceRangeEdit->text());
+                schedulePreviewReload();
+            };
+            connect(target.idCombo, &QComboBox::currentTextChanged, this, commit);
+            connect(kpSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, commit);
+            connect(kvSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, commit);
+            connect(ctrlRangeEdit, &QLineEdit::editingFinished, this, commit);
+            connect(forceRangeEdit, &QLineEdit::editingFinished, this, commit);
+
+            // A new type may not allow the current target kind: fall back to the first allowed one.
+            connect(typeCombo, &QComboBox::currentTextChanged, this, [this, idx](const QString& type) {
+                if (idx >= data.actuators.size()) return;
+                ActuatorDef& d = data.actuators[idx];
+                d.type = type;
+                const DeviceTypeInfo* ti = DeviceTypes::find(DeviceFamily::Actuator, type);
+                if (ti && !ti->allowedTargets.contains(d.target.kind)) {
+                    d.target.kind = ti->allowedTargets.first();
+                    d.target.id = idsForKind(data, d.target.kind).value(0);
+                }
+                clearAndRebuild();
+            });
+            connect(target.kindCombo, &QComboBox::currentTextChanged, this, [this, idx](const QString& kind) {
+                if (idx >= data.actuators.size() || data.actuators[idx].target.kind == kind) return;
+                data.actuators[idx].target.kind = kind;
+                data.actuators[idx].target.id = idsForKind(data, kind).value(0);
+                clearAndRebuild();
+            });
+
+            QPushButton* removeBtn = new QPushButton("Remove Actuator", row);
+            form->addRow(removeBtn);
+            connect(removeBtn, &QPushButton::clicked, this, [this, oldId]() {
+                QString user = findTargetUser(data, "actuator", oldId);
+                if (!user.isEmpty()) { Toast::showMessage(this, "Can't remove: " + user + " targets this actuator."); return; }
+                for (int j = 0; j < data.actuators.size(); ++j) if (data.actuators[j].id == oldId) { data.actuators.removeAt(j); break; }
+                clearAndRebuild();
+            });
+
+            layout->addWidget(row);
+        }
+
+        QPushButton* addBtn = new QPushButton("+ Add Actuator", box);
+        addBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        layout->addWidget(addBtn, 0, Qt::AlignLeft);
+        connect(addBtn, &QPushButton::clicked, this, [this]() {
+            if (data.joints.isEmpty()) { Toast::showMessage(this, "Add a joint before creating an actuator."); return; }
+            ActuatorDef a;
+            a.id = uniqueId("actuator", [this](const QString& id) { return deviceIdTaken(data, id); });
+            a.type = "position";
+            a.target = {"joint", data.joints.first().id};
+            data.actuators.append(a);
+            clearAndRebuild();
+        });
+        leftLayout->addWidget(box);
+    }
+
+    // ---------------- sensors ----------------
+    {
+        QGroupBox* box = new QGroupBox("Sensors", this);
+        QVBoxLayout* layout = new QVBoxLayout(box);
+
+        for (int i = 0; i < data.sensors.size(); ++i) {
+            const SensorDef s = data.sensors[i];
+            const int idx = i;
+
+            QFrame* row = new QFrame(box);
+            row->setFrameShape(QFrame::StyledPanel);
+            QFormLayout* form = new QFormLayout(row);
+
+            QLineEdit* idEdit = new QLineEdit(s.id, row);
+            form->addRow("Id:", idEdit);
+            const QString oldId = s.id;
+            connect(idEdit, &QLineEdit::editingFinished, this, [this, idx, oldId, idEdit]() {
+                QString newId = idEdit->text().trimmed();
+                if (newId.isEmpty() || newId == oldId || deviceIdTaken(data, newId)) { idEdit->setText(oldId); return; }
+                if (idx >= data.sensors.size()) return;
+                data.sensors[idx].id = newId;
+                clearAndRebuild();
+            });
+
+            QComboBox* typeCombo = new QComboBox(row);
+            typeCombo->addItems(DeviceTypes::typeNames(DeviceFamily::Sensor));
+            typeCombo->setCurrentText(s.type);
+            form->addRow("Type:", typeCombo);
+
+            const DeviceTypeInfo* info = DeviceTypes::find(DeviceFamily::Sensor, s.type);
+            if (info) form->addRow("Output:", new QLabel(QString("%1, dim %2").arg(DeviceTypes::shapeName(info->shape)).arg(info->dim), row));
+            TargetRefs target = addTargetFields(form, row, s.target, info ? info->allowedTargets : QStringList{s.target.kind});
+
+            connect(target.idCombo, &QComboBox::currentTextChanged, this, [this, idx, target]() {
+                if (idx >= data.sensors.size()) return;
+                data.sensors[idx].target.id = target.idCombo->currentText();
+                schedulePreviewReload();
+            });
+            connect(typeCombo, &QComboBox::currentTextChanged, this, [this, idx](const QString& type) {
+                if (idx >= data.sensors.size()) return;
+                SensorDef& d = data.sensors[idx];
+                d.type = type;
+                const DeviceTypeInfo* ti = DeviceTypes::find(DeviceFamily::Sensor, type);
+                if (ti && !ti->allowedTargets.contains(d.target.kind)) {
+                    d.target.kind = ti->allowedTargets.first();
+                    d.target.id = idsForKind(data, d.target.kind).value(0);
+                }
+                clearAndRebuild();
+            });
+            connect(target.kindCombo, &QComboBox::currentTextChanged, this, [this, idx](const QString& kind) {
+                if (idx >= data.sensors.size() || data.sensors[idx].target.kind == kind) return;
+                data.sensors[idx].target.kind = kind;
+                data.sensors[idx].target.id = idsForKind(data, kind).value(0);
+                clearAndRebuild();
+            });
+
+            QPushButton* removeBtn = new QPushButton("Remove Sensor", row);
+            form->addRow(removeBtn);
+            connect(removeBtn, &QPushButton::clicked, this, [this, oldId]() {
+                QString user = findTargetUser(data, "sensor", oldId);
+                if (!user.isEmpty()) { Toast::showMessage(this, "Can't remove: " + user + " targets this sensor."); return; }
+                for (int j = 0; j < data.sensors.size(); ++j) if (data.sensors[j].id == oldId) { data.sensors.removeAt(j); break; }
+                clearAndRebuild();
+            });
+
+            layout->addWidget(row);
+        }
+
+        QPushButton* addBtn = new QPushButton("+ Add Sensor", box);
+        addBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        layout->addWidget(addBtn, 0, Qt::AlignLeft);
+        connect(addBtn, &QPushButton::clicked, this, [this]() {
+            if (data.joints.isEmpty()) { Toast::showMessage(this, "Add a joint before creating a sensor (or change its target afterwards)."); return; }
+            SensorDef s;
+            s.id = uniqueId("sensor", [this](const QString& id) { return deviceIdTaken(data, id); });
+            s.type = "jointpos";
+            s.target = {"joint", data.joints.first().id};
+            data.sensors.append(s);
+            clearAndRebuild();
+        });
+        leftLayout->addWidget(box);
+    }
+
+    // ---------------- cameras ----------------
+    {
+        QGroupBox* box = new QGroupBox("Cameras (loaded and saved; not simulated yet)", this);
+        QVBoxLayout* layout = new QVBoxLayout(box);
+
+        for (int i = 0; i < data.cameras.size(); ++i) {
+            const CameraDef cam = data.cameras[i];
+            const int idx = i;
+
+            QFrame* row = new QFrame(box);
+            row->setFrameShape(QFrame::StyledPanel);
+            QFormLayout* form = new QFormLayout(row);
+
+            QLineEdit* idEdit = new QLineEdit(cam.id, row);
+            form->addRow("Id:", idEdit);
+            const QString oldId = cam.id;
+            connect(idEdit, &QLineEdit::editingFinished, this, [this, idx, oldId, idEdit]() {
+                QString newId = idEdit->text().trimmed();
+                if (newId.isEmpty() || newId == oldId || deviceIdTaken(data, newId)) { idEdit->setText(oldId); return; }
+                if (idx >= data.cameras.size()) return;
+                data.cameras[idx].id = newId;
+                clearAndRebuild();
+            });
+
+            QComboBox* typeCombo = new QComboBox(row);
+            typeCombo->addItems(DeviceTypes::typeNames(DeviceFamily::Camera));
+            typeCombo->setCurrentText(cam.type);
+            form->addRow("Type:", typeCombo);
+
+            TargetRefs target = addTargetFields(form, row, cam.target, {"site"});
+
+            QLineEdit* resEdit = new QLineEdit(resolutionToString(cam.resolution), row);
+            resEdit->setPlaceholderText("width, height (pixels)");
+            form->addRow("Resolution:", resEdit);
+
+            QDoubleSpinBox* fovySpin = new QDoubleSpinBox(row);
+            fovySpin->setRange(1.0, 179.0);
+            fovySpin->setValue(cam.fovy > 0 ? cam.fovy : 60.0);
+            form->addRow("Fovy (deg):", fovySpin);
+
+            auto commit = [this, idx, typeCombo, target, resEdit, fovySpin]() {
+                if (idx >= data.cameras.size()) return;
+                CameraDef& d = data.cameras[idx];
+                d.type = typeCombo->currentText();
+                d.target.id = target.idCombo->currentText();
+                d.resolution = stringToResolution(resEdit->text(), d.resolution);
+                d.fovy = fovySpin->value();
+            };
+            connect(typeCombo, &QComboBox::currentTextChanged, this, commit);
+            connect(target.idCombo, &QComboBox::currentTextChanged, this, commit);
+            connect(resEdit, &QLineEdit::editingFinished, this, commit);
+            connect(fovySpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, commit);
+
+            QPushButton* removeBtn = new QPushButton("Remove Camera", row);
+            form->addRow(removeBtn);
+            connect(removeBtn, &QPushButton::clicked, this, [this, oldId]() {
+                QString user = findTargetUser(data, "camera", oldId);
+                if (!user.isEmpty()) { Toast::showMessage(this, "Can't remove: " + user + " targets this camera."); return; }
+                for (int j = 0; j < data.cameras.size(); ++j) if (data.cameras[j].id == oldId) { data.cameras.removeAt(j); break; }
+                clearAndRebuild();
+            });
+
+            layout->addWidget(row);
+        }
+
+        QPushButton* addBtn = new QPushButton("+ Add Camera", box);
+        addBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        layout->addWidget(addBtn, 0, Qt::AlignLeft);
+        connect(addBtn, &QPushButton::clicked, this, [this]() {
+            QStringList sites = idsForKind(data, "site");
+            if (sites.isEmpty()) { Toast::showMessage(this, "Add a site before creating a camera."); return; }
+            CameraDef cam;
+            cam.id = uniqueId("camera", [this](const QString& id) { return deviceIdTaken(data, id); });
+            cam.type = "rgb";
+            cam.target = {"site", sites.first()};
+            cam.resolution = qMakePair(320, 240);
+            cam.fovy = 60.0;
+            data.cameras.append(cam);
+            clearAndRebuild();
+        });
+        leftLayout->addWidget(box);
+    }
+
+    // ---------------- displays ----------------
+    {
+        QGroupBox* box = new QGroupBox("Displays (loaded and saved; not simulated yet)", this);
+        QVBoxLayout* layout = new QVBoxLayout(box);
+
+        for (int i = 0; i < data.displays.size(); ++i) {
+            const DisplayDef disp = data.displays[i];
+            const int idx = i;
+
+            QFrame* row = new QFrame(box);
+            row->setFrameShape(QFrame::StyledPanel);
+            QFormLayout* form = new QFormLayout(row);
+
+            QLineEdit* idEdit = new QLineEdit(disp.id, row);
+            form->addRow("Id:", idEdit);
+            const QString oldId = disp.id;
+            connect(idEdit, &QLineEdit::editingFinished, this, [this, idx, oldId, idEdit]() {
+                QString newId = idEdit->text().trimmed();
+                if (newId.isEmpty() || newId == oldId || deviceIdTaken(data, newId)) { idEdit->setText(oldId); return; }
+                if (idx >= data.displays.size()) return;
+                data.displays[idx].id = newId;
+                clearAndRebuild();
+            });
+
+            TargetRefs target = addTargetFields(form, row, disp.target, {"geom"});
+
+            QLineEdit* resEdit = new QLineEdit(resolutionToString(disp.resolution), row);
+            resEdit->setPlaceholderText("width, height (pixels)");
+            form->addRow("Resolution:", resEdit);
+
+            auto commit = [this, idx, target, resEdit]() {
+                if (idx >= data.displays.size()) return;
+                DisplayDef& d = data.displays[idx];
+                d.target.id = target.idCombo->currentText();
+                d.resolution = stringToResolution(resEdit->text(), d.resolution);
+            };
+            connect(target.idCombo, &QComboBox::currentTextChanged, this, commit);
+            connect(resEdit, &QLineEdit::editingFinished, this, commit);
+
+            QPushButton* removeBtn = new QPushButton("Remove Display", row);
+            form->addRow(removeBtn);
+            connect(removeBtn, &QPushButton::clicked, this, [this, oldId]() {
+                QString user = findTargetUser(data, "display", oldId);
+                if (!user.isEmpty()) { Toast::showMessage(this, "Can't remove: " + user + " targets this display."); return; }
+                for (int j = 0; j < data.displays.size(); ++j) if (data.displays[j].id == oldId) { data.displays.removeAt(j); break; }
+                clearAndRebuild();
+            });
+
+            layout->addWidget(row);
+        }
+
+        QPushButton* addBtn = new QPushButton("+ Add Display", box);
+        addBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        layout->addWidget(addBtn, 0, Qt::AlignLeft);
+        connect(addBtn, &QPushButton::clicked, this, [this]() {
+            QStringList geoms = idsForKind(data, "geom");
+            if (geoms.isEmpty()) { Toast::showMessage(this, "Add a geom before creating a display."); return; }
+            DisplayDef d;
+            d.id = uniqueId("display", [this](const QString& id) { return deviceIdTaken(data, id); });
+            d.target = {"geom", geoms.first()};
+            d.resolution = qMakePair(128, 64);
+            data.displays.append(d);
+            clearAndRebuild();
+        });
+        leftLayout->addWidget(box);
+    }
+}
+
+
+
+
+
+#pragma region interface
+
+void ComponentEditorWindow::build_interface() {
+    build_interface_list(leftLayout, "Inputs", data.interfaceInputs, true);
+    build_interface_list(leftLayout, "Outputs", data.interfaceOutputs, false);
+}
+
+
+
+
+/*
+ * One entry per public signal. The kind dropdown is limited to what the
+ * direction allows; the target-id dropdown is filtered by the chosen kind.
+ * "emulator" signals have no id and state their own channel type and dim;
+ * every other signal's shape is derived from its target, so it is only shown.
+ */
+void ComponentEditorWindow::build_interface_list(QVBoxLayout* parent, const QString& title, QMap<QString, InterfaceDef>& target, bool isInput) {
     QGroupBox* box = new QGroupBox(title, parent->parentWidget());
     QVBoxLayout* layout = new QVBoxLayout(box);
 
-    const bool isInput = (title == "Inputs");
+    const QStringList kinds = isInput ? QStringList{"joint", "display", "actuator", "emulator"}
+                                      : QStringList{"sensor", "camera", "emulator"};
 
     for (const QString& key : target.keys()) {
-        IODef def = target[key];
+        InterfaceDef def = target[key];
 
         QFrame* row = new QFrame(box);
         row->setFrameShape(QFrame::StyledPanel);
@@ -1236,8 +1787,12 @@ void ComponentEditorWindow::build_io_list(QVBoxLayout* parent, const QString& ti
         form->addRow("Name:", nameEdit);
         connect(nameEdit, &QLineEdit::editingFinished, this, [this, &target, key, nameEdit]() {
             QString newName = nameEdit->text().trimmed();
-            if (newName.isEmpty() || newName == key || target.contains(newName)) return;
-            IODef d = target.take(key);
+            // signal names are unique across inputs AND outputs
+            if (newName.isEmpty() || newName == key || data.interfaceInputs.contains(newName) || data.interfaceOutputs.contains(newName)) {
+                nameEdit->setText(key);
+                return;
+            }
+            InterfaceDef d = target.take(key);
             d.name = newName;
             target[newName] = d;
             clearAndRebuild();
@@ -1246,78 +1801,115 @@ void ComponentEditorWindow::build_io_list(QVBoxLayout* parent, const QString& ti
         QLineEdit* unitEdit = new QLineEdit(def.unit, row);
         form->addRow("Unit:", unitEdit);
 
-        QComboBox* rangeModeCombo = nullptr;
-        QLineEdit* rangeEdit = nullptr;
-        if (isInput) {
-            rangeModeCombo = new QComboBox(row);
-            rangeModeCombo->addItems({"ranged", "unranged"});
-            rangeModeCombo->setCurrentText(def.ranged ? "ranged" : "unranged");
-            form->addRow("Range mode:", rangeModeCombo);
+        // Domain: type dropdown + one spin box per parameter of that type. The set of types
+        // and their parameters mirrors the loader's domain registry (ComponentData.cpp).
+        QComboBox* domainCombo = new QComboBox(row);
+        domainCombo->addItems({"unbounded", "ranged"});
+        domainCombo->setCurrentText(def.domain.type);
+        form->addRow("Domain:", domainCombo);
 
-            rangeEdit = new QLineEdit(QString("%1, %2").arg(def.range.first).arg(def.range.second), row);
-            rangeEdit->setPlaceholderText("min, max");
-            rangeEdit->setEnabled(def.ranged);
-            form->addRow("Range:", rangeEdit);
-        }
+        QDoubleSpinBox* minSpin = new QDoubleSpinBox(row);
+        minSpin->setRange(-1e9, 1e9);
+        minSpin->setDecimals(4);
+        minSpin->setValue(def.domain.parameters.value("min", 0.0));
+        form->addRow("Min:", minSpin);
 
-        QComboBox* channelTypeCombo = new QComboBox(row);
-        channelTypeCombo->addItems({"scalar", "vector", "image"});
-        channelTypeCombo->setCurrentText(def.channelType.isEmpty() ? "scalar" : def.channelType);
-        form->addRow("Channel type:", channelTypeCombo);
+        QDoubleSpinBox* maxSpin = new QDoubleSpinBox(row);
+        maxSpin->setRange(-1e9, 1e9);
+        maxSpin->setDecimals(4);
+        maxSpin->setValue(def.domain.parameters.value("max", 0.0));
+        form->addRow("Max:", maxSpin);
+        setFormFieldVisible(minSpin, def.domain.type == "ranged");
+        setFormFieldVisible(maxSpin, def.domain.type == "ranged");
 
         QCheckBox* physicalCheck = new QCheckBox(row);
         physicalCheck->setChecked(def.physical);
         form->addRow("Physical:", physicalCheck);
 
-        QComboBox* jointCombo = new QComboBox(row);
-        refreshJointDropdown(jointCombo);
-        jointCombo->setCurrentText(def.targetJoint.isEmpty() ? "(none)" : def.targetJoint);
-        form->addRow("Target joint:", jointCombo);
+        QComboBox* kindCombo = new QComboBox(row);
+        kindCombo->addItems(kinds);
+        if (kindCombo->findText(def.target.kind) < 0) kindCombo->addItem(def.target.kind);
+        kindCombo->setCurrentText(def.target.kind);
+        form->addRow("Target kind:", kindCombo);
 
-        QComboBox* siteCombo = new QComboBox(row);
-        refreshSiteDropdown(siteCombo);
-        siteCombo->setCurrentText(def.targetSite.isEmpty() ? "(none)" : def.targetSite);
-        form->addRow("Target site:", siteCombo);
+        const bool isEmulator = def.target.kind == "emulator";
+
+        QComboBox* idCombo = new QComboBox(row);
+        idCombo->addItems(idsForKind(data, def.target.kind));
+        if (!isEmulator && idCombo->findText(def.target.id) < 0) idCombo->addItem(def.target.id);   // keep a dangling reference visible
+        idCombo->setCurrentText(def.target.id);
+        form->addRow("Target id:", idCombo);
+        setFormFieldVisible(idCombo, !isEmulator);
+
+        QComboBox* channelCombo = new QComboBox(row);
+        channelCombo->addItems({"scalar", "vector"});
+        channelCombo->setCurrentText(def.channelType);
+        form->addRow("Channel type:", channelCombo);
+
+        QSpinBox* dimSpin = new QSpinBox(row);
+        dimSpin->setRange(1, 64);
+        dimSpin->setValue(def.dim);
+        form->addRow("Dim:", dimSpin);
+        setFormFieldVisible(channelCombo, isEmulator);
+        setFormFieldVisible(dimSpin, isEmulator);
+
+        if (!isEmulator) {
+            form->addRow("Shape:", new QLabel(QString("%1, dim %2 (derived from the target)")
+                                              .arg(DeviceTypes::shapeName(data.interfaceShape(def))).arg(data.interfaceDim(def)), row));
+        }
+
+        QLineEdit* labelsEdit = new QLineEdit(def.componentLabels.join(", "), row);
+        labelsEdit->setPlaceholderText("optional legend names, e.g. x, y, z");
+        form->addRow("Labels:", labelsEdit);
 
         QString ioKey = key;
-        auto commit = [this, &target, ioKey, unitEdit, rangeModeCombo, rangeEdit, channelTypeCombo,
-                       physicalCheck, jointCombo, siteCombo]() {
-            IODef d = target[ioKey];
+        auto commit = [this, &target, ioKey, unitEdit, domainCombo, minSpin, maxSpin, physicalCheck, idCombo, channelCombo, dimSpin, labelsEdit]() {
+            if (!target.contains(ioKey)) return;
+            InterfaceDef d = target[ioKey];
             d.unit = unitEdit->text();
-            d.channelType = channelTypeCombo->currentText();
             d.physical = physicalCheck->isChecked();
 
-            if (rangeModeCombo && rangeEdit) {
-                d.ranged = (rangeModeCombo->currentText() == "ranged");
-                rangeEdit->setEnabled(d.ranged);
-                QList<double> r = stringToDoubleList(rangeEdit->text());
-                if (r.size() == 2) {
-                    d.range = qMakePair(static_cast<float>(r[0]), static_cast<float>(r[1]));
-                }
+            d.domain.type = domainCombo->currentText();
+            d.domain.parameters.clear();
+            if (d.domain.type == "ranged") {
+                d.domain.parameters["min"] = minSpin->value();
+                d.domain.parameters["max"] = maxSpin->value();
+            }
+            setFormFieldVisible(minSpin, d.domain.type == "ranged");
+            setFormFieldVisible(maxSpin, d.domain.type == "ranged");
+
+            if (d.target.kind != "emulator") d.target.id = idCombo->currentText();
+            else {
+                d.channelType = channelCombo->currentText();
+                d.dim = (d.channelType == "scalar") ? 1 : dimSpin->value();
+                if (d.channelType == "scalar") dimSpin->setValue(1);
             }
 
-            QString siteSel = siteCombo->currentText();
-            QString jointSel = jointCombo->currentText();
-            if (siteSel != "(none)") {
-                d.targetSite = siteSel;
-                d.targetJoint = "";
-            } else if (jointSel != "(none)") {
-                d.targetJoint = jointSel;
-                d.targetSite = "";
-            } else {
-                d.targetJoint = "";
-                d.targetSite = "";
-            }
+            d.componentLabels.clear();
+            for (const QString& part : labelsEdit->text().split(',', Qt::SkipEmptyParts)) d.componentLabels.append(part.trimmed());
 
             target[ioKey] = d;
         };
         connect(unitEdit, &QLineEdit::editingFinished, this, commit);
-        if (rangeModeCombo) connect(rangeModeCombo, &QComboBox::currentTextChanged, this, commit);
-        if (rangeEdit) connect(rangeEdit, &QLineEdit::editingFinished, this, commit);
-        connect(channelTypeCombo, &QComboBox::currentTextChanged, this, commit);
+        connect(domainCombo, &QComboBox::currentTextChanged, this, commit);
+        connect(minSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, commit);
+        connect(maxSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, commit);
         connect(physicalCheck, &QCheckBox::toggled, this, commit);
-        connect(jointCombo, &QComboBox::currentTextChanged, this, commit);
-        connect(siteCombo, &QComboBox::currentTextChanged, this, commit);
+        connect(idCombo, &QComboBox::currentTextChanged, this, commit);
+        connect(channelCombo, &QComboBox::currentTextChanged, this, commit);
+        connect(dimSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, commit);
+        connect(labelsEdit, &QLineEdit::editingFinished, this, commit);
+
+        // Kind change: reset the id to the first candidate of the new kind and rebuild
+        // (the shape/emulator fields depend on it).
+        connect(kindCombo, &QComboBox::currentTextChanged, this, [this, &target, ioKey](const QString& kind) {
+            if (!target.contains(ioKey) || target[ioKey].target.kind == kind) return;
+            InterfaceDef d = target[ioKey];
+            d.target.kind = kind;
+            d.target.id = (kind == "emulator") ? QString() : idsForKind(data, kind).value(0);
+            target[ioKey] = d;
+            clearAndRebuild();
+        });
 
         QPushButton* removeBtn = new QPushButton("Remove", row);
         form->addRow(removeBtn);
@@ -1333,9 +1925,13 @@ void ComponentEditorWindow::build_io_list(QVBoxLayout* parent, const QString& ti
     addBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     layout->addWidget(addBtn, 0, Qt::AlignLeft);
 
-    connect(addBtn, &QPushButton::clicked, this, [this, &target]() {
-        IODef def;
-        def.name = QString("channel_%1").arg(target.size() + 1);
+    connect(addBtn, &QPushButton::clicked, this, [this, &target, isInput]() {
+        InterfaceDef def;
+        int n = data.interfaceInputs.size() + data.interfaceOutputs.size() + 1;
+        def.name = QString("channel_%1").arg(n);
+        while (data.interfaceInputs.contains(def.name) || data.interfaceOutputs.contains(def.name)) def.name = QString("channel_%1").arg(++n);
+        def.target.kind = isInput ? "joint" : "sensor";
+        def.target.id = idsForKind(data, def.target.kind).value(0);
         target[def.name] = def;
         clearAndRebuild();
     });
