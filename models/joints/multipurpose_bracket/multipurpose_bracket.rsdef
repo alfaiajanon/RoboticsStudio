@@ -1,4 +1,5 @@
 {
+    "schema": 2,
     "id": "joints_multipurpose_bracket",
     "meta": {
         "name": "Multipurpose Bracket",
@@ -6,7 +7,6 @@
         "author": "Anon",
         "icon_path": "multipurpose_bracket.png"
     },
-
     "resources": {
         "meshes": {
             "mesh_body": "meshes/body.obj"
@@ -15,53 +15,91 @@
             "mat_bracket": "textures/tex_tt_motor.png"
         }
     },
-
-    "specs": {
-    },
-
-    "pins": [
-    ],
-
+    "specs": {},
+    "pins": [],
     "kinematics": {
         "default_body": "base",
         "bodies": [
             {
                 "id": "base",
-                "mass": 0.030,
+                "overrideGeom": false,
                 "transform": {
-                    "pos": [0, 0, 0],
-                    "quat": [1, 0, 0, 0]
+                    "pos": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "quat": [
+                        1,
+                        0,
+                        0,
+                        0
+                    ]
                 },
                 "geoms": [
-                    { "type": "mesh", "mesh": "mesh_body" , "material": null }
+                    {
+                        "id": "base_geom",
+                        "type": "mesh",
+                        "mesh": "mesh_body",
+                        "mass": 0.03
+                    }
                 ]
             }
         ],
-        "joints": [
-        ]
+        "joints": []
     },
-
     "connectors": [
         {
             "id": "back_mount",
             "body": "base",
             "description": "",
-            "mechanics": { "snap_angles": [0, 180] },
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    180
+                ]
+            },
             "transform": {
-                "pos": [0, 0.012, 0],
-                "quat": [1, 0, 0, 0]
+                "pos": [
+                    0,
+                    0.012,
+                    0
+                ],
+                "quat": [
+                    1,
+                    0,
+                    0,
+                    0
+                ]
             }
         },
         {
             "id": "self_mount",
             "body": "base",
             "description": "",
-            "mechanics": { "snap_angles": [0, 180] },
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    180
+                ]
+            },
             "transform": {
-                "pos": [0.0242, 0.0309, -0.0100],
-                "quat": [0.7071, 0.7071, 0, 0]
+                "pos": [
+                    0.0242,
+                    0.0309,
+                    -0.01
+                ],
+                "quat": [
+                    0.7071,
+                    0.7071,
+                    0,
+                    0
+                ]
             }
         }
-    ]
-
+    ],
+    "interface": {
+        "inputs": [],
+        "outputs": []
+    }
 }
