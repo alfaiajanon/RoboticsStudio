@@ -2,5 +2,8 @@ build/
 todo.txt
 temp.txt
 test.xml
-AGENTS.md
+AGENTS.old.md
+CLAUDE.old.md
+HANDOFF.old.md
+MUJOCO_LOG.TXT
 project_structure.txt

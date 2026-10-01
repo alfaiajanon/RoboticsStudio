@@ -656,7 +656,9 @@ void CanvasDockItem::showAddTargetDialog() {
     QMap<int, ComponentInstance*> compMap=Application::getInstance()->getProject()->getComponentMap();
     for(ComponentInstance* comp:compMap){
         int uid=comp->uid;
-        for (const QString& key : comp->getBlueprint()->inputDefs.keys()){
+        ComponentBlueprint* bp = comp->getBlueprint();
+        for (const QString& key : bp->interfaceInputs.keys()){
+            if (bp->interfaceDim(bp->interfaceInputs[key]) <= 0) continue;   // image signals: nothing to plot yet
             auto source = registry.getOrCreateSource(
                 QString("io:%1:%2").arg(uid).arg(key),
                 [comp, key]() {
@@ -669,7 +671,8 @@ void CanvasDockItem::showAddTargetDialog() {
             item->setData(Qt::UserRole, source->getKey());
             listWidget->addItem(item);
         }
-        for (const QString& key : comp->getBlueprint()->outputDefs.keys()){
+        for (const QString& key : bp->interfaceOutputs.keys()){
+            if (bp->interfaceDim(bp->interfaceOutputs[key]) <= 0) continue;   // image signals: nothing to plot yet
             auto source = registry.getOrCreateSource(
                 QString("io:%1:%2").arg(uid).arg(key),
                 [comp, key]() {

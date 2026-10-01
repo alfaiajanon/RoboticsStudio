@@ -50,32 +50,34 @@ ComponentBlueprint* ComponentInstance::getBlueprint() const {
 }
 
 
+/*
+ * Builds the runtime value maps from the blueprint's interface. Signal slots
+ * are keyed by signal name, joint slots by joint id (D8). Sizes come from the
+ * DeviceTypes table via ComponentData::interfaceDim; image signals
+ * (camera/display) have no runtime slot yet.
+ */
 void ComponentInstance::setBlueprint(ComponentBlueprint *blueprint){
     this->blueprint = blueprint;
 
-    for (const QString &key : blueprint->inputDefs.keys()) {
+    auto makeValue = [](int dim) {
         auto data = std::make_shared<BasicIOValue>();
-        const IODef &def = blueprint->inputDefs[key];
-        if(def.channelType=="scalar") data->dim=1;
-        if(def.channelType=="vector") data->dim=3;
-        data->data.resize(data->dim);
-        actuators[key] = data;
+        data->dim = dim;
+        data->data.resize(dim);
+        return data;
+    };
 
-        if (!joints.contains(def.targetJoint)) {
-            auto jdata=std::make_shared<BasicIOValue>();
-            jdata->dim=1;
-            jdata->data.resize(1);
-            joints[def.targetJoint] = jdata;
+    for (auto it = blueprint->interfaceInputs.constBegin(); it != blueprint->interfaceInputs.constEnd(); ++it) {
+        const InterfaceDef &def = it.value();
+        int dim = blueprint->interfaceDim(def);
+        if (dim > 0) actuators[it.key()] = makeValue(dim);
+
+        if (def.target.kind == "joint" && !joints.contains(def.target.id)) {
+            joints[def.target.id] = makeValue(1);
         }
     }
-    for (const QString& key : blueprint->outputDefs.keys()) {
-        auto data = std::make_shared<BasicIOValue>();
-        const IODef &def = blueprint->outputDefs[key];
-        if(def.channelType=="scalar") data->dim=1;
-        if(def.channelType=="vector") data->dim=3;
-        data->data.resize(data->dim);
-
-        sensors[key] = data;
+    for (auto it = blueprint->interfaceOutputs.constBegin(); it != blueprint->interfaceOutputs.constEnd(); ++it) {
+        int dim = blueprint->interfaceDim(it.value());
+        if (dim > 0) sensors[it.key()] = makeValue(dim);
     }
 }
 

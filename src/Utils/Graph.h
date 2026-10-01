@@ -7,25 +7,11 @@
 #include "Spatial.h"
 
 
-struct ActuatorDef {
-    QString type;              // "position" | "velocity" | "motor" -- empty means no actuator
-    QList<double> range;
-    QList<double> ctrlrange;
-    QList<double> forceRange;
-    double kp = 0.0;
-    double kv = 0.0;
-};
-
-struct SensorDef {
-    QString type;               // e.g. "jointpos", "jointvel", "accelerometer" -- empty means no sensor
-};
-
-
-
 struct Geom {
+    QString id;
     Position pos;
     Rotation rot;
-    double mass;
+    double mass = 0.0;
 
     QString type;
     QString mesh;
@@ -39,7 +25,6 @@ struct Geom {
 struct Site {
     QString id;
     Transform localTransform;
-    SensorDef sensor;           // optional site-attached sensor (accelerometer, etc.)
 };
 
 
@@ -70,9 +55,6 @@ struct Edge {
     double armature = 0.0;
     double frictionloss = 0.0;
     bool collision = true;
-
-    ActuatorDef actuator;        // optional actuator driving this joint
-    SensorDef sensor;            // optional joint-attached sensor (jointpos/jointvel)
 };
 
 

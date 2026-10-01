@@ -253,6 +253,11 @@ bool LibraryManager::load(const QString& models_dir) {
             itemFile.close();
 
             ComponentBlueprint* blueprint = new ComponentBlueprint(absoluteItemPath);
+            if (!blueprint->isValid) {
+                Log::error("Skipping component " + absoluteItemPath + ": " + blueprint->errorString);
+                delete blueprint;
+                continue;
+            }
 
             // Fixed in ComponentData now
             // if (!blueprint->meta.iconPath.isEmpty()) {
@@ -292,10 +297,27 @@ bool LibraryManager::loadLocalComponents(QString project_dir){
             QString componentPath = componentsDir + "/" + componentFolder;
             QString rsdefPath = componentPath + "/" + componentFolder + ".rsdef";
             if(QFile::exists(rsdefPath)){
-                // [TODO] : check for duplicate model id
-
                 ComponentBlueprint* blueprint = new ComponentBlueprint(rsdefPath);
+                if (!blueprint->isValid) {
+                    Log::error("Skipping local component " + rsdefPath + ": " + blueprint->errorString);
+                    delete blueprint;
+                    continue;
+                }
                 QString model_id = blueprint->getModelId();
+
+                // `categories` was reset by load() for this project open, so it only lists the
+                // catalog and the local components registered so far -- `blueprints` itself
+                // still holds entries from earlier opens and cannot be used for this check.
+                bool duplicate = false;
+                for (const CategoryDef& cat : categories) {
+                    if (cat.modelIds.contains(model_id)) { duplicate = true; break; }
+                }
+                if (category.modelIds.contains(model_id)) duplicate = true;
+                if (duplicate) {
+                    Log::error("Skipping local component " + rsdefPath + ": model id '" + model_id + "' is already registered");
+                    delete blueprint;
+                    continue;
+                }
 
                 blueprints.insert(model_id, blueprint);
                 category.modelIds.append(model_id);

@@ -1,3 +1,5 @@
+NOTE: NOT FULLY UPDATED TO MATCH CURRENT CODEBASE
+
 # Command System (Undo/Redo Architecture)
 
 How user edits flow through RoboticsStudio, and how to add new undoable actions.

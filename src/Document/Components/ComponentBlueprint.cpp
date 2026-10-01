@@ -187,14 +187,15 @@ void ComponentBlueprint::traverseGraph(QString& outXML, const QString& currentNo
         const Geom& geom = currentNode.geoms[i];
 
         outXML += indent;
-        outXML += QString("  <geom type=\"%1\" pos=\"%2 %3 %4\" quat=\"%5 %6 %7 %8\" mass=\"%9\"")
+        outXML += QString("  <geom type=\"%1\" pos=\"%2 %3 %4\" quat=\"%5 %6 %7 %8\"")
                             .arg(geom.type)
                             .arg(geom.pos.x).arg(geom.pos.y).arg(geom.pos.z)
-                            .arg(geom.rot.w).arg(geom.rot.x).arg(geom.rot.y).arg(geom.rot.z)
-                            .arg(geom.mass);
+                            .arg(geom.rot.w).arg(geom.rot.x).arg(geom.rot.y).arg(geom.rot.z);
 
-        if (i == 0 && currentNode.mass > 0.0) {
-            outXML += QString(" mass=\"%1\"").arg(currentNode.mass);
+        // overrideGeom: the <inertial> above is authoritative, geoms carry no mass.
+        // Otherwise every geom carries its own mass.
+        if (!currentNode.overrideGeom) {
+            outXML += QString(" mass=\"%1\"").arg(geom.mass);
         }
 
         if (geom.type == "mesh" && !geom.mesh.isEmpty()) {
@@ -225,12 +226,16 @@ void ComponentBlueprint::traverseGraph(QString& outXML, const QString& currentNo
     }
 
     for (const Site& site : currentNode.sites) {
-        outXML += indent + QString("<site name=\"%1%2\" pos=\"%3 %4 %5\"/>\n")
+        outXML += indent + QString("<site name=\"%1%2\" pos=\"%3 %4 %5\" quat=\"%6 %7 %8 %9\"/>\n")
                         .arg(prefix)
                         .arg(site.id)
                         .arg(site.localTransform.position.x)
                         .arg(site.localTransform.position.y)
-                        .arg(site.localTransform.position.z);
+                        .arg(site.localTransform.position.z)
+                        .arg(site.localTransform.rotation.w)
+                        .arg(site.localTransform.rotation.x)
+                        .arg(site.localTransform.rotation.y)
+                        .arg(site.localTransform.rotation.z);
     }
 
     if (!parentNodeId.isEmpty()) {
@@ -285,46 +290,48 @@ void ComponentBlueprint::traverseGraph(QString& outXML, const QString& currentNo
 
 
 /*
- * Dynamically constructs the <actuator> tags based on the IODef specifications.
- * Identifies the specific joint the actuator controls and enforces force limits.
+ * Constructs the <actuator> tags from devices.actuators. Each actuator is
+ * named comp_<uid>_<deviceId> and drives its target joint or tendon.
  */
 QString ComponentBlueprint::generateActuatorXML(const int uid) const {
     QString xml = "";
     QString prefix = "comp_" + QString::number(uid) + "_";
 
-    for (const Edge& edge : kinematics.getEdges()) {
-        if (!edge.actuator.type.isEmpty()) {
+    for (const ActuatorDef& act : actuators) {
+        const DeviceTypeInfo* row = DeviceTypes::find(DeviceFamily::Actuator, act.type);
+        if (!row) continue;
 
-            QString actuatorOut = QString("<%1 name=\"%2%3_actuator\" joint=\"%2%3\"")
-                                    .arg(edge.actuator.type)
-                                    .arg(prefix)
-                                    .arg(edge.id);
+        QString actuatorOut = QString("<%1 name=\"%2%3\" %4=\"%2%5\"")
+                                .arg(row->mjcfElement)
+                                .arg(prefix)
+                                .arg(act.id)
+                                .arg(act.target.kind)
+                                .arg(act.target.id);
 
-            if (edge.actuator.ctrlrange.size() == 2) {
-                actuatorOut += QString(" ctrlrange=\"%1 %2\" ctrllimited=\"true\"")
-                                .arg(edge.actuator.ctrlrange[0])
-                                .arg(edge.actuator.ctrlrange[1]);
-            }
-
-            if (edge.actuator.forceRange.size() == 2) {
-                actuatorOut += QString(" forcerange=\"%1 %2\"")
-                                .arg(edge.actuator.forceRange[0])
-                                .arg(edge.actuator.forceRange[1]);
-            }
-
-            if (edge.actuator.type == "position") {
-                actuatorOut += QString(" kp=\"%1\" kv=\"%2\"").arg(edge.actuator.kp).arg(edge.actuator.kv);
-            }
-            else if (edge.actuator.type == "velocity") {
-                actuatorOut += QString(" kv=\"%1\"").arg(edge.actuator.kv);
-            }
-            else if (edge.actuator.type == "motor") {
-                actuatorOut += QString(" gear=\"1\"");
-            }
-
-            actuatorOut += "/>\n";
-            xml += actuatorOut;
+        if (act.ctrlrange.size() == 2) {
+            actuatorOut += QString(" ctrlrange=\"%1 %2\" ctrllimited=\"true\"")
+                            .arg(act.ctrlrange[0])
+                            .arg(act.ctrlrange[1]);
         }
+
+        if (act.forceRange.size() == 2) {
+            actuatorOut += QString(" forcerange=\"%1 %2\"")
+                            .arg(act.forceRange[0])
+                            .arg(act.forceRange[1]);
+        }
+
+        if (act.type == "position") {
+            actuatorOut += QString(" kp=\"%1\" kv=\"%2\"").arg(act.kp).arg(act.kv);
+        }
+        else if (act.type == "velocity") {
+            actuatorOut += QString(" kv=\"%1\"").arg(act.kv);
+        }
+        else if (act.type == "motor") {
+            actuatorOut += QString(" gear=\"1\"");
+        }
+
+        actuatorOut += "/>\n";
+        xml += actuatorOut;
     }
     return xml;
 }
@@ -350,31 +357,69 @@ QString ComponentBlueprint::generateContactsXML(const int uid) const {
 
 
 
-QString ComponentBlueprint::generateSensorXML(const int uid) const {
+/*
+ * Constructs the <sensor> tags from devices.sensors, named
+ * comp_<uid>_<deviceId>. The target attribute (joint=/site=/tendon=) follows
+ * the target kind.
+ */
+QString ComponentBlueprint::generateBasicSensorXML(const int uid) const {
+    logUnsupportedDevices();
+
     QString xml = "";
     QString prefix = "comp_" + QString::number(uid) + "_";
 
-    for (const Edge& edge : kinematics.getEdges()) {
-        if (!edge.sensor.type.isEmpty()) {
-            xml += QString("<%1 name=\"%2%3_sensor\" joint=\"%2%3\"/>\n")
-                    .arg(edge.sensor.type)
-                    .arg(prefix)
-                    .arg(edge.id);
-        }
-    }
+    for (const SensorDef& sensor : sensors) {
+        const DeviceTypeInfo* row = DeviceTypes::find(DeviceFamily::Sensor, sensor.type);
+        if (!row) continue;
 
-    for (const Node& node : kinematics.getNodes()) {
-        for (const Site& site : node.sites) {
-            if (!site.sensor.type.isEmpty()) {
-                xml += QString("<%1 name=\"%2%3_sensor\" site=\"%2%3\"/>\n")
-                        .arg(site.sensor.type)
-                        .arg(prefix)
-                        .arg(site.id);
-            }
-        }
+        xml += QString("<%1 name=\"%2%3\" %4=\"%2%5\"/>\n")
+                .arg(row->mjcfElement)
+                .arg(prefix)
+                .arg(sensor.id)
+                .arg(sensor.target.kind)
+                .arg(sensor.target.id);
     }
 
     return xml;
+}
+
+
+
+
+/*
+ * Fixed tendons (measurement only). A fixed tendon's length is
+ * sum(coef * joint qpos). traverseGraph negates a joint's axis when it walks
+ * body_b -> body_a, and that negation is exactly what makes qpos equal the
+ * joint's logical value (rotation of body_b relative to body_a about the
+ * joint axis) whatever the walk direction. Coefficients written in the logical
+ * direction are therefore emitted unchanged; no per-instance orientation
+ * handling is needed.
+ */
+QString ComponentBlueprint::generateTendonXML(const int uid) const {
+    QString xml = "";
+    QString prefix = "comp_" + QString::number(uid) + "_";
+
+    for (const TendonDef& tendon : tendons) {
+        xml += QString("<fixed name=\"%1%2\">\n").arg(prefix, tendon.id);
+        for (const TendonTerm& term : tendon.terms) {
+            xml += QString("    <joint joint=\"%1%2\" coef=\"%3\"/>\n").arg(prefix, term.joint).arg(term.coef);
+        }
+        xml += "</fixed>\n";
+    }
+    return xml;
+}
+
+
+
+
+// Cameras and displays are loaded and round-tripped but have no XML/runtime
+// production yet. Logged once per blueprint.
+void ComponentBlueprint::logUnsupportedDevices() const {
+    if (unsupportedDevicesLogged) return;
+    if (cameras.isEmpty() && displays.isEmpty()) return;
+    unsupportedDevicesLogged = true;
+    Log::info(QString("ComponentBlueprint: model '%1' declares %2 camera(s) and %3 display(s); not supported yet, skipped")
+                .arg(modelId).arg(cameras.size()).arg(displays.size()));
 }
 
 

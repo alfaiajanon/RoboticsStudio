@@ -1,3 +1,5 @@
+NOTE: NOT FULLY UPDATED TO MATCH CURRENT CODEBASE
+
 # Telemetry & Plotting
 
 How simulation data gets from MuJoCo to the graphs you see in the Plot panel.

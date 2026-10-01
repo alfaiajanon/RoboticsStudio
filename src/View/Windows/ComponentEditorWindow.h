@@ -67,7 +67,8 @@ private:
     QTabWidget* tabWidget;
     QVBoxLayout* metaLayout;
     QVBoxLayout* constructionLayout;
-    QVBoxLayout* ioLayout;
+    QVBoxLayout* devicesLayout;
+    QVBoxLayout* interfaceLayout;
     QVBoxLayout* emulatorLayout;
     QSet<QString> foldedSections;
 
@@ -90,8 +91,13 @@ private:
     void build_sites(QFormLayout* bodyForm, const QString& bodyId);
     void build_joints(QVBoxLayout* parent);
     void build_connectors();
-    void build_io();
-    void build_io_list(QVBoxLayout* parent, const QString& title, QMap<QString, IODef>& target);
+    void build_tendons(QVBoxLayout* parent);
+    void build_devices();
+    void build_interface();
+    void build_interface_list(QVBoxLayout* parent, const QString& title, QMap<QString, InterfaceDef>& target, bool isInput);
+
+    struct TargetRefs;
+    TargetRefs addTargetFields(QFormLayout* form, QWidget* parent, const TargetRef& target, const QStringList& allowedKinds);
     void build_emulator();
     void build_data();
 

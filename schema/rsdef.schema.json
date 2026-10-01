@@ -1,21 +1,25 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
-    "title": "Robotics Studio Component Definition (RSDEF)",
+    "title": "Robotics Studio Component Definition (RSDEF), schema 2",
+    "description": "Structure of an .rsdef file. JSON Schema cannot express cross-references, so these are checked elsewhere (ComponentData::fromJson and tools/validate_rsdef.py): ids unique within their kind (device ids across all device families; signal names across inputs and outputs), every target id resolves, joint and connector bodies exist, default_body is a body, tendon joints exist.",
     "type": "object",
-    "required": [
-        "id",
-        "meta",
-        "kinematics",
-        "connectors"
-    ],
+    "additionalProperties": false,
+    "required": ["schema", "id", "meta", "kinematics", "connectors"],
     "properties": {
+        "$schema": { "type": "string" },
+        "schema": {
+            "const": 2,
+            "description": "Format version. The loader rejects anything else."
+        },
         "id": {
             "type": "string",
-            "description": "Unique identifier for the component type"
+            "minLength": 1,
+            "description": "Unique identifier for the component type (top level, not inside meta)"
         },
         "meta": {
             "type": "object",
             "required": ["name", "version"],
+            "additionalProperties": false,
             "properties": {
                 "name": { "type": "string" },
                 "version": { "type": "string" },
@@ -25,6 +29,7 @@
         },
         "resources": {
             "type": "object",
+            "additionalProperties": false,
             "properties": {
                 "meshes": {
                     "type": "object",
@@ -38,112 +43,38 @@
         },
         "specs": {
             "type": "object",
-            "additionalProperties": { "type": "number" }
+            "description": "Free-form."
         },
         "pins": {
             "type": "array",
             "items": {
                 "type": "object",
                 "required": ["id"],
+                "additionalProperties": false,
                 "properties": {
                     "id": { "type": "string" },
-                    "voltage_range": {
-                        "type": "array",
-                        "items": { "type": "number" },
-                        "minItems": 2,
-                        "maxItems": 2
-                    },
+                    "voltage_range": { "$ref": "#/definitions/pair" },
                     "description": { "type": "string" }
                 }
             }
         },
         "kinematics": {
             "type": "object",
-            "required": ["bodies"],
+            "required": ["default_body", "bodies"],
+            "additionalProperties": false,
             "properties": {
                 "default_body": { "type": "string" },
                 "bodies": {
                     "type": "array",
-                    "items": {
-                        "type": "object",
-                        "required": ["id"],
-                        "properties": {
-                            "id": { "type": "string" },
-                            "mass": { "type": "number" },
-                            "transform": { "$ref": "#/definitions/transform" },
-                            "geoms": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "type": { "type": "string" },
-                                        "mesh": { "type": "string" },
-                                        "material": { "type": "string" },
-                                        "size": {
-                                            "type": "array",
-                                            "items": { "type": "number" }
-                                        },
-                                        "pos": {
-                                            "type": "array",
-                                            "items": { "type": "number" },
-                                            "minItems": 3,
-                                            "maxItems": 3
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    "items": { "$ref": "#/definitions/body" }
                 },
                 "joints": {
                     "type": "array",
-                    "items": {
-                        "type": "object",
-                        "required": ["id", "body_a", "body_b", "type", "range"],
-                        "properties": {
-                            "id": { "type": "string" },
-                            "body_a": { "type": "string" },
-                            "body_b": { "type": "string" },
-                            "type": { "type": "string" },
-                            "transform": { "$ref": "#/definitions/transform" },
-                            "range": {
-                                "type": "array",
-                                "items": { "type": "number" },
-                                "minItems": 2,
-                                "maxItems": 2
-                            },
-                            "damping": { "type": "number" },
-                            "armature": { "type": "number" },
-                            "frictionloss": { "type": "number" },
-                            "collision": { "type": "boolean" },
-                            "actuator": {
-                                "type": "object",
-                                "properties": {
-                                    "type": { "type": "string" },
-                                    "ctrlrange": {
-                                        "type": "array",
-                                        "items": { "type": "number" },
-                                        "minItems": 2,
-                                        "maxItems": 2
-                                    },
-                                    "kp": { "type": "number" },
-                                    "kv": { "type": "number" },
-                                    "forcerange": {
-                                        "type": "array",
-                                        "items": { "type": "number" },
-                                        "minItems": 2,
-                                        "maxItems": 2
-                                    }
-                                }
-                            },
-                            "sensor": {
-                                "type": "object",
-                                "properties": {
-                                    "type": { "type": "string" }
-                                }
-                            }
-                        }
-                    }
+                    "items": { "$ref": "#/definitions/joint" }
+                },
+                "tendons": {
+                    "type": "array",
+                    "items": { "$ref": "#/definitions/tendon" }
                 }
             }
         },
@@ -152,12 +83,14 @@
             "items": {
                 "type": "object",
                 "required": ["id", "body"],
+                "additionalProperties": false,
                 "properties": {
                     "id": { "type": "string" },
                     "body": { "type": "string" },
                     "description": { "type": "string" },
                     "mechanics": {
                         "type": "object",
+                        "additionalProperties": false,
                         "properties": {
                             "snap_angles": {
                                 "type": "array",
@@ -169,70 +102,52 @@
                 }
             }
         },
-        "io": {
+        "devices": {
             "type": "object",
+            "description": "Things attached to the structure. Omit empty families. Unknown families are rejected (typo detection). Cameras and displays are loaded and saved but not simulated yet.",
+            "additionalProperties": false,
             "properties": {
-                "inputs": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "required": ["name", "target_joint"],
-                        "properties": {
-                            "name": { "type": "string" },
-                            "unit": { "type": "string" },
-                            "data_type": { "type": "string" },
-                            "channel_type": { "type": "string" },
-                            "physical": { "type": "boolean" },
-                            "target_joint": { "type": "string" },
-                            "range": {
-                                "type": "array",
-                                "items": { "type": "number" },
-                                "minItems": 2,
-                                "maxItems": 2
-                            },
-                            "pin_required": {
-                                "type": "array",
-                                "items": { "type": "string" }
-                            }
-                        }
-                    }
-                },
-                "outputs": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "required": ["name", "target_joint"],
-                        "properties": {
-                            "name": { "type": "string" },
-                            "unit": { "type": "string" },
-                            "data_type": { "type": "string" },
-                            "channel_type": { "type": "string" },
-                            "physical": { "type": "boolean" },
-                            "target_joint": { "type": "string" },
-                            "pin_required": {
-                                "type": "array",
-                                "items": { "type": "string" }
-                            }
-                        }
-                    }
-                }
+                "actuators": { "type": "array", "items": { "$ref": "#/definitions/actuator" } },
+                "sensors": { "type": "array", "items": { "$ref": "#/definitions/sensor" } },
+                "cameras": { "type": "array", "items": { "$ref": "#/definitions/camera" } },
+                "displays": { "type": "array", "items": { "$ref": "#/definitions/display" } }
+            }
+        },
+        "interface": {
+            "type": "object",
+            "description": "The component's public signals.",
+            "additionalProperties": false,
+            "properties": {
+                "inputs": { "type": "array", "items": { "$ref": "#/definitions/inputSignal" } },
+                "outputs": { "type": "array", "items": { "$ref": "#/definitions/outputSignal" } }
             }
         },
         "emulator": {
             "type": "object",
+            "additionalProperties": false,
             "properties": {
                 "type": { "type": "string" },
-                "source": { "type": ["string", "null"] },
-                "parameters": {
-                    "type": "object",
-                    "additionalProperties": { "type": "number" }
-                }
+                "source": { "type": ["object", "null"] },
+                "parameters": { "type": "object" }
             }
         }
     },
     "definitions": {
+        "pair": {
+            "type": "array",
+            "items": { "type": "number" },
+            "minItems": 2,
+            "maxItems": 2
+        },
+        "resolution": {
+            "type": "array",
+            "items": { "type": "integer", "minimum": 1 },
+            "minItems": 2,
+            "maxItems": 2
+        },
         "transform": {
             "type": "object",
+            "additionalProperties": false,
             "properties": {
                 "pos": {
                     "type": "array",
@@ -247,6 +162,322 @@
                     "maxItems": 4
                 }
             }
+        },
+        "body": {
+            "type": "object",
+            "description": "overrideGeom true: the body's mass/inertia are authoritative and geoms carry no mass. Otherwise every geom carries its own mass and the body has none.",
+            "required": ["id"],
+            "additionalProperties": false,
+            "properties": {
+                "id": { "type": "string" },
+                "overrideGeom": { "type": "boolean" },
+                "mass": { "type": "number" },
+                "inertia": { "type": "number", "description": "One scalar, used for all three principal axes." },
+                "transform": { "$ref": "#/definitions/transform" },
+                "geoms": { "type": "array", "items": { "$ref": "#/definitions/geom" } },
+                "sites": { "type": "array", "items": { "$ref": "#/definitions/site" } }
+            },
+            "if": {
+                "properties": { "overrideGeom": { "const": true } },
+                "required": ["overrideGeom"]
+            },
+            "then": {
+                "required": ["mass", "inertia"],
+                "properties": {
+                    "geoms": { "items": { "properties": { "mass": false } } }
+                }
+            },
+            "else": {
+                "properties": {
+                    "mass": false,
+                    "inertia": false,
+                    "geoms": { "items": { "required": ["mass"] } }
+                }
+            }
+        },
+        "geom": {
+            "type": "object",
+            "description": "Extra keys are tolerated (and ignored by the loader), e.g. the wheel's unused 'friction'.",
+            "required": ["id", "type"],
+            "properties": {
+                "id": { "type": "string", "minLength": 1 },
+                "type": { "enum": ["mesh", "box", "sphere", "capsule", "cylinder"] },
+                "mesh": { "type": "string" },
+                "material": { "type": "string" },
+                "color": {
+                    "type": "array",
+                    "items": { "type": "number" },
+                    "minItems": 3,
+                    "maxItems": 4,
+                    "description": "Only used when the geom has no material."
+                },
+                "size": { "type": "array", "items": { "type": "number" } },
+                "pos": {
+                    "type": "array",
+                    "items": { "type": "number" },
+                    "minItems": 3,
+                    "maxItems": 3
+                },
+                "quat": {
+                    "type": "array",
+                    "items": { "type": "number" },
+                    "minItems": 4,
+                    "maxItems": 4
+                },
+                "mass": { "type": "number" }
+            }
+        },
+        "site": {
+            "type": "object",
+            "description": "A named frame. Sensors and cameras attach to it through devices.",
+            "required": ["id"],
+            "additionalProperties": false,
+            "properties": {
+                "id": { "type": "string", "minLength": 1 },
+                "transform": { "$ref": "#/definitions/transform" }
+            }
+        },
+        "joint": {
+            "type": "object",
+            "description": "Passive properties only. Actuators and sensors are devices that target the joint. A joint's value is the rotation of body_b relative to body_a about the joint axis.",
+            "required": ["id", "body_a", "body_b", "type"],
+            "additionalProperties": false,
+            "properties": {
+                "id": { "type": "string", "minLength": 1 },
+                "body_a": { "type": "string" },
+                "body_b": { "type": "string" },
+                "type": { "enum": ["hinge", "slide", "ball", "free"] },
+                "transform": { "$ref": "#/definitions/transform" },
+                "range": { "$ref": "#/definitions/pair" },
+                "damping": { "type": "number" },
+                "armature": { "type": "number" },
+                "frictionloss": { "type": "number" },
+                "collision": { "type": "boolean" }
+            }
+        },
+        "tendon": {
+            "type": "object",
+            "description": "Fixed tendon: length = sum(coef * joint value). Coefficients are in each joint's logical direction (body_a -> body_b) and are used as written.",
+            "required": ["id", "type", "terms"],
+            "additionalProperties": false,
+            "properties": {
+                "id": { "type": "string", "minLength": 1 },
+                "type": { "const": "fixed" },
+                "terms": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "required": ["joint", "coef"],
+                        "additionalProperties": false,
+                        "properties": {
+                            "joint": { "type": "string" },
+                            "coef": { "type": "number" }
+                        }
+                    }
+                }
+            }
+        },
+        "targetOf": {
+            "type": "object",
+            "description": "target {kind, id}; see the per-family definitions for the allowed kinds.",
+            "required": ["kind", "id"],
+            "additionalProperties": false,
+            "properties": {
+                "kind": { "type": "string" },
+                "id": { "type": "string", "minLength": 1 }
+            }
+        },
+        "actuator": {
+            "type": "object",
+            "required": ["id", "type", "target"],
+            "additionalProperties": false,
+            "properties": {
+                "id": { "type": "string", "minLength": 1 },
+                "type": { "enum": ["position", "velocity", "motor"] },
+                "target": {
+                    "allOf": [
+                        { "$ref": "#/definitions/targetOf" },
+                        { "properties": { "kind": { "enum": ["joint", "tendon"] } } }
+                    ]
+                },
+                "ctrlrange": { "$ref": "#/definitions/pair" },
+                "forcerange": { "$ref": "#/definitions/pair" },
+                "kp": { "type": "number" },
+                "kv": { "type": "number" }
+            }
+        },
+        "sensor": {
+            "type": "object",
+            "description": "Observes a native MuJoCo quantity. Other MuJoCo sensor types are reserved and rejected.",
+            "required": ["id", "type", "target"],
+            "additionalProperties": false,
+            "properties": {
+                "id": { "type": "string", "minLength": 1 },
+                "type": { "enum": ["jointpos", "jointvel", "tendonpos", "tendonvel", "accelerometer", "gyro"] },
+                "target": { "$ref": "#/definitions/targetOf" }
+            },
+            "allOf": [
+                {
+                    "if": { "properties": { "type": { "enum": ["jointpos", "jointvel"] } } },
+                    "then": { "properties": { "target": { "properties": { "kind": { "const": "joint" } } } } }
+                },
+                {
+                    "if": { "properties": { "type": { "enum": ["tendonpos", "tendonvel"] } } },
+                    "then": { "properties": { "target": { "properties": { "kind": { "const": "tendon" } } } } }
+                },
+                {
+                    "if": { "properties": { "type": { "enum": ["accelerometer", "gyro"] } } },
+                    "then": { "properties": { "target": { "properties": { "kind": { "const": "site" } } } } }
+                }
+            ]
+        },
+        "camera": {
+            "type": "object",
+            "required": ["id", "type", "target", "resolution", "fovy"],
+            "additionalProperties": false,
+            "properties": {
+                "id": { "type": "string", "minLength": 1 },
+                "type": { "enum": ["rgb", "depth"] },
+                "target": {
+                    "allOf": [
+                        { "$ref": "#/definitions/targetOf" },
+                        { "properties": { "kind": { "const": "site" } } }
+                    ]
+                },
+                "resolution": { "$ref": "#/definitions/resolution" },
+                "fovy": { "type": "number", "exclusiveMinimum": 0 }
+            }
+        },
+        "display": {
+            "type": "object",
+            "description": "A pixel buffer shown on a geom. Displays take no 'type'.",
+            "required": ["id", "target", "resolution"],
+            "additionalProperties": false,
+            "properties": {
+                "id": { "type": "string", "minLength": 1 },
+                "target": {
+                    "allOf": [
+                        { "$ref": "#/definitions/targetOf" },
+                        { "properties": { "kind": { "const": "geom" } } }
+                    ]
+                },
+                "resolution": { "$ref": "#/definitions/resolution" }
+            }
+        },
+        "domain": {
+            "description": "Advisory value domain in the signal's own unit. Omitted means unbounded.",
+            "oneOf": [
+                {
+                    "type": "object",
+                    "required": ["type", "parameters"],
+                    "additionalProperties": false,
+                    "properties": {
+                        "type": { "const": "ranged" },
+                        "parameters": {
+                            "type": "object",
+                            "required": ["min", "max"],
+                            "additionalProperties": false,
+                            "properties": {
+                                "min": { "type": "number" },
+                                "max": { "type": "number" }
+                            }
+                        }
+                    }
+                },
+                {
+                    "type": "object",
+                    "required": ["type"],
+                    "additionalProperties": false,
+                    "properties": {
+                        "type": { "const": "unbounded" },
+                        "parameters": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {}
+                        }
+                    }
+                }
+            ]
+        },
+        "signalCommon": {
+            "type": "object",
+            "description": "shape and dim are derived from the target device type; only emulator-kind signals state channel_type and dim.",
+            "required": ["name", "physical", "target"],
+            "properties": {
+                "name": { "type": "string", "minLength": 1, "description": "Unique across inputs and outputs." },
+                "unit": { "type": "string" },
+                "domain": { "$ref": "#/definitions/domain" },
+                "physical": { "type": "boolean", "description": "true if a real device would expose it (a pin), false for simulation-only ground truth." },
+                "componentLabels": { "type": "array", "items": { "type": "string" } },
+                "channel_type": { "enum": ["scalar", "vector"] },
+                "dim": { "type": "integer", "minimum": 1 }
+            },
+            "if": {
+                "properties": { "target": { "properties": { "kind": { "const": "emulator" } }, "required": ["kind"] } },
+                "required": ["target"]
+            },
+            "then": {
+                "required": ["channel_type", "dim"],
+                "if": { "properties": { "channel_type": { "const": "scalar" } } },
+                "then": { "properties": { "dim": { "const": 1 } } }
+            },
+            "else": {
+                "properties": { "channel_type": false, "dim": false }
+            }
+        },
+        "emulatorTarget": {
+            "type": "object",
+            "description": "A signal with no engine-side footprint; the emulator owns it. Takes no id.",
+            "required": ["kind"],
+            "additionalProperties": false,
+            "properties": { "kind": { "const": "emulator" } }
+        },
+        "inputSignal": {
+            "description": "joint: pose in edit mode and emulator command in play mode; display: pixel input; actuator: reserved fallback for commands with no joint (play-mode ctrl only); emulator: emulator-owned signal.",
+            "allOf": [
+                { "$ref": "#/definitions/signalCommon" },
+                {
+                    "additionalProperties": false,
+                    "properties": {
+                        "name": {}, "unit": {}, "domain": {}, "physical": {}, "componentLabels": {}, "channel_type": {}, "dim": {},
+                        "target": {
+                            "oneOf": [
+                                {
+                                    "allOf": [
+                                        { "$ref": "#/definitions/targetOf" },
+                                        { "properties": { "kind": { "enum": ["joint", "display", "actuator"] } } }
+                                    ]
+                                },
+                                { "$ref": "#/definitions/emulatorTarget" }
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        "outputSignal": {
+            "description": "sensor: value read from that sensor; camera: image; emulator: emulator-owned signal.",
+            "allOf": [
+                { "$ref": "#/definitions/signalCommon" },
+                {
+                    "additionalProperties": false,
+                    "properties": {
+                        "name": {}, "unit": {}, "domain": {}, "physical": {}, "componentLabels": {}, "channel_type": {}, "dim": {},
+                        "target": {
+                            "oneOf": [
+                                {
+                                    "allOf": [
+                                        { "$ref": "#/definitions/targetOf" },
+                                        { "properties": { "kind": { "enum": ["sensor", "camera"] } } }
+                                    ]
+                                },
+                                { "$ref": "#/definitions/emulatorTarget" }
+                            ]
+                        }
+                    }
+                }
+            ]
         }
     }
 }

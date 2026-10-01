@@ -255,6 +255,11 @@ void EditorWindow::setupMenuBar() {
         }
         QJsonDocument doc=QJsonDocument::fromJson(file.readAll());
         ComponentData data=ComponentData::fromJson(doc.object(), "");
+        if(!data.isValid){
+            Log::error("Embedded servo template is invalid: " + data.errorString);
+            return;
+        }
+        data.modelId.clear();   // a template seeds a NEW component; an empty id is what makes the editor treat it as one
         ComponentEditorWindow* dialog = new ComponentEditorWindow(data,this);
         dialog->show();
     });

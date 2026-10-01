@@ -1,4 +1,5 @@
 {
+    "schema": 2,
     "id": "motor_dc_gear_60rpm",
     "meta": {
         "name": "12V 60RPM DC Gear BO Motor (Dual Shaft)",
@@ -6,7 +7,6 @@
         "author": "Anon",
         "icon_path": "dc_gear_60rpm.png"
     },
-
     "resources": {
         "meshes": {
             "mesh_body": "meshes/tt_motor.obj",
@@ -16,7 +16,6 @@
             "mat_motor": "textures/tex_tt_motor.png"
         }
     },
-
     "specs": {
         "voltage_max": 12.0,
         "voltage_min": 3.0,
@@ -24,43 +23,76 @@
         "max_speed_rad": 6.28,
         "weight_kg": 0.035
     },
-
     "pins": [
         {
             "id": "motor_a",
-            "voltage_range": [-12.0, 12.0],
+            "voltage_range": [
+                -12.0,
+                12.0
+            ],
             "description": "Motor terminal A (H-Bridge Output 1)"
         },
         {
             "id": "motor_b",
-            "voltage_range": [-12.0, 12.0],
+            "voltage_range": [
+                -12.0,
+                12.0
+            ],
             "description": "Motor terminal B (H-Bridge Output 2)"
         }
     ],
-
     "kinematics": {
         "default_body": "base",
         "bodies": [
             {
                 "id": "base",
-                "mass": 0.030,
+                "overrideGeom": false,
                 "transform": {
-                    "pos": [0, 0, 0],
-                    "quat": [1, 0, 0, 0]
+                    "pos": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "quat": [
+                        1,
+                        0,
+                        0,
+                        0
+                    ]
                 },
                 "geoms": [
-                    { "type": "mesh", "mesh": "mesh_body", "material": "mat_motor" }
+                    {
+                        "id": "base_geom",
+                        "type": "mesh",
+                        "mesh": "mesh_body",
+                        "material": "mat_motor",
+                        "mass": 0.03
+                    }
                 ]
             },
             {
                 "id": "axle",
-                "mass": 0.005,
+                "overrideGeom": false,
                 "transform": {
-                    "pos": [0, 0.0, 0],
-                    "quat": [1, 0, 0, 0]
+                    "pos": [
+                        0,
+                        0.0,
+                        0
+                    ],
+                    "quat": [
+                        1,
+                        0,
+                        0,
+                        0
+                    ]
                 },
                 "geoms": [
-                    { "type": "mesh", "mesh": "mesh_shaft" }
+                    {
+                        "id": "axle_geom",
+                        "type": "mesh",
+                        "mesh": "mesh_shaft",
+                        "mass": 0.005
+                    }
                 ]
             }
         ],
@@ -71,94 +103,183 @@
                 "body_b": "axle",
                 "type": "hinge",
                 "transform": {
-                    "pos": [0, 0.0, 0],
-                    "quat": [0.7071, 0.7071, 0, 0]
+                    "pos": [
+                        0,
+                        0.0,
+                        0
+                    ],
+                    "quat": [
+                        0.7071,
+                        0.7071,
+                        0,
+                        0
+                    ]
                 },
                 "damping": 0.005,
                 "armature": 0.01,
                 "frictionloss": 0.01,
-                "collision": false,
-                "actuator": {
-                    "type": "velocity",
-                    "ctrlrange": [-6.28, 6.28],
-                    "kv": 10.0,
-                    "forcerange": [-0.35, 0.35]
-                },
-                "sensor": {
-                    "type": "jointvel"
-                }
+                "collision": false
             }
         ]
     },
-
     "connectors": [
         {
             "id": "shaft_left",
             "body": "axle",
             "description": "Left-side flattened TT shaft",
-            "mechanics": { "snap_angles": [0, 180] },
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    180
+                ]
+            },
             "transform": {
-                "pos": [0, -0.02, 0],
-                "quat": [0.7071, 0.7071, 0, 0]
+                "pos": [
+                    0,
+                    -0.02,
+                    0
+                ],
+                "quat": [
+                    0.7071,
+                    0.7071,
+                    0,
+                    0
+                ]
             }
         },
         {
             "id": "shaft_right",
             "body": "axle",
             "description": "Right-side flattened TT shaft",
-            "mechanics": { "snap_angles": [0, 180] },
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    180
+                ]
+            },
             "transform": {
-                "pos": [0, 0.002, 0],
-                "quat": [0.7071, -0.7071, 0, 0]
+                "pos": [
+                    0,
+                    0.002,
+                    0
+                ],
+                "quat": [
+                    0.7071,
+                    -0.7071,
+                    0,
+                    0
+                ]
             }
         },
         {
             "id": "chassis_mount_1",
             "body": "base",
             "description": "Right mounting hole",
-            "mechanics": { "snap_angles": [0, 90, 180, 270] },
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    90,
+                    180,
+                    270
+                ]
+            },
             "transform": {
-                "pos": [0, 0, 0.0205],
-                "quat": [0.7071, -0.7071, 0, 0]
+                "pos": [
+                    0,
+                    0,
+                    0.0205
+                ],
+                "quat": [
+                    0.7071,
+                    -0.7071,
+                    0,
+                    0
+                ]
             }
         },
         {
             "id": "chassis_mount_2",
             "body": "base",
             "description": "Left mounting hole",
-            "mechanics": { "snap_angles": [0, 90, 180, 270] },
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    90,
+                    180,
+                    270
+                ]
+            },
             "transform": {
-                "pos": [0, -0.0190, 0.0205],
-                "quat": [0.7071, 0.7071, 0, 0]
+                "pos": [
+                    0,
+                    -0.019,
+                    0.0205
+                ],
+                "quat": [
+                    0.7071,
+                    0.7071,
+                    0,
+                    0
+                ]
             }
         }
     ],
-
-    "io": {
+    "devices": {
+        "actuators": [
+            {
+                "id": "dc_motor",
+                "type": "velocity",
+                "target": {
+                    "kind": "joint",
+                    "id": "dc_joint"
+                },
+                "ctrlrange": [
+                    -6.28,
+                    6.28
+                ],
+                "forcerange": [
+                    -0.35,
+                    0.35
+                ],
+                "kv": 10.0
+            }
+        ],
+        "sensors": [
+            {
+                "id": "dc_vel",
+                "type": "jointvel",
+                "target": {
+                    "kind": "joint",
+                    "id": "dc_joint"
+                }
+            }
+        ]
+    },
+    "interface": {
         "inputs": [
             {
                 "name": "target_velocity",
                 "unit": "rad/s",
-                "data_type": "float",
-                "channel_type": "scalar",
                 "physical": true,
-                "target_joint": "dc_joint",
-                "pin_required": ["motor_a", "motor_b"]
+                "target": {
+                    "kind": "joint",
+                    "id": "dc_joint"
+                }
             }
         ],
         "outputs": [
             {
                 "name": "current_velocity",
                 "unit": "rad/s",
-                "data_type": "float",
-                "channel_type": "scalar",
                 "physical": false,
-                "target_joint": "dc_joint",
-                "pin_required": ["motor_a", "motor_b"]
+                "target": {
+                    "kind": "sensor",
+                    "id": "dc_vel"
+                }
             }
         ]
     },
-    "emulator":{
+    "emulator": {
         "type": "dc_gear_emulator",
         "source": null,
         "parameters": {

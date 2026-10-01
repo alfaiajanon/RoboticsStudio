@@ -19,11 +19,13 @@
 class ComponentBlueprint : public ComponentData {
     private:
         QString assetXML;
+        mutable bool unsupportedDevicesLogged = false;
 
 
 
         void parseKinematics();
         void traverseGraph(QString& outXML, const QString& currentNodeId, const QString& parentNodeId, const Transform& relTransform, QSet<QString>& visited, const int uid) const;
+        void logUnsupportedDevices() const;
 
     public:
         KinematicGraph kinematics;
@@ -40,6 +42,7 @@ class ComponentBlueprint : public ComponentData {
         QString generateTreeXML(const int uid, const QString& rootConnectorId, const Transform& globalTransform) const;
         QString generateContactsXML(const int uid) const;
         QString generateActuatorXML(const int uid) const;
-        QString generateSensorXML(const int uid) const;
+        QString generateBasicSensorXML(const int uid) const;
+        QString generateTendonXML(const int uid) const;
         Transform getConnectorRelativeTransform(const QString& connId) const;
 };
