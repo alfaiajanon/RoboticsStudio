@@ -24,6 +24,7 @@ class BodyMotionSource : public TelemetrySource {
 
         void capture(double time) override;
         std::any snapshotAll() override;
+        std::any snapshotFrom(double time) override;
 
     private:
         int compUid;

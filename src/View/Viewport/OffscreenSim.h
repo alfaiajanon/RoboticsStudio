@@ -1,4 +1,5 @@
 #pragma once
+#include <mutex>
 
 #include <QOpenGLFramebufferObject>
 #include <QOpenGLContext>
@@ -52,7 +53,10 @@ class OffscreenSim {
         void init(int w, int h);
         void setSize(int w, int h);
 
-        QImage render();
+        // `sceneLock` (optional) is held only while the scene is built from
+        // mjModel/mjData; the GL draw and pixel readback run without it, so a
+        // slow frame never blocks the thread that owns that lock.
+        QImage render(std::mutex* sceneLock = nullptr);
 
         // Optional hook invoked every frame between mjv_updateScene and
         // mjr_render -- lets a viewer append decor mjvGeoms (visualization

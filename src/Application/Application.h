@@ -42,6 +42,9 @@ class Application : public QObject {
         // QString getModelsDirectory();
 
         void openProject(const QString& projectPath);
+        // Asks about unsaved changes, then hides the editor and shows the launcher.
+        // Returns false if the user cancelled.
+        bool closeProjectToLauncher();
         void reloadSimulation();
 
         Project* getProject();

@@ -87,6 +87,55 @@
                 }
             }
         },
+        "plotting": {
+            "type": "object",
+            "description": "Plot panel layout: I/O canvases and body-motion targets.",
+            "properties": {
+                "canvases": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": ["name", "type"],
+                        "properties": {
+                            "name": { "type": "string" },
+                            "type": { "enum": ["scalar", "vector", "image"] },
+                            "enabled": { "type": "boolean", "description": "Whether the canvas records (holds subscriptions). Default true." },
+                            "targets": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "required": ["uid", "signal"],
+                                    "properties": {
+                                        "uid": { "type": "integer", "description": "Component instance uid." },
+                                        "signal": { "type": "string", "description": "Interface input/output name." },
+                                        "color": { "type": "string", "description": "#rrggbb" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "motion": {
+                    "type": "object",
+                    "properties": {
+                        "targets": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "required": ["uid", "body", "quantity"],
+                                "properties": {
+                                    "uid": { "type": "integer" },
+                                    "body": { "type": "string" },
+                                    "quantity": { "enum": ["linear_velocity", "angular_velocity", "linear_acceleration", "angular_acceleration"] },
+                                    "local": { "type": "boolean", "description": "Local frame instead of world. Default false." },
+                                    "color": { "type": "string", "description": "#rrggbb" }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "simulation": {
             "type": "object"
         },

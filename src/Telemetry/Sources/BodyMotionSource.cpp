@@ -76,3 +76,9 @@ void BodyMotionSource::capture(double time) {
 any BodyMotionSource::snapshotAll(){
     return storage.snapshot();
 }
+
+
+
+any BodyMotionSource::snapshotFrom(double time){
+    return storage.snapshotFrom(time);
+}

@@ -156,6 +156,8 @@ bool Project::loadProject(const QString& path) {
     int scriptIdx = scriptObj["current"].toInt();
     setScript(scriptIdx);
 
+    plotting = projectData["plotting"].toObject();
+
     parseAssembly();
     buildHierarchy();
     applyDefaults();
@@ -168,6 +170,7 @@ bool Project::loadProject(const QString& path) {
 void Project::unloadProject() {
     clear();
     projectData = QJsonObject();
+    plotting = QJsonObject();
     projectPath = "";
     directoryPath = "";
     currentScriptContent = "";
@@ -241,6 +244,9 @@ bool Project::saveProject() {
         {"current", currentScriptIdx},
         {"paths", scriptPaths}
     };
+
+    if (plottingProvider) plotting = plottingProvider();
+    projectData["plotting"] = plotting;
 
     QFile file(projectPath);
     if (!file.open(QFile::WriteOnly | QFile::Truncate)) {

@@ -22,6 +22,8 @@ class TimeSeriesBuffer {
         bool isFull = false;
         mutable std::mutex bufferMutex;
 
+        std::vector<TimeSeriesDataPoint> snapshotLocked() const;   // caller holds bufferMutex
+
     public:
         explicit TimeSeriesBuffer(int capacity, int dim);
 
@@ -36,6 +38,11 @@ class TimeSeriesBuffer {
 
         // Full buffer extraction (for saving/exporting)
         std::vector<TimeSeriesDataPoint> snapshot() const;
+
+        // Points strictly newer than `afterTime`, oldest first. If the newest
+        // stored point is OLDER than `afterTime` the simulation clock was reset,
+        // so the whole buffer is returned (first point <= afterTime tells the caller).
+        std::vector<TimeSeriesDataPoint> snapshotFrom(double afterTime) const;
 
         // Accessors
         int getDimension() const;

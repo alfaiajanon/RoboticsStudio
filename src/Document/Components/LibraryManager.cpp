@@ -131,6 +131,47 @@ bool LibraryManager::saveLocalComponent(ComponentData data) {
 
 
 
+bool LibraryManager::deleteLocalComponent(QString modelId) {
+    auto catIt = std::find_if(categories.begin(), categories.end(), [](const CategoryDef& cat) {
+        return cat.id == "custom";
+    });
+    if (catIt == categories.end() || !catIt->modelIds.contains(modelId)) {
+        Log::error("Cannot delete '" + modelId + "': not a local component.");
+        return false;
+    }
+
+    // Instances hold raw blueprint pointers, so refuse while any is placed.
+    Project* project = Application::getInstance()->getProject();
+    if (project) {
+        for (ComponentInstance* inst : project->getComponentMap()) {
+            if (inst && inst->modelId == modelId) {
+                Log::error("Cannot delete '" + modelId + "': it is used in the current project.");
+                return false;
+            }
+        }
+    }
+
+    ComponentBlueprint* bp = blueprints.value(modelId, nullptr);
+    if (!bp) {
+        Log::error("Cannot delete '" + modelId + "': blueprint not found.");
+        return false;
+    }
+
+    const QString folder = project->getProjectDirectory() + "/Components/" + modelId;
+    if (QDir(folder).exists() && !QDir(folder).removeRecursively()) {
+        Log::error("Failed to delete component folder: " + folder);
+        return false;
+    }
+
+    catIt->modelIds.removeAll(modelId);
+    blueprints.remove(modelId);
+    delete bp;
+
+    Log::info("Deleted local component '" + modelId + "'");
+    emit catalogLoaded();
+    return true;
+}
+
 LibraryManager& LibraryManager::getInstance() {
     static LibraryManager instance;
     return instance;

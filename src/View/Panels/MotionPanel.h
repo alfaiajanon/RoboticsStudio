@@ -5,6 +5,7 @@
 #include <QVBoxLayout>
 #include <QMap>
 #include <memory>
+#include <QJsonObject>
 #include "View/Panels/Canvas.h"
 
 class BodyMotionSource;
@@ -22,9 +23,19 @@ private:
     VectorCanvasWindow* plotWindow;
     QMap<QString, QWidget*> targetRows; // channelKey -> row widget
 
+    struct MotionTargetDesc { int uid; QString body; int quantity; bool local; };
+    QMap<QString, MotionTargetDesc> targetDescs; // channelKey -> what to save
+
+    void addMotionTarget(int uid, const QString& body, int quantity, bool local, const QColor& color = QColor());
+    void removeMotionTarget(const QString& sourceKey);
+
 public:
     explicit MotionPanel(QWidget* parent = nullptr);
     ~MotionPanel() override;
+
+    // Project persistence ("plotting.motion" in the .rsproj).
+    QJsonObject toJson() const;
+    void loadJson(const QJsonObject& obj);   // replaces the current targets
 
 private slots:
     void showAddTargetDialog();

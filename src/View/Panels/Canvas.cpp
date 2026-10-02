@@ -3,9 +3,17 @@
 #include "Application/Application.h"
 #include "Document/Components/ComponentInstance.h"
 #include "Telemetry/Storage/TimeSeriesBuffer.h"
+#include "Utils/Log.h"
 
 #include <QDialog>
-#include <QListWidget>
+#include <limits>
+#include <algorithm>
+#include <QTreeWidget>
+#include <QHeaderView>
+#include <QPainter>
+#include <QPainterPath>
+#include <QIcon>
+#include <QPixmap>
 #include <QDialogButtonBox>
 #include <QMouseEvent>
 #include <QColorDialog>
@@ -21,6 +29,40 @@
 
 
 #pragma region Helpers
+
+// Two-slot icon for the target picker: left = input/output arrow, right =
+// "physical" plug (left empty for virtual signals so the names stay aligned).
+static QIcon makeTargetIcon(bool isInput, bool physical) {
+    const int slot = 16;
+    QPixmap pm(slot * 2, slot);
+    pm.fill(Qt::transparent);
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::Antialiasing);
+
+    // I/O arrow: green head on the right = input, orange head on the left = output
+    QColor ioColor = isInput ? QColor("#4CAF50") : QColor("#FF9800");
+    p.setPen(QPen(ioColor, 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    p.drawLine(QPointF(3, 8), QPointF(12, 8));
+    if (isInput) {
+        p.drawLine(QPointF(12, 8), QPointF(8, 4));
+        p.drawLine(QPointF(12, 8), QPointF(8, 12));
+    } else {
+        p.drawLine(QPointF(3, 8), QPointF(7, 4));
+        p.drawLine(QPointF(3, 8), QPointF(7, 12));
+    }
+
+    if (physical) {
+        // plug: body + two prongs
+        QColor pc("#9E9E9E");
+        p.setPen(Qt::NoPen);
+        p.setBrush(pc);
+        p.drawRoundedRect(QRectF(slot + 4, 6, 8, 6), 1.5, 1.5);
+        p.drawRect(QRectF(slot + 5.5, 2.5, 1.6, 3.5));
+        p.drawRect(QRectF(slot + 8.9, 2.5, 1.6, 3.5));
+        p.drawRect(QRectF(slot + 7.2, 12, 1.6, 2.5));
+    }
+    return QIcon(pm);
+}
 
 static void applyDarkThemeToPlot(QCustomPlot* plot, const QString& yLabel) {
     QColor bgColor("#1e1e1e");
@@ -63,6 +105,47 @@ static void applyDarkThemeToPlot(QCustomPlot* plot, const QString& yLabel) {
 
 
 
+
+// How much history stays in a graph; older points are dropped as new ones arrive.
+static constexpr double kHistorySeconds = 30.0;
+
+// A full snapshot can hold points of an earlier run before a clock reset (time
+// jumps backwards); only the latest run is plotted.
+static size_t latestRunStart(const std::vector<TimeSeriesDataPoint>& points) {
+    size_t start = 0;
+    for (size_t i = 1; i < points.size(); ++i)
+        if (points[i].time < points[i - 1].time) start = i;
+    return start;
+}
+
+// Fetches what a target has produced since the last poll. The first poll
+// (target not in `lastTime`) takes the whole history with snapshotAll();
+// every later one only asks for points newer than the last plotted time.
+// `reset` is set when the clock restarted and the graph must be cleared first.
+// Returns false when there is nothing to add.
+static bool pollNewPoints(TelemetrySource* source, QMap<QString, double>& lastTime, const QString& key,
+                          std::vector<TimeSeriesDataPoint>& out, size_t& startIdx, bool& reset) {
+    reset = false;
+    startIdx = 0;
+    auto it = lastTime.find(key);
+    if (it == lastTime.end()) {
+        out = std::any_cast<std::vector<TimeSeriesDataPoint>>(source->snapshotAll());
+        startIdx = latestRunStart(out);
+        reset = true;
+        lastTime.insert(key, out.empty() ? std::numeric_limits<double>::lowest() : out.back().time);
+        return !out.empty();
+    }
+
+    out = std::any_cast<std::vector<TimeSeriesDataPoint>>(source->snapshotFrom(it.value()));
+    if (out.empty()) return false;
+    if (out.front().time <= it.value()) {   // buffer handed back everything: clock was reset
+        reset = true;
+        startIdx = latestRunStart(out);
+    }
+    it.value() = out.back().time;
+    return true;
+}
+
 #pragma region CanvasWindow Base
 
 CanvasWindow::CanvasWindow(DataType type, const QString& title, QWidget* parent)
@@ -70,6 +153,7 @@ CanvasWindow::CanvasWindow(DataType type, const QString& title, QWidget* parent)
     setWindowTitle(title);
     resize(750, 450); // Slightly wider to accommodate the side panel
 }
+
 
 
 
@@ -107,23 +191,26 @@ ScalarCanvasWindow::ScalarCanvasWindow(const QString& title, QWidget* parent)
 
     rootLayout->addWidget(sidePanel, 0);
 
-    this->setProperty("lastSeenTime", -1.0);
-
     updateTimer = new QTimer(this);
     connect(updateTimer, &QTimer::timeout, this, &ScalarCanvasWindow::onUpdateTimer);
-    updateTimer->start(16);
+    updateTimer->start(33);
 }
 
 ScalarCanvasWindow::~ScalarCanvasWindow() {
     updateTimer->stop();
 }
 
-void ScalarCanvasWindow::addTarget(QString sourceKey, const QString& label) {
+QColor ScalarCanvasWindow::targetColor(const QString& sourceKey) const {
+    QCPGraph* g = activeGraphs.value(sourceKey, nullptr);
+    return g ? g->pen().color() : QColor();
+}
+
+void ScalarCanvasWindow::addTarget(QString sourceKey, const QString& label, const QColor& color) {
     if (activeGraphs.contains(sourceKey)) return;
 
     QCPGraph* newGraph = customPlot->addGraph();
     int hue = QRandomGenerator::global()->bounded(360);
-    QColor initialColor = QColor::fromHsv(hue, 200, 240);
+    QColor initialColor = color.isValid() ? color : QColor::fromHsv(hue, 200, 240);
     newGraph->setPen(QPen(initialColor, 2));
 
     activeGraphs.insert(sourceKey, newGraph);
@@ -161,6 +248,7 @@ void ScalarCanvasWindow::removeTarget(QString sourceKey) {
     if (activeGraphs.contains(sourceKey)) {
         customPlot->removeGraph(activeGraphs[sourceKey]);
         activeGraphs.remove(sourceKey);
+        lastTime.remove(sourceKey);
         customPlot->replot();
     }
     if (controlRows.contains(sourceKey)) {
@@ -171,55 +259,35 @@ void ScalarCanvasWindow::removeTarget(QString sourceKey) {
 
 void ScalarCanvasWindow::onUpdateTimer() {
     auto& registry = TelemetryRegistry::getInstance();
-    double latestTime = 0;
-    bool hasNewData = false;
+    double latestTime = std::numeric_limits<double>::lowest();
+    bool gotData = false;
 
     for (auto it = activeGraphs.begin(); it != activeGraphs.end(); ++it) {
-        QString sourceKey = it.key();
-        auto source = registry.getSource(sourceKey);
+        auto source = registry.getSource(it.key());
         if (!source) continue;
 
-        // std::vector<ScalarPoint> points = source->snapshot();
-
         std::vector<TimeSeriesDataPoint> points;
-        points = std::any_cast<std::vector<TimeSeriesDataPoint>>(
-            source->snapshotAll()
-        );
+        size_t startIdx;
+        bool reset;
+        if (pollNewPoints(source.get(), lastTime, it.key(), points, startIdx, reset)) {
+            QCPGraph* graph = it.value();
+            if (reset) graph->data()->clear();
 
-        if (points.empty()) continue;
-
-        size_t validStartIndex = 0;
-        for (size_t i = 1; i < points.size(); ++i) {
-            if (points[i].time < points[i-1].time) {
-                validStartIndex = i;
+            QVector<double> keys, values;
+            keys.reserve(points.size() - startIdx);
+            values.reserve(points.size() - startIdx);
+            for (size_t i = startIdx; i < points.size(); ++i) {
+                keys.append(points[i].time);
+                values.append(points[i].values[0]);
             }
+            graph->addData(keys, values, true);
+            graph->data()->removeBefore(points.back().time - kHistorySeconds);
+            gotData = true;
         }
-
-        QVector<double> keys, values;
-        keys.reserve(points.size() - validStartIndex);
-        values.reserve(points.size() - validStartIndex);
-
-        for (size_t i = validStartIndex; i < points.size(); ++i) {
-            keys.append(points[i].time);
-            values.append(points[i].values[0]);
-            if (points[i].time > latestTime) latestTime = points[i].time;
-        }
-
-        it.value()->setData(keys, values);
+        latestTime = std::max(latestTime, lastTime.value(it.key(), latestTime));
     }
 
-    double lastSeenTime = this->property("lastSeenTime").toDouble();
-
-    if (latestTime < lastSeenTime) {
-        lastSeenTime = -1.0;
-    }
-
-    if (latestTime > lastSeenTime) {
-        hasNewData = true;
-        this->setProperty("lastSeenTime", latestTime);
-    }
-
-    if (hasNewData) {
+    if (gotData) {
         customPlot->xAxis->setRange(latestTime - 5.0, latestTime + 0.5);
         customPlot->yAxis->rescale();
         customPlot->replot();
@@ -307,23 +375,26 @@ VectorCanvasWindow::VectorCanvasWindow(const QString& title, QWidget* parent)
 
     rootLayout->addWidget(sidePanel, 0);
 
-    this->setProperty("lastSeenTime", -1.0);
-
     updateTimer = new QTimer(this);
     connect(updateTimer, &QTimer::timeout, this, &VectorCanvasWindow::onUpdateTimer);
-    updateTimer->start(16);
+    updateTimer->start(33);
 }
 
 VectorCanvasWindow::~VectorCanvasWindow() {
     updateTimer->stop();
 }
 
-void VectorCanvasWindow::addTarget(QString sourceKey, const QString& label) {
+QColor VectorCanvasWindow::targetColor(const QString& sourceKey) const {
+    auto it = activeGraphs.constFind(sourceKey);
+    return it == activeGraphs.constEnd() ? QColor() : it->sepX->pen().color();
+}
+
+void VectorCanvasWindow::addTarget(QString sourceKey, const QString& label, const QColor& color) {
     if (activeGraphs.contains(sourceKey)) return;
 
     VectorGraphs vg;
     int hue = QRandomGenerator::global()->bounded(360);
-    QColor baseColor = QColor::fromHsv(hue, 200, 240);
+    QColor baseColor = color.isValid() ? color : QColor::fromHsv(hue, 200, 240);
 
     vg.combinedX = combinedPlot->addGraph();
     vg.combinedX->setPen(QPen(baseColor, 2, Qt::SolidLine));
@@ -393,6 +464,7 @@ void VectorCanvasWindow::removeTarget(QString sourceKey) {
         yPlot->removeGraph(vg.sepY);
         zPlot->removeGraph(vg.sepZ);
         activeGraphs.remove(sourceKey);
+        lastTime.remove(sourceKey);
 
         combinedPlot->replot();
         xPlot->replot();
@@ -407,75 +479,57 @@ void VectorCanvasWindow::removeTarget(QString sourceKey) {
 
 void VectorCanvasWindow::onUpdateTimer() {
     auto& registry = TelemetryRegistry::getInstance();
-    double latestTime = 0;
-    bool hasNewData = false;
+    double latestTime = std::numeric_limits<double>::lowest();
+    bool gotData = false;
 
     for (auto it = activeGraphs.begin(); it != activeGraphs.end(); ++it) {
-        QString sourceKey = it.key();
-        auto source = registry.getSource(sourceKey);
+        auto source = registry.getSource(it.key());
         if (!source) continue;
 
         std::vector<TimeSeriesDataPoint> points;
-        points = std::any_cast<std::vector<TimeSeriesDataPoint>>(
-            source->snapshotAll()
-        );
-        if (points.empty()) continue;
+        size_t startIdx;
+        bool reset;
+        if (pollNewPoints(source.get(), lastTime, it.key(), points, startIdx, reset)) {
+            VectorGraphs& vg = it.value();
+            QCPGraph* all[6] = {vg.combinedX, vg.combinedY, vg.combinedZ, vg.sepX, vg.sepY, vg.sepZ};
+            if (reset) for (QCPGraph* g : all) g->data()->clear();
 
-        size_t validStartIndex = 0;
-        for (size_t i = 1; i < points.size(); ++i) {
-            if (points[i].time < points[i-1].time) validStartIndex = i;
+            QVector<double> keys, xVals, yVals, zVals;
+            const int count = static_cast<int>(points.size() - startIdx);
+            keys.reserve(count);
+            xVals.reserve(count);
+            yVals.reserve(count);
+            zVals.reserve(count);
+            for (size_t i = startIdx; i < points.size(); ++i) {
+                keys.append(points[i].time);
+                xVals.append(points[i].values.size() > 0 ? points[i].values[0] : 0.0);
+                yVals.append(points[i].values.size() > 1 ? points[i].values[1] : 0.0);
+                zVals.append(points[i].values.size() > 2 ? points[i].values[2] : 0.0);
+            }
+            vg.combinedX->addData(keys, xVals, true);
+            vg.combinedY->addData(keys, yVals, true);
+            vg.combinedZ->addData(keys, zVals, true);
+            vg.sepX->addData(keys, xVals, true);
+            vg.sepY->addData(keys, yVals, true);
+            vg.sepZ->addData(keys, zVals, true);
+            for (QCPGraph* g : all) g->data()->removeBefore(points.back().time - kHistorySeconds);
+            gotData = true;
         }
-
-        QVector<double> keys, xVals, yVals, zVals;
-        int count = points.size() - validStartIndex;
-        keys.reserve(count);
-        xVals.reserve(count);
-        yVals.reserve(count);
-        zVals.reserve(count);
-
-        for (size_t i = validStartIndex; i < points.size(); ++i) {
-            keys.append(points[i].time);
-            xVals.append(points[i].values.size() > 0 ? points[i].values[0] : 0.0);
-            yVals.append(points[i].values.size() > 1 ? points[i].values[1] : 0.0);
-            zVals.append(points[i].values.size() > 2 ? points[i].values[2] : 0.0);
-            if (points[i].time > latestTime) latestTime = points[i].time;
-        }
-
-        VectorGraphs& vg = it.value();
-        vg.combinedX->setData(keys, xVals);
-        vg.combinedY->setData(keys, yVals);
-        vg.combinedZ->setData(keys, zVals);
-        vg.sepX->setData(keys, xVals);
-        vg.sepY->setData(keys, yVals);
-        vg.sepZ->setData(keys, zVals);
+        latestTime = std::max(latestTime, lastTime.value(it.key(), latestTime));
     }
 
-    double lastSeenTime = this->property("lastSeenTime").toDouble();
-    if (latestTime < lastSeenTime) lastSeenTime = -1.0;
-
-    if (latestTime > lastSeenTime) {
-        hasNewData = true;
-        this->setProperty("lastSeenTime", latestTime);
-    }
-
-    if (hasNewData) {
+    if (gotData) {
         int mode = variationCombo->currentIndex();
         if (mode == 0) {
             combinedPlot->xAxis->setRange(latestTime - 5.0, latestTime + 0.5);
             combinedPlot->yAxis->rescale();
             combinedPlot->replot();
         } else if (mode == 1) {
-            xPlot->xAxis->setRange(latestTime - 5.0, latestTime + 0.5);
-            xPlot->yAxis->rescale();
-            xPlot->replot();
-
-            yPlot->xAxis->setRange(latestTime - 5.0, latestTime + 0.5);
-            yPlot->yAxis->rescale();
-            yPlot->replot();
-
-            zPlot->xAxis->setRange(latestTime - 5.0, latestTime + 0.5);
-            zPlot->yAxis->rescale();
-            zPlot->replot();
+            for (QCustomPlot* plot : {xPlot, yPlot, zPlot}) {
+                plot->xAxis->setRange(latestTime - 5.0, latestTime + 0.5);
+                plot->yAxis->rescale();
+                plot->replot();
+            }
         }
     }
 }
@@ -524,7 +578,7 @@ CanvasDockItem::CanvasDockItem(DataType type, const QString& name, QWidget* pare
 
     QPushButton* addTargetBtn = new QPushButton("+ Add Target");
     QPushButton* viewBtn = new QPushButton("View");
-    QPushButton* toggleBtn = new QPushButton("Disable");
+    toggleBtn = new QPushButton("Disable");
     QPushButton* deleteBtn = new QPushButton("✖");
     deleteBtn->setFixedWidth(30);
 
@@ -539,9 +593,7 @@ CanvasDockItem::CanvasDockItem(DataType type, const QString& name, QWidget* pare
     if (type == DataType::SCALAR) popUpWindow = new ScalarCanvasWindow(name, nullptr);
     else popUpWindow = new VectorCanvasWindow(name, nullptr);
 
-    connect(addTargetBtn, &QPushButton::clicked, this, [this, toggleBtn]() {
-        bool isEnabled = (toggleBtn->text() == "Disable");
-        this->setProperty("currentlyEnabled", isEnabled);
+    connect(addTargetBtn, &QPushButton::clicked, this, [this]() {
         showAddTargetDialog();
     });
 
@@ -553,65 +605,58 @@ CanvasDockItem::CanvasDockItem(DataType type, const QString& name, QWidget* pare
         }
     });
 
-    connect(toggleBtn, &QPushButton::clicked, this, [this, toggleBtn]() {
-        bool isEnabled = (toggleBtn->text() == "Disable");
-        isEnabled = !isEnabled;
-        toggleBtn->setText(isEnabled ? "Disable" : "Enable");
-
-        auto& registry = TelemetryRegistry::getInstance();
-        for (QString sourceKey : subscribedSources) {
-            if (auto ch = registry.getSource(sourceKey)) {
-                if (isEnabled) ch->subscribe();
-                else ch->unsubscribe();
-            }
-            // if (dataType == DataType::SCALAR) {
-            //     if (auto ch = registry.getSource(sourceKey)) {
-            //         if (isEnabled) ch->subscribe();
-            //         else ch->unsubscribe();
-            //     }
-            // }
-            // else if (dataType == DataType::VECTOR) {
-            //     if (auto ch = registry.getSource(id)) {
-            //         if (isEnabled) ch->subscribe();
-            //         else ch->unsubscribe();
-            //     }
-            // }
-        }
+    connect(toggleBtn, &QPushButton::clicked, this, [this]() {
+        setCapturing(!enabled);
     });
 
     connect(deleteBtn, &QPushButton::clicked, this, [this]() {
+        closeCanvas();
+    });
+}
+
+void CanvasDockItem::setCapturing(bool on) {
+    if (enabled == on) return;
+    enabled = on;
+    toggleBtn->setText(on ? "Disable" : "Enable");
+
+    auto& registry = TelemetryRegistry::getInstance();
+    for (const QString& sourceKey : subscribedSources) {
+        if (auto ch = registry.getSource(sourceKey)) {
+            if (on) ch->subscribe();
+            else ch->unsubscribe();
+        }
+    }
+}
+
+void CanvasDockItem::closeCanvas() {
+    if (removed) return;
+    removed = true;
+
+    if (enabled) {
+        auto& registry = TelemetryRegistry::getInstance();
+        for (const QString& sourceKey : subscribedSources) {
+            if (auto ch = registry.getSource(sourceKey))
+                ch->unsubscribe();
+        }
+    }
+    subscribedSources.clear();
+    enabled = false;   // the destructor must not unsubscribe a second time
+
+    // The destructor deletes the pop-up; deleting it here as well left
+    // the destructor calling deleteLater() on a dangling pointer.
+    if (popUpWindow) popUpWindow->close();
+
+    hide();
+    this->deleteLater();
+}
+
+CanvasDockItem::~CanvasDockItem() {
+    if (enabled) {
         auto& registry = TelemetryRegistry::getInstance();
         for (QString sourceKey : subscribedSources) {
             if (auto ch = registry.getSource(sourceKey))
                 ch->unsubscribe();
-
-            // if (dataType == DataType::SCALAR) {
-            //     if (auto ch = registry.getScalar(id)) ch->unsubscribe();
-            // } else if (dataType == DataType::VECTOR) {
-            //     if (auto ch = registry.getVector(id)) ch->unsubscribe();
-            // }
         }
-        subscribedSources.clear();
-
-        if (popUpWindow) {
-            popUpWindow->close();
-            popUpWindow->deleteLater();
-        }
-
-        this->deleteLater();
-    });
-}
-
-CanvasDockItem::~CanvasDockItem() {
-    auto& registry = TelemetryRegistry::getInstance();
-    for (QString sourceKey : subscribedSources) {
-        if (auto ch = registry.getSource(sourceKey))
-            ch->unsubscribe();
-        // if (dataType == DataType::SCALAR) {
-        //     if (auto ch = registry.getScalar(id)) ch->unsubscribe();
-        // } else if (dataType == DataType::VECTOR) {
-        //     if (auto ch = registry.getVector(id)) ch->unsubscribe();
-        // }
     }
     if (popUpWindow) popUpWindow->deleteLater();
 }
@@ -623,92 +668,157 @@ void CanvasDockItem::mouseReleaseEvent(QMouseEvent* event) {
 void CanvasDockItem::showAddTargetDialog() {
     QDialog dialog(this);
     dialog.setWindowTitle("Select Channel Target");
-    dialog.setMinimumSize(400, 300);
+    dialog.setMinimumSize(420, 400);
 
     QVBoxLayout* layout = new QVBoxLayout(&dialog);
-    QListWidget* listWidget = new QListWidget();
-    layout->addWidget(listWidget);
+    QTreeWidget* tree = new QTreeWidget();
+    tree->setHeaderHidden(true);
+    tree->setIconSize(QSize(32, 16));
+    tree->setIndentation(18);
+    tree->setUniformRowHeights(true);
+    layout->addWidget(tree);
 
-    // old
-    // auto& registry = TelemetryRegistry::getInstance();
-    // QList<QString> availableKeys = registry.getKeysOfType(dataType);
-
-    // for (QString key : availableKeys) {
-    //     if (subscribedSources.contains(key)) continue;
-
-    //     QString label = "Unknown";
-    //     if (auto ch = registry.getSource(key))
-    //         label = ch->name;
-    //     // if (dataType == DataType::SCALAR) {
-    //     //     if (auto ch = registry.getSource(key)) label = ch->name;
-    //     // } else if (dataType == DataType::VECTOR) {
-    //     //     if (auto ch = registry.getSource(key)) label = ch->name;
-    //     // }
-
-    //     QListWidgetItem* item = new QListWidgetItem(label);
-    //     item->setData(Qt::UserRole, key);
-    //     listWidget->addItem(item);
-    // }
-
-    // new
     auto& registry = TelemetryRegistry::getInstance();
 
-    QMap<int, ComponentInstance*> compMap=Application::getInstance()->getProject()->getComponentMap();
-    for(ComponentInstance* comp:compMap){
-        int uid=comp->uid;
+    const SignalShape wantedShape = dataType == DataType::SCALAR ? SignalShape::Scalar
+                                  : dataType == DataType::VECTOR ? SignalShape::Vector
+                                  : SignalShape::Image;
+
+    QMap<int, ComponentInstance*> compMap = Application::getInstance()->getProject()->getComponentMap();
+    for (ComponentInstance* comp : compMap) {
+        const int uid = comp->uid;
         ComponentBlueprint* bp = comp->getBlueprint();
-        for (const QString& key : bp->interfaceInputs.keys()){
-            if (bp->interfaceDim(bp->interfaceInputs[key]) <= 0) continue;   // image signals: nothing to plot yet
-            auto source = registry.getOrCreateSource(
-                QString("io:%1:%2").arg(uid).arg(key),
-                [comp, key]() {
-                    return std::make_shared<ComponentIOSource>(comp, key, true);
-                }
-            );
-            if (subscribedSources.contains(source->getKey())) continue;
+        if (!bp) continue;
 
-            QListWidgetItem* item = new QListWidgetItem(key);
-            item->setData(Qt::UserRole, source->getKey());
-            listWidget->addItem(item);
-        }
-        for (const QString& key : bp->interfaceOutputs.keys()){
-            if (bp->interfaceDim(bp->interfaceOutputs[key]) <= 0) continue;   // image signals: nothing to plot yet
-            auto source = registry.getOrCreateSource(
-                QString("io:%1:%2").arg(uid).arg(key),
-                [comp, key]() {
-                    return std::make_shared<ComponentIOSource>(comp, key, false);
-                }
-            );
-            if (subscribedSources.contains(source->getKey())) continue;
+        QTreeWidgetItem* parentItem = new QTreeWidgetItem();
+        parentItem->setText(0, QString("%1 (%2)").arg(comp->name).arg(uid));
+        parentItem->setFlags(Qt::ItemIsEnabled);   // header only, not selectable
+        QFont f = parentItem->font(0);
+        f.setBold(true);
+        parentItem->setFont(0, f);
 
-            QListWidgetItem* item = new QListWidgetItem(key);
-            item->setData(Qt::UserRole, source->getKey());
-            listWidget->addItem(item);
-        }
+        auto addGroup = [&](const QMap<QString, InterfaceDef>& defs, bool isInput) {
+            for (auto it = defs.constBegin(); it != defs.constEnd(); ++it) {
+                const QString key = it.key();
+                if (bp->interfaceDim(it.value()) <= 0) continue;   // image signals: nothing to plot yet
+                if (bp->interfaceShape(it.value()) != wantedShape) continue;   // canvas only takes its own data type
+                if (subscribedSources.contains(QString("io:%1:%2").arg(uid).arg(key))) continue;
 
+                QTreeWidgetItem* item = new QTreeWidgetItem(parentItem);
+                item->setText(0, key);
+                item->setIcon(0, makeTargetIcon(isInput, it.value().physical));
+                item->setData(0, Qt::UserRole, uid);
+                item->setData(0, Qt::UserRole + 1, key);
+                item->setToolTip(0, QString("%1 %2%3%4")
+                    .arg(isInput ? "Input" : "Output")
+                    .arg(it.value().physical ? "(physical)" : "(virtual)")
+                    .arg(it.value().unit.isEmpty() ? "" : " [")
+                    .arg(it.value().unit.isEmpty() ? "" : it.value().unit + "]"));
+            }
+        };
+        addGroup(bp->interfaceInputs, true);
+        addGroup(bp->interfaceOutputs, false);
+
+        if (parentItem->childCount() == 0) { delete parentItem; continue; }
+        tree->addTopLevelItem(parentItem);
+        parentItem->setExpanded(true);
     }
 
+    if (tree->topLevelItemCount() == 0) {
+        QLabel* empty = new QLabel("No available targets of this canvas's data type.");
+        empty->setAlignment(Qt::AlignCenter);
+        layout->insertWidget(0, empty);
+    }
 
     QDialogButtonBox* buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
     layout->addWidget(buttonBox);
+    QPushButton* okBtn = buttonBox->button(QDialogButtonBox::Ok);
+    auto isTarget = [](QTreeWidgetItem* i) { return i && i->parent(); };
+    okBtn->setEnabled(false);
+    connect(tree, &QTreeWidget::currentItemChanged, &dialog, [okBtn, isTarget](QTreeWidgetItem* cur) {
+        okBtn->setEnabled(isTarget(cur));
+    });
+    connect(tree, &QTreeWidget::itemDoubleClicked, &dialog, [&dialog, isTarget](QTreeWidgetItem* item) {
+        if (isTarget(item)) dialog.accept();
+    });
     connect(buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
     connect(buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
 
-    if (dialog.exec() == QDialog::Accepted && listWidget->currentItem()) {
-        QString sourceKey = listWidget->currentItem()->data(Qt::UserRole).toString();
-        QString label = listWidget->currentItem()->text();
-
-        subscribedSources.append(sourceKey);
-
-        bool isEnabled = this->property("currentlyEnabled").toBool();
-        if (isEnabled) {
-            if (auto ch = registry.getSource(sourceKey)) ch->subscribe();
-        }
+    if (dialog.exec() == QDialog::Accepted && isTarget(tree->currentItem())) {
+        QTreeWidgetItem* cur = tree->currentItem();
+        attachIoTarget(cur->data(0, Qt::UserRole).toInt(), cur->data(0, Qt::UserRole + 1).toString());
         // registry.clearInactive(); [TODO] important
-
-        popUpWindow->addTarget(sourceKey, label);
-        addTargetUI(sourceKey, label);
     }
+}
+
+
+
+
+bool CanvasDockItem::attachIoTarget(int uid, const QString& signal, const QColor& color) {
+    Project* project = Application::getInstance()->getProject();
+    ComponentInstance* comp = project->getComponentByUid(uid);
+    ComponentBlueprint* bp = comp ? comp->getBlueprint() : nullptr;
+    if (!bp) return false;
+
+    const bool isInput = bp->interfaceInputs.contains(signal);
+    if (!isInput && !bp->interfaceOutputs.contains(signal)) return false;
+
+    const QString key = QString("io:%1:%2").arg(uid).arg(signal);
+    if (subscribedSources.contains(key)) return false;
+
+    auto source = TelemetryRegistry::getInstance().getOrCreateSource(
+        key,
+        [comp, signal, isInput]() {
+            return std::make_shared<ComponentIOSource>(comp, signal, isInput);
+        }
+    );
+    subscribedSources.append(key);
+    if (enabled) source->subscribe();
+
+    const QString label = QString("%1.%2").arg(comp->name).arg(signal);
+    popUpWindow->addTarget(key, label, color);
+    addTargetUI(key, label);
+    return true;
+}
+
+
+
+
+QJsonObject CanvasDockItem::toJson() const {
+    QJsonObject obj;
+    obj["name"] = canvasName;
+    obj["type"] = dataType == DataType::SCALAR ? "scalar" : dataType == DataType::VECTOR ? "vector" : "image";
+    obj["enabled"] = enabled;
+
+    QJsonArray targets;
+    for (const QString& key : subscribedSources) {
+        // key = "io:<uid>:<signal>"; the signal is everything after the second colon
+        QJsonObject t;
+        t["uid"] = key.section(':', 1, 1).toInt();
+        t["signal"] = key.section(':', 2);
+        if (popUpWindow) {
+            QColor c = popUpWindow->targetColor(key);
+            if (c.isValid()) t["color"] = c.name();
+        }
+        targets.append(t);
+    }
+    obj["targets"] = targets;
+    return obj;
+}
+
+
+
+
+void CanvasDockItem::applyTargetsJson(const QJsonObject& obj) {
+    // Attach while enabled so subscriptions are taken the normal way, then apply the saved state.
+    for (const QJsonValue& v : obj["targets"].toArray()) {
+        QJsonObject t = v.toObject();
+        QColor color(t["color"].toString());
+        if (!attachIoTarget(t["uid"].toInt(), t["signal"].toString(), color))
+            Log::warning(QString("Plotting: skipped target '%1' of component %2 (no longer exists)")
+                             .arg(t["signal"].toString()).arg(t["uid"].toInt()));
+    }
+    setCapturing(obj["enabled"].toBool(true));
 }
 
 
@@ -736,13 +846,9 @@ void CanvasDockItem::addTargetUI(QString sourceKey, const QString& label) {
         subscribedSources.removeOne(sourceKey);
         popUpWindow->removeTarget(sourceKey);
 
-        auto& registry = TelemetryRegistry::getInstance();
-        // if (auto ch = registry.getScalar(channelId)) ch->unsubscribe();
-        // if (dataType == DataType::SCALAR) {
-        //     if (auto ch = registry.getScalar(channelId)) ch->unsubscribe();
-        // } else if (dataType == DataType::VECTOR) {
-        //     if (auto ch = registry.getVector(channelId)) ch->unsubscribe();
-        // }
+        if (enabled) {
+            if (auto ch = TelemetryRegistry::getInstance().getSource(sourceKey)) ch->unsubscribe();
+        }
 
         row->deleteLater();
     });

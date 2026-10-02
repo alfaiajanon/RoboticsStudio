@@ -7,16 +7,21 @@
 #include <QGroupBox>
 #include <QGridLayout>
 #include <QFileInfo>
+#include <QHBoxLayout>
 #include "Document/Components/LibraryManager.h"
 #include "Document/Components/ComponentBlueprint.h"
 #include "View/Windows/EditorWindow.h"
+#include "View/Windows/ComponentEditorWindow.h"
+#include "Document/Components/ComponentData.h"
 
 /*
  * Constructs a draggable widget representing a single component.
  * Displays either the loaded thumbnail or a fallback text identifier.
  */
 DraggableComponentWidget::DraggableComponentWidget(const QString& modelId, const QString& modelName, const QString& iconPath, QWidget* parent)
-    : QWidget(parent), modelId(modelId) {
+    : QWidget(parent), modelId(modelId), modelName(modelName) {
+
+    setAttribute(Qt::WA_StyledBackground, true);
 
     QVBoxLayout* layout = new QVBoxLayout(this);
     layout->setContentsMargins(5, 5, 5, 5);
@@ -68,6 +73,7 @@ DraggableComponentWidget::DraggableComponentWidget(const QString& modelId, const
 void DraggableComponentWidget::mousePressEvent(QMouseEvent* event) {
     if (event->button() == Qt::LeftButton) {
         dragStartPosition = event->pos();
+        dragged = false;
         setCursor(Qt::ClosedHandCursor);
         event->accept();
     }
@@ -82,6 +88,7 @@ void DraggableComponentWidget::mousePressEvent(QMouseEvent* event) {
 void DraggableComponentWidget::mouseReleaseEvent(QMouseEvent* event) {
     if (event->button() == Qt::LeftButton) {
         setCursor(Qt::OpenHandCursor);
+        if (!dragged) emit clicked(modelId);
         event->accept();
     }
 }
@@ -102,6 +109,7 @@ void DraggableComponentWidget::mouseMoveEvent(QMouseEvent* event) {
         emit mainWindow->componentLibDragStart(modelId);
     }
 
+    dragged = true;
     QDrag* drag = new QDrag(this);
     QMimeData* mimeData = new QMimeData;
     mimeData->setData("application/rs-component", modelId.toUtf8());
@@ -132,6 +140,16 @@ QString DraggableComponentWidget::getModelId() const {
     return modelId;
 }
 
+QString DraggableComponentWidget::getModelName() const {
+    return modelName;
+}
+
+void DraggableComponentWidget::setSelected(bool selected) {
+    setStyleSheet(selected
+        ? "DraggableComponentWidget { border: 1px solid #4285F4; border-radius: 4px; }"
+        : "");
+}
+
 
 
 
@@ -158,7 +176,24 @@ ComponentsPanel::ComponentsPanel(QWidget* parent) : QWidget(parent) {
 
 
     mainLayout->addWidget(scrollArea);
-    mainLayout->addWidget(searchBox);
+
+    addButton = new QPushButton("Add Component", this);
+    openButton = new QPushButton("Open", this);
+    openButton->setEnabled(false);
+    openButton->setToolTip("Open documentation for the selected component");
+
+    QHBoxLayout* bottomRow = new QHBoxLayout();
+    bottomRow->addWidget(searchBox, 1);
+    bottomRow->addWidget(addButton);
+    bottomRow->addWidget(openButton);
+    mainLayout->addLayout(bottomRow);
+
+    connect(addButton, &QPushButton::clicked, this, [this]() {
+        ComponentData data;   // blank template
+        ComponentEditorWindow* dialog = new ComponentEditorWindow(data, window());
+        dialog->show();
+    });
+    connect(openButton, &QPushButton::clicked, this, &ComponentsPanel::openDocs);
 
     connect(searchBox, &QLineEdit::textChanged, this, &ComponentsPanel::filterComponents);
 }
@@ -171,6 +206,8 @@ ComponentsPanel::ComponentsPanel(QWidget* parent) : QWidget(parent) {
  * Prevents memory leaks and layout duplication when reloading the library.
  */
 void ComponentsPanel::clearPanel() {
+    selectedModelId.clear();
+    openButton->setEnabled(false);
     for (const CategoryBlock& block : categories) {
         if (block.container) block.container->deleteLater();
     }
@@ -209,6 +246,7 @@ void ComponentsPanel::loadCatalog() {
             }
 
             DraggableComponentWidget* itemWidget = new DraggableComponentWidget(modelId, bp->meta.name, iconPath, group);
+            connect(itemWidget, &DraggableComponentWidget::clicked, this, &ComponentsPanel::selectComponent);
             grid->addWidget(itemWidget, row, col);
             block.items.append(itemWidget);
 
@@ -246,4 +284,39 @@ void ComponentsPanel::filterComponents(const QString& searchText) {
 
         block.container->setVisible(hasVisible);
     }
+}
+
+
+
+
+/*
+ * Marks one component as selected (highlight + enables the Open button).
+ */
+void ComponentsPanel::selectComponent(const QString& modelId) {
+    selectedModelId = modelId;
+    for (const CategoryBlock& block : categories)
+        for (DraggableComponentWidget* item : block.items)
+            item->setSelected(item->getModelId() == modelId);
+    openButton->setEnabled(!modelId.isEmpty());
+}
+
+
+
+
+/*
+ * Opens the documentation window for the selected component.
+ * Placeholder: the window is blank until the docs system exists.
+ */
+void ComponentsPanel::openDocs() {
+    if (selectedModelId.isEmpty()) return;
+
+    QString title = selectedModelId;
+    if (ComponentBlueprint* bp = LibraryManager::getInstance().getBlueprint(selectedModelId))
+        title = bp->meta.name;
+
+    QWidget* docs = new QWidget(window(), Qt::Window);
+    docs->setAttribute(Qt::WA_DeleteOnClose);
+    docs->setWindowTitle("Docs - " + title);
+    docs->resize(800, 600);
+    docs->show();
 }

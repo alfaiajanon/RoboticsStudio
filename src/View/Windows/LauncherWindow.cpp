@@ -200,7 +200,9 @@ void LauncherWindow::refreshProjectList() {
             QDir projDir = info.absoluteDir();
             QString absIconPath = projDir.absoluteFilePath(iconPath);
             if (pixmap.load(absIconPath)) {
-                iconLabel->setPixmap(pixmap.scaled(48, 48, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+                // Cover the label: scale until both sides fill it, then crop the centre.
+                QPixmap scaled = pixmap.scaled(48, 48, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+                iconLabel->setPixmap(scaled.copy((scaled.width() - 48) / 2, (scaled.height() - 48) / 2, 48, 48));
                 iconLoaded = true;
             }
         }

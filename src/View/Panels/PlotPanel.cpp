@@ -6,6 +6,8 @@
 #include <QDialogButtonBox>
 #include <QLabel>
 #include <QLineEdit>
+#include <QJsonArray>
+#include "Telemetry/TelemetryRegistry.h"
 
 PlotPanel::PlotPanel(QWidget* parent) : QWidget(parent) {
     QVBoxLayout* panelLayout = new QVBoxLayout(this);
@@ -45,7 +47,8 @@ PlotPanel::PlotPanel(QWidget* parent) : QWidget(parent) {
     tabWidget->addTab(ioTab, "  I/O  ");
 
     // Tab 2: Body Motion (MuJoCo body velocity/acceleration)
-    tabWidget->addTab(new MotionPanel(), "Motion");
+    motionPanel = new MotionPanel();
+    tabWidget->addTab(motionPanel, "Motion");
 }
 
 void PlotPanel::showAddCanvasDialog() {
@@ -78,7 +81,53 @@ void PlotPanel::showAddCanvasDialog() {
         QString name = nameInput->text();
         DataType type = typeCombo->currentData().value<DataType>();
 
-        CanvasDockItem* newCanvas = new CanvasDockItem(type, name, this);
-        canvasListLayout->addWidget(newCanvas);
+        addCanvas(type, name);
     }
+}
+
+
+
+
+CanvasDockItem* PlotPanel::addCanvas(DataType type, const QString& name) {
+    CanvasDockItem* newCanvas = new CanvasDockItem(type, name, this);
+    canvasListLayout->addWidget(newCanvas);
+    return newCanvas;
+}
+
+
+
+
+QJsonObject PlotPanel::toJson() const {
+    QJsonArray canvases;
+    for (int i = 0; i < canvasListLayout->count(); ++i) {
+        auto* item = qobject_cast<CanvasDockItem*>(canvasListLayout->itemAt(i)->widget());
+        if (item && !item->isRemoved()) canvases.append(item->toJson());
+    }
+    return QJsonObject{
+        {"canvases", canvases},
+        {"motion", motionPanel->toJson()}
+    };
+}
+
+
+
+
+void PlotPanel::loadJson(const QJsonObject& obj) {
+    // Drop whatever the previous project left behind.
+    for (int i = 0; i < canvasListLayout->count(); ++i) {
+        if (auto* item = qobject_cast<CanvasDockItem*>(canvasListLayout->itemAt(i)->widget()))
+            item->closeCanvas();
+    }
+    // Sources hold raw ComponentInstance pointers from the previous project;
+    // drop them so same-keyed ones are rebuilt against the new instances.
+    TelemetryRegistry::getInstance().clearInactive();
+
+    for (const QJsonValue& v : obj["canvases"].toArray()) {
+        QJsonObject c = v.toObject();
+        const QString type = c["type"].toString();
+        DataType dt = type == "vector" ? DataType::VECTOR : type == "image" ? DataType::IMAGE : DataType::SCALAR;
+        addCanvas(dt, c["name"].toString("Plot"))->applyTargetsJson(c);
+    }
+
+    motionPanel->loadJson(obj["motion"].toObject());
 }

@@ -17,6 +17,8 @@
 #include "Document/Components/ComponentBlueprint.h"
 #include "Telemetry/TelemetryRegistry.h"
 #include "Telemetry/Sources/BodyMotionSource.h"
+#include "Utils/Log.h"
+#include <QJsonArray>
 
 #pragma region Setup
 
@@ -137,19 +139,18 @@ void MotionPanel::showAddTargetDialog() {
 
     if (dialog.exec() != QDialog::Accepted || bodyCombo->currentText().isEmpty()) return;
 
-    // auto source = std::make_shared<BodyMotionSource>(
-    //     compCombo->currentData().toInt(),
-    //     bodyCombo->currentText(),
-    //     static_cast<BodyMotionSource::MotionType>(quantityCombo->currentData().toInt()),
-    //     localFrameCheck->isChecked());
+    addMotionTarget(compCombo->currentData().toInt(),
+                    bodyCombo->currentText(),
+                    quantityCombo->currentData().toInt(),
+                    localFrameCheck->isChecked());
+}
 
-    // auto& registry = TelemetryRegistry::getInstance();
-    // registry.addSource(source);
-    int comp_uid=compCombo->currentData().toInt();
-    QString bodyName=bodyCombo->currentText();
-    bool motionType=quantityCombo->currentData().toInt();
-    bool locality=localFrameCheck->isChecked();
 
+
+
+#pragma region Targets
+
+void MotionPanel::addMotionTarget(int comp_uid, const QString& bodyName, int motionType, bool locality, const QColor& color) {
     auto& registry = TelemetryRegistry::getInstance();
     auto source = registry.getOrCreateSource(
         QString("motion:%1:%2:%3:%4").arg(comp_uid).arg(bodyName).arg(motionType).arg(locality?"local":"global"),
@@ -157,10 +158,12 @@ void MotionPanel::showAddTargetDialog() {
             return std::make_shared<BodyMotionSource>(comp_uid, bodyName, (BodyMotionSource::MotionType)motionType, locality);
         }
     );
+    QString sourceKey = source->getKey();
+    if (targetRows.contains(sourceKey)) return;   // already plotted
     source->subscribe();
 
-    QString sourceKey = source->getKey();
-    plotWindow->addTarget(sourceKey, source->description);
+    plotWindow->addTarget(sourceKey, source->description, color);
+    targetDescs.insert(sourceKey, {comp_uid, bodyName, motionType, locality});
 
     // Row UI: label + remove button
     QWidget* row = new QWidget();
@@ -179,14 +182,70 @@ void MotionPanel::showAddTargetDialog() {
     targetsLayout->addWidget(row);
     targetRows.insert(sourceKey, row);
 
-    connect(removeBtn, &QPushButton::clicked, this, [this, row, sourceKey]() {
-        auto& registry = TelemetryRegistry::getInstance();
-        if (auto ch = registry.getSource(sourceKey)){
-            ch->unsubscribe();
-            registry.clearInactive();
-        }
-        plotWindow->removeTarget(sourceKey);
-        targetRows.remove(sourceKey);
-        row->deleteLater();
+    connect(removeBtn, &QPushButton::clicked, this, [this, sourceKey]() {
+        removeMotionTarget(sourceKey);
     });
+}
+
+
+
+
+void MotionPanel::removeMotionTarget(const QString& sourceKey) {
+    auto& registry = TelemetryRegistry::getInstance();
+    if (auto ch = registry.getSource(sourceKey)){
+        ch->unsubscribe();
+        registry.clearInactive();
+    }
+    plotWindow->removeTarget(sourceKey);
+    targetDescs.remove(sourceKey);
+    if (QWidget* row = targetRows.take(sourceKey)) row->deleteLater();
+}
+
+
+
+
+#pragma region Persistence
+
+static const char* kQuantityNames[] = {"linear_velocity", "angular_velocity", "linear_acceleration", "angular_acceleration"};
+
+QJsonObject MotionPanel::toJson() const {
+    QJsonArray targets;
+    for (auto it = targetDescs.constBegin(); it != targetDescs.constEnd(); ++it) {
+        const MotionTargetDesc& d = it.value();
+        QJsonObject t;
+        t["uid"] = d.uid;
+        t["body"] = d.body;
+        t["quantity"] = kQuantityNames[qBound(0, d.quantity, 3)];
+        t["local"] = d.local;
+        QColor c = plotWindow->targetColor(it.key());
+        if (c.isValid()) t["color"] = c.name();
+        targets.append(t);
+    }
+    return QJsonObject{{"targets", targets}};
+}
+
+
+
+
+void MotionPanel::loadJson(const QJsonObject& obj) {
+    for (const QString& key : targetRows.keys()) removeMotionTarget(key);
+
+    Project* project = Application::getInstance()->getProject();
+    for (const QJsonValue& v : obj["targets"].toArray()) {
+        QJsonObject t = v.toObject();
+        const int uid = t["uid"].toInt();
+        const QString body = t["body"].toString();
+
+        int quantity = -1;
+        for (int i = 0; i < 4; ++i)
+            if (t["quantity"].toString() == kQuantityNames[i]) quantity = i;
+
+        ComponentInstance* comp = project->getComponentByUid(uid);
+        if (!comp || !comp->getBlueprint() || quantity < 0
+            || !comp->getBlueprint()->kinematics.getNodes().contains(body)) {
+            Log::warning(QString("Plotting: skipped motion target '%1' of component %2 (no longer exists)").arg(body).arg(uid));
+            continue;
+        }
+        addMotionTarget(uid, body, quantity, t["local"].toBool(false), QColor(t["color"].toString()));
+    }
 }

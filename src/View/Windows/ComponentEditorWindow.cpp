@@ -231,11 +231,11 @@ ComponentEditorWindow::ComponentEditorWindow(ComponentData source, QWidget* pare
         return scrollArea;
     };
 
-    tabWidget->addTab(makeTabPage(metaLayout), "Meta");
-    tabWidget->addTab(makeTabPage(constructionLayout), "Construction");
-    tabWidget->addTab(makeTabPage(devicesLayout), "Devices");
-    tabWidget->addTab(makeTabPage(interfaceLayout), "Interface");
-    tabWidget->addTab(makeTabPage(emulatorLayout), "Emulator");
+    tabWidget->addTab(makeTabPage(metaLayout),          "   Meta   ");
+    tabWidget->addTab(makeTabPage(constructionLayout),  "Construction");
+    tabWidget->addTab(makeTabPage(devicesLayout),       "  Devices  ");
+    tabWidget->addTab(makeTabPage(interfaceLayout),     " Interface ");
+    tabWidget->addTab(makeTabPage(emulatorLayout),      "  Emulator ");
 
     splitter->addWidget(tabWidget);
 

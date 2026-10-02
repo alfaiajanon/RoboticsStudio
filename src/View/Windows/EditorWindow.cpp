@@ -1,6 +1,11 @@
 #include "EditorWindow.h"
 
 #include <QDockWidget>
+#include <QDialog>
+#include <QListWidget>
+#include <QPushButton>
+#include <QVBoxLayout>
+#include <QMessageBox>
 #include <QWidget>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -147,6 +152,7 @@ void EditorWindow::setupMenuBar() {
     QAction* blankTemplateAct = addComponentMenu->addAction("Blank template");
     QAction* editComponentAct = projectMenu->addAction("Edit Component");
     projectMenu->addSeparator();
+    QAction* returnToLauncherAct = projectMenu->addAction("Return to Launcher");
     QAction* exitAct = projectMenu->addAction("Exit");
     exitAct->setShortcut(QKeySequence::Quit);
 
@@ -175,6 +181,9 @@ void EditorWindow::setupMenuBar() {
 
     // signals
     connect(exitAct, &QAction::triggered, this, &QWidget::close);
+    connect(returnToLauncherAct, &QAction::triggered, this, []() {
+        Application::getInstance()->closeProjectToLauncher();
+    });
     connect(frameSceneAct, &QAction::triggered, this, &EditorWindow::frameScene);
 
     connect(newAct, &QAction::triggered, this, [this]() {
@@ -271,16 +280,75 @@ void EditorWindow::setupMenuBar() {
     });
 
     connect(editComponentAct, &QAction::triggered, this, [this]() {
-        QList<ComponentBlueprint*> customComponents=LibraryManager::getInstance().getBlueprints("custom");
-        QList<ComponentData> customComponentsData;
-        for(ComponentBlueprint* blueprint : customComponents){
-            customComponentsData.append((ComponentData)(*blueprint));
+        LibraryManager& lib = LibraryManager::getInstance();
+        QList<ComponentBlueprint*> customComponents = lib.getBlueprints("custom");
+        if (customComponents.isEmpty()) {
+            Log::error("No component found");
+            return;
         }
-        if(customComponentsData.size()){
-            ComponentData compData=customComponentsData.first();
-            ComponentEditorWindow* dialog = new ComponentEditorWindow(compData,this);
-            dialog->show();
-        }else Log::error("No component found");
+
+        QDialog picker(this);
+        picker.setWindowTitle("Edit Component");
+        picker.setMinimumWidth(360);
+        QVBoxLayout* layout = new QVBoxLayout(&picker);
+        layout->addWidget(new QLabel("Select a component:"));
+        QListWidget* list = new QListWidget();
+        for (ComponentBlueprint* bp : customComponents) {
+            if (!bp) continue;
+            QListWidgetItem* item = new QListWidgetItem(bp->getModelId());
+            item->setData(Qt::UserRole, bp->getModelId());
+            list->addItem(item);
+        }
+        list->setCurrentRow(0);
+        layout->addWidget(list);
+
+        QHBoxLayout* btnLayout = new QHBoxLayout();
+        QPushButton* deleteBtn = new QPushButton("Delete");
+        QPushButton* cancelBtn = new QPushButton("Cancel");
+        QPushButton* editBtn = new QPushButton("Edit");
+        editBtn->setDefault(true);
+        btnLayout->addWidget(deleteBtn);
+        btnLayout->addStretch();
+        btnLayout->addWidget(cancelBtn);
+        btnLayout->addWidget(editBtn);
+        layout->addLayout(btnLayout);
+
+        QString chosenId;
+        connect(cancelBtn, &QPushButton::clicked, &picker, &QDialog::reject);
+        connect(editBtn, &QPushButton::clicked, &picker, [&]() {
+            if (!list->currentItem()) return;
+            chosenId = list->currentItem()->data(Qt::UserRole).toString();
+            picker.accept();
+        });
+        connect(list, &QListWidget::itemDoubleClicked, editBtn, &QPushButton::click);
+        connect(deleteBtn, &QPushButton::clicked, &picker, [&]() {
+            QListWidgetItem* item = list->currentItem();
+            if (!item) return;
+            const QString id = item->data(Qt::UserRole).toString();
+
+            Project* project = Application::getInstance()->getProject();
+            for (ComponentInstance* inst : project->getComponentMap()) {
+                if (inst && inst->modelId == id) {
+                    QMessageBox::warning(&picker, "Cannot Delete",
+                        "'" + id + "' is used by a component in this project. Remove those first.");
+                    return;
+                }
+            }
+            if (QMessageBox::question(&picker, "Delete Component",
+                    "Permanently delete '" + id + "' and its folder?") != QMessageBox::Yes)
+                return;
+            if (LibraryManager::getInstance().deleteLocalComponent(id)) {
+                delete list->takeItem(list->row(item));
+                if (list->count() == 0) picker.reject();
+            }
+        });
+
+        if (picker.exec() != QDialog::Accepted || chosenId.isEmpty()) return;
+        ComponentBlueprint* bp = lib.getBlueprint(chosenId);
+        if (!bp) return;
+        ComponentData compData = (ComponentData)(*bp);
+        ComponentEditorWindow* dialog = new ComponentEditorWindow(compData, this);
+        dialog->show();
     });
 
 

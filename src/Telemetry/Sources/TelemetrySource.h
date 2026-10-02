@@ -43,6 +43,9 @@ class TelemetrySource {
         bool isActive() const               { return refCount.load() > 0; }
 
         virtual void capture(double time) = 0;
+        // Whole history. Use once when a plot starts showing the source.
         virtual std::any snapshotAll() = 0;
-        // virtual void* snapshotFrom(double time)=0;
+        // Only what was captured after `time` (see TimeSeriesBuffer::snapshotFrom).
+        // Use for every poll after the initial snapshotAll().
+        virtual std::any snapshotFrom(double time) = 0;
 };

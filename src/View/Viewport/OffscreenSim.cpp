@@ -62,7 +62,7 @@ void OffscreenSim::setSize(int w, int h) {
 
 
 
-QImage OffscreenSim::render(){
+QImage OffscreenSim::render(std::mutex* sceneLock){
     MujocoContext* ctx = mujocoContext;
     if (!ctx) {
         // No injected context: render the app's simulation, if one exists yet.
@@ -75,8 +75,13 @@ QImage OffscreenSim::render(){
 
     glfwMakeContextCurrent(hiddenWindow);
 
-    ctx->updateScene();
-    if (decorHook) decorHook(ctx->getModel(), ctx->getData(), ctx->getScene());
+    {
+        // Only this part reads mjData, which the physics thread writes.
+        std::unique_lock<std::mutex> lock;
+        if (sceneLock) lock = std::unique_lock<std::mutex>(*sceneLock);
+        ctx->updateScene();
+        if (decorHook) decorHook(ctx->getModel(), ctx->getData(), ctx->getScene());
+    }
     mjrRect viewport = {0, 0, width, height};
     ctx->render(viewport);
 

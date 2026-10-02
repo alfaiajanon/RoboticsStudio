@@ -5,6 +5,7 @@
 #include <QLineEdit>
 #include <QScrollArea>
 #include <QPoint>
+#include <QPushButton>
 
 class DraggableComponentWidget : public QWidget {
     Q_OBJECT
@@ -13,6 +14,10 @@ class DraggableComponentWidget : public QWidget {
         explicit DraggableComponentWidget(const QString& modelId, const QString& modelName, const QString& iconPath, QWidget* parent = nullptr);
         QString getModelId() const;
         QString getModelName() const;
+        void setSelected(bool selected);
+
+    signals:
+        void clicked(const QString& modelId);
 
     protected:
         void mousePressEvent(QMouseEvent* event) override;
@@ -23,6 +28,7 @@ class DraggableComponentWidget : public QWidget {
         QString modelId;
         QString modelName;
         QPoint dragStartPosition;
+        bool dragged = false;
 };
 
 
@@ -46,6 +52,9 @@ class ComponentsPanel : public QWidget {
 
     private:
         QLineEdit* searchBox;
+        QPushButton* addButton;
+        QPushButton* openButton;
+        QString selectedModelId;
         QVBoxLayout* scrollLayout;
 
         struct CategoryBlock {
@@ -58,4 +67,6 @@ class ComponentsPanel : public QWidget {
         QList<CategoryBlock> categories;
 
         void clearPanel();
+        void selectComponent(const QString& modelId);
+        void openDocs();
 };

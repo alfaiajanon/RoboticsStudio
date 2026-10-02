@@ -54,3 +54,10 @@ std::any ComponentIOSource::snapshotAll() {
     TimeSeriesBuffer &buffer=std::get<TimeSeriesBuffer>(storage);
     return buffer.snapshot();
 }
+
+
+
+std::any ComponentIOSource::snapshotFrom(double time) {
+    TimeSeriesBuffer &buffer=std::get<TimeSeriesBuffer>(storage);
+    return buffer.snapshotFrom(time);
+}

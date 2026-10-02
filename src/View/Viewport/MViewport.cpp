@@ -53,13 +53,12 @@ void MViewport::renderLoop(){
     QImage currentFrame;
     SimulationManager* simManager = Application::getInstance()->getSimulationManager();
 
-    if (simManager) {
-        std::lock_guard<std::mutex> lock(simManager->physicsMutex);
-        currentFrame = sim->render();
-    } else {
-        return; 
-        currentFrame = sim->render();
-    }
+    if (!simManager) return;
+
+    // The physics lock is taken inside render(), only while the scene is built.
+    // mjr_render/readPixels touch just the scene and GL context, which are only
+    // modified on this (UI) thread (model reloads), so they need no lock.
+    currentFrame = sim->render(&simManager->physicsMutex);
 
     setPixmap(QPixmap::fromImage(currentFrame));
 

@@ -2,6 +2,7 @@
 
 #include <QFile>
 #include <QSettings>
+#include <QMessageBox>
 
 #include "Utils/Log.h"
 #include "Document/Components/LibraryManager.h"
@@ -42,18 +43,25 @@ Application::Application(int& argc, char** argv) : qtApp(argc, argv) {
     // Safe only now that Application::instance is assigned.
     editor.setupUndoRedo();
 
+    // The plot layout lives in the view; Project asks for a snapshot on every save.
+    currentProject.setPlottingProvider([this]() {
+        return editor.plotPanel ? editor.plotPanel->toJson() : QJsonObject();
+    });
+
     Log::info("Application initialized.");
 
     QSettings settings("RoboticsStudio", "RoboticsStudio");
     bool autoOpen = settings.value("autoOpenEnabled", false).toBool();
     QStringList recents = settings.value("recentProjects").toStringList();
 
+    // Always connected: "Return to Launcher" can show it even when auto-open skipped it at startup.
+    connect(&launcher, &LauncherWindow::projectOpened, this, &Application::openProject);
+
     if (autoOpen && !recents.isEmpty()) {
         Log::info("Auto-open enabled. Skipping Launcher.");
         openProject(recents.first());
     } else {
         Log::info("Showing Launcher Hub.");
-        connect(&launcher, &LauncherWindow::projectOpened, this, &Application::openProject);
         launcher.show();
     }
 }
@@ -120,6 +128,7 @@ void Application::openProject(const QString& projectPath) {
     editor.setupSimConn();
     editor.frameScene();
     editor.refresh();
+    editor.plotPanel->loadJson(currentProject.getPlotting());
     editor.show();
 
     Log::info("Project loaded: " + projectPath);
@@ -130,6 +139,35 @@ void Application::openProject(const QString& projectPath) {
     Log::info("================================");
 
     editor.selectComponent(0);
+}
+
+
+
+
+bool Application::closeProjectToLauncher() {
+    if (!undoStack.isClean()) {
+        QMessageBox::StandardButton choice = QMessageBox::question(
+            &editor, "Unsaved Changes",
+            "Save changes to the project before closing it?",
+            QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel,
+            QMessageBox::Save);
+        if (choice == QMessageBox::Cancel) return false;
+        if (choice == QMessageBox::Save && !currentProject.saveProject()) {
+            QMessageBox::warning(&editor, "Save Failed",
+                "Could not save the project. Use Save As... first, or choose Discard.");
+            return false;
+        }
+    }
+
+    if (simManager) simManager->pause();
+    undoStack.clear();
+
+    editor.hide();
+    launcher.show();   // showEvent reloads the recent projects list
+    launcher.raise();
+    launcher.activateWindow();
+    Log::info("Project closed, returned to launcher.");
+    return true;
 }
 
 

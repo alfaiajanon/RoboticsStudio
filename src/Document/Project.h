@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 #include "Utils/Global.h"
 #include "Utils/Spatial.h"
 // #include "Telemetry/PlotTarget.h"
@@ -36,7 +38,11 @@ class Project {
         QString currentScriptContent;
         QJsonArray scriptPaths;
 
-        // QList<PlotTarget> activePlots;
+        // Plot panel layout ("plotting" in the .rsproj). Authored by the view, so
+        // Project only stores it: the provider is asked for a fresh snapshot on
+        // every save, and loadProject() keeps the parsed object for the view to apply.
+        QJsonObject plotting;
+        std::function<QJsonObject()> plottingProvider;
 
 
         void clear();
@@ -67,6 +73,9 @@ class Project {
         bool saveProject();
         void unloadProject();
         void refresh();
+
+        QJsonObject getPlotting() const { return plotting; }
+        void setPlottingProvider(std::function<QJsonObject()> provider) { plottingProvider = std::move(provider); }
 
         QJsonObject getProjectData();
         void setProjectData(QJsonObject data);

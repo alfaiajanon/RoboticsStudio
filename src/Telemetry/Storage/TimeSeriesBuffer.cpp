@@ -1,4 +1,5 @@
 #include "TimeSeriesBuffer.h"
+#include <algorithm>
 
 TimeSeriesBuffer::TimeSeriesBuffer(int capacity, int dim)
     : capacity(capacity), dim(dim), data(capacity) {
@@ -68,6 +69,35 @@ std::vector<TimeSeriesDataPoint> TimeSeriesBuffer::pullNewData(int& lastReadCurs
 
 std::vector<TimeSeriesDataPoint> TimeSeriesBuffer::snapshot() const {
     std::lock_guard<std::mutex> lock(bufferMutex);
+    return snapshotLocked();
+}
+
+
+
+std::vector<TimeSeriesDataPoint> TimeSeriesBuffer::snapshotFrom(double afterTime) const {
+    std::lock_guard<std::mutex> lock(bufferMutex);
+    std::vector<TimeSeriesDataPoint> result;
+
+    const int count = isFull ? capacity : head;
+    if (capacity == 0 || count == 0) return result;
+
+    const int newest = (head - 1 + capacity) % capacity;
+    if (data[newest].time < afterTime) return snapshotLocked();   // clock reset
+    if (data[newest].time == afterTime) return result;            // nothing new
+
+    // Walk back from the newest point; only the new tail is copied.
+    for (int n = 0; n < count; ++n) {
+        const TimeSeriesDataPoint& pt = data[(newest - n + capacity) % capacity];
+        if (pt.time <= afterTime) break;
+        result.push_back(pt);
+    }
+    std::reverse(result.begin(), result.end());
+    return result;
+}
+
+
+
+std::vector<TimeSeriesDataPoint> TimeSeriesBuffer::snapshotLocked() const {
     std::vector<TimeSeriesDataPoint> result;
 
     if (capacity == 0) return result;

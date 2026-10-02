@@ -221,7 +221,32 @@ void InspectorPanel::buildUI() {
 
     QGroupBox* infoBox = new QGroupBox("Component Info", this);
     QFormLayout* infoLayout = new QFormLayout(infoBox);
-    infoLayout->addRow("Component Name:", createShrinkableLabel(comp->name, infoBox));
+    QLineEdit* compNameEdit = new QLineEdit(comp->name, infoBox);
+    applyShrinkablePolicy(compNameEdit);
+    infoLayout->addRow("Component Name:", compNameEdit);
+    connect(compNameEdit, &QLineEdit::editingFinished, this, [this, compNameEdit, capturedUid = comp->uid]() {
+        Project* proj = Application::getInstance()->getProject();
+        ComponentInstance* c = proj->getComponentByUid(capturedUid);
+        if (!c) return;
+        const QString oldName = c->name;
+        const QString newName = compNameEdit->text().trimmed();
+        if (newName.isEmpty()) { compNameEdit->setText(oldName); return; }   // a nameless component can't be told apart in the tree
+        if (newName == oldName) return;
+
+        auto setName = [capturedUid](const QString& n) {
+            if (auto* inst = Application::getInstance()->getProject()->getComponentByUid(capturedUid))
+                inst->name = n;
+            // Value-only commands don't refresh the editor, and the scene tree shows the name.
+            Application::getInstance()->getEditor()->scheduleRefresh();
+        };
+        pushCommand(
+            [setName, newName]() { setName(newName); },
+            [setName, oldName]() { setName(oldName); },
+            "Rename component",
+            QString(),
+            false   // name is a label only; no sim reload needed
+        );
+    });
     infoLayout->addRow("Model ID:", createShrinkableLabel(comp->modelId, infoBox));
     infoLayout->addRow("UID:", createShrinkableLabel(QString::number(comp->uid), infoBox));
     mainLayout->addWidget(infoBox);

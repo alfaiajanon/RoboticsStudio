@@ -17,4 +17,5 @@ class ComponentIOSource : public TelemetrySource {
         ComponentIOSource(ComponentInstance* comp, QString ioKey, bool isInput);
         void capture(double time) override;
         any snapshotAll() override;
+        any snapshotFrom(double time) override;
 };
