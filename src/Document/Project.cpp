@@ -688,6 +688,26 @@ void Project::adoptSubtree(ComponentInstance* root) {
 
 static void writeTendonsXML(ComponentInstance* comp, QString& tendonsOut);
 
+// Display texture/material/quad assets: per instance, unlike the per-model
+// assets of writeAssetsXML (each display shows its own pixels).
+static void writeDisplayAssetsXML(ComponentInstance* comp, QString& assetsOut) {
+    if (!comp) return;
+    if (ComponentBlueprint* bp = comp->getBlueprint()) assetsOut += bp->generateDisplayAssetXML(comp->uid);
+    for (ComponentInstance* child : comp->children) writeDisplayAssetsXML(child, assetsOut);
+}
+
+// Largest camera resolution in the tree (0x0 without cameras).
+static void maxCameraResolution(ComponentInstance* comp, int& w, int& h) {
+    if (!comp) return;
+    if (ComponentBlueprint* bp = comp->getBlueprint()) {
+        for (const CameraDef& cam : bp->cameras) {
+            w = std::max(w, cam.resolution.first);
+            h = std::max(h, cam.resolution.second);
+        }
+    }
+    for (ComponentInstance* child : comp->children) maxCameraResolution(child, w, h);
+}
+
 
 QString Project::generateMujocoXML(bool isSimulation) {
     QString worldbody, constraints, contacts, assets, actuators, sensors, tendons;
@@ -721,13 +741,25 @@ QString Project::generateMujocoXML(bool isSimulation) {
         visitedComps.clear();
         writeContactXML(rootComponent, contacts, visitedComps);
         writeAssetsXML(rootComponent, assets, processedModels);
+        writeDisplayAssetsXML(rootComponent, assets);
         writeActuatorsXML(rootComponent, actuators);
         writeSensorsXML(rootComponent, sensors);
         writeTendonsXML(rootComponent, tendons);
     }
 
+    // Cameras render into MuJoCo's offscreen buffer, which must fit the
+    // largest one. MuJoCo's default (640x480) is kept as the floor.
+    QString visual;
+    int camW = 0, camH = 0;
+    maxCameraResolution(rootComponent, camW, camH);
+    if (camW > 0 && camH > 0) {
+        visual = QString("  <visual>\n    <global offwidth=\"%1\" offheight=\"%2\"/>\n  </visual>\n\n")
+                    .arg(std::max(camW, 640)).arg(std::max(camH, 480));
+    }
+
     QString xml = QString(
         "<mujoco model=\"%1\">\n"
+        "%11"
         "  <asset>\n%2%3  </asset>\n\n"
         "  <worldbody>\n%4%5  </worldbody>\n\n"
         "  <equality>\n%6  </equality>\n\n"
@@ -741,7 +773,7 @@ QString Project::generateMujocoXML(bool isSimulation) {
         baseAssets, assets,
         baseWorldBody, worldbody,
         constraints, contacts, actuators, sensors
-    ).arg(tendons);   // %10: QString::arg(a1..a9) is the most a single call takes
+    ).arg(tendons, visual);   // %10, %11: QString::arg(a1..a9) is the most a single call takes
 
     Log::info("Generated internal Mujoco XML successfully");
     // Log::info("Generated Mujoco XML successfully : \n" + xml);

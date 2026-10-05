@@ -206,6 +206,7 @@ void MujocoContext::render(mjrRect viewport) {
         isGPUInitialized = true;
         mjr_makeContext(m, &con, mjFONTSCALE_150);
     }
+    if (beforeRender) beforeRender(&con);
     mjr_render(viewport, &scn, &con);
 }
 

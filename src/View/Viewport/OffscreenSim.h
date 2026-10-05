@@ -30,14 +30,14 @@ using namespace std;
  * ctx != nullptr -> renders that context (used by standalone viewers like
  *                   the component editor preview, which own their context).
  *
- * GLFW init/terminate is process-global, so it's reference-counted across
- * all OffscreenSim instances -- terminating on every destruction would kill
- * GLFW out from under any other live viewport.
+ * GLFW init/terminate is process-global; it's reference-counted through
+ * GlfwRuntime, shared with the camera renderer.
  */
 class OffscreenSim {
     private:
         MujocoContext* mujocoContext;
         GLFWwindow* hiddenWindow = nullptr;
+        bool acquiredGlfw = false;   // init() took a GlfwRuntime reference
         vector<unsigned char> pixelBuffer;
         int width;
         int height;

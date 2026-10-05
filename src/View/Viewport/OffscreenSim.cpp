@@ -1,11 +1,8 @@
 #include "OffscreenSim.h"
 #include "Simulation/MujocoContext.h"
 #include "Simulation/SimulationManager.h"
+#include "Simulation/Rendering/GlfwRuntime.h"
 #include "Application/Application.h"
-
-
-// Number of live OffscreenSim instances sharing the process-global GLFW state.
-static int liveInstances = 0;
 
 
 OffscreenSim::OffscreenSim(MujocoContext* ctx) : mujocoContext(ctx) {}
@@ -17,21 +14,15 @@ OffscreenSim::~OffscreenSim() {
         glfwDestroyWindow(hiddenWindow);
         hiddenWindow = nullptr;
     }
-    if (--liveInstances == 0) {
-        glfwTerminate();
-    }
+    if (acquiredGlfw) GlfwRuntime::release();
 }
 
 void OffscreenSim::init(int w, int h){
     width = w;
     height = h;
 
-    if (liveInstances++ == 0) {
-        if (!glfwInit()){
-            Log::error("Failed to initialize GLFW");
-            exit(1);
-        }
-    }
+    if (!GlfwRuntime::acquire()) exit(1);
+    acquiredGlfw = true;
 
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
     glfwWindowHint(GLFW_DOUBLEBUFFER, GLFW_FALSE);
@@ -39,7 +30,8 @@ void OffscreenSim::init(int w, int h){
     hiddenWindow = glfwCreateWindow(MAX_WIDTH, MAX_HEIGHT, "Hidden MuJoCo", nullptr, nullptr);
     if (!hiddenWindow){
         Log::error("Failed to create GLFW hidden window");
-        if (--liveInstances == 0) glfwTerminate();
+        GlfwRuntime::release();
+        acquiredGlfw = false;
         exit(1);
     }
 

@@ -357,7 +357,6 @@
     },
     "emulator": {
         "parameters": {
-            "delay_ms": 50,
             "noise_stddev": 1
         },
         "source": null,

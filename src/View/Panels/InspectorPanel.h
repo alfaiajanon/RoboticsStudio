@@ -79,6 +79,7 @@ class InspectorPanel : public QWidget {
         void build_UID_0();
         void build_inputs(ComponentInstance* comp);
         void build_outputs(ComponentInstance* comp);
+        void build_images(ComponentInstance* comp);
 
         void build_connectors(ComponentInstance* comp);
         void build_globalSettings(Project* project);

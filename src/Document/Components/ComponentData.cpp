@@ -140,6 +140,28 @@ static void claimId(QSet<QString>& seen, const QString& id, const QString& what,
 
 
 
+// Required display "surface": {transform: {pos, quat}, size: [hx, hy]}.
+static void readSurface(const QJsonObject& o, const QString& path, DisplayDef& d, LoadError& err) {
+    if (err.has()) return;
+    if (!o.contains("surface")) {
+        err.set(QString("%1: missing 'surface' (where the screen is drawn: transform + size)").arg(path));
+        return;
+    }
+    QJsonObject s = readObject(o["surface"], path + " surface", err);
+    if (err.has()) return;
+    if (!s.contains("transform")) {
+        err.set(QString("%1 surface: missing 'transform'").arg(path));
+        return;
+    }
+    QList<double> size = readNumberList(s, "size", 2, path + " surface", err);
+    if (err.has()) return;
+    if (size.isEmpty() || size[0] <= 0.0 || size[1] <= 0.0) {
+        err.set(QString("%1 surface: 'size' must be two positive half-extents [hx, hy]").arg(path));
+        return;
+    }
+    d.surfaceSize = qMakePair(size[0], size[1]);
+}
+
 static Transform parseTransform(const QJsonObject& obj) {
     Transform t;
     if (obj.contains("transform")) {
@@ -577,6 +599,8 @@ static void parseDevices(const QJsonObject& devicesObj, ComponentData& data, Loa
                 DisplayDef d;
                 d.id = id; d.target = target;
                 d.resolution = readResolution(o, p, err);
+                readSurface(o, p, d, err);
+                if (!err.has()) d.surface = parseTransform(o["surface"].toObject());
                 data.displays.append(d);
             }
         }
@@ -635,6 +659,10 @@ static QJsonObject devicesToJson(const ComponentData& d) {
         o["id"] = x.id;
         o["target"] = targetToJson(x.target);
         o["resolution"] = QJsonArray{x.resolution.first, x.resolution.second};
+        o["surface"] = QJsonObject{
+            {"transform", transformToJson(x.surface)},
+            {"size", QJsonArray{x.surfaceSize.first, x.surfaceSize.second}}
+        };
         disps.append(o);
     }
     put(DeviceFamily::Display, disps);

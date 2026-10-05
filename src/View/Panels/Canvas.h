@@ -95,6 +95,46 @@ private:
     QMap<QString, QWidget*> controlRows;
 };
 
+// Draws one image scaled to fit, aspect kept, unsmoothed (pixels stay
+// visible for low-res cameras and displays).
+class ImageView : public QWidget {
+    Q_OBJECT
+    QImage image;
+public:
+    explicit ImageView(QWidget* parent = nullptr);
+    void setImage(const QImage& img) { image = img; update(); }
+protected:
+    void paintEvent(QPaintEvent* event) override;
+};
+
+struct ImageTile {
+    QWidget* container;
+    ImageView* view;
+    QLabel* info;
+    quint64 lastSeq = 0;
+    bool shown = false;
+};
+
+// Newest frame of each image target (camera outputs, display inputs), side by side.
+class ImageCanvasWindow : public CanvasWindow {
+    Q_OBJECT
+public:
+    explicit ImageCanvasWindow(const QString& title, QWidget* parent = nullptr);
+    ~ImageCanvasWindow() override;
+
+    void addTarget(QString sourceKey, const QString& label, const QColor& color = QColor()) override;
+    void removeTarget(QString sourceKey) override;
+    QColor targetColor(const QString& sourceKey) const override { Q_UNUSED(sourceKey); return QColor(); }
+
+private slots:
+    void onUpdateTimer();
+
+private:
+    QHBoxLayout* tilesLayout;
+    QMap<QString, ImageTile> tiles;
+    QTimer* updateTimer;
+};
+
 class CanvasDockItem : public QWidget {
     Q_OBJECT
 private:

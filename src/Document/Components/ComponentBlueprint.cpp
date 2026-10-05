@@ -1,4 +1,5 @@
 #include "ComponentBlueprint.h"
+#include "Units.h"
 #include <QFile>
 #include <QJsonObject>
 #include <QJsonDocument>
@@ -199,22 +200,9 @@ void ComponentBlueprint::traverseGraph(QString& outXML, const QString& currentNo
         }
 
         if (geom.type == "mesh" && !geom.mesh.isEmpty()) {
-            if(!geom.mesh.isEmpty()){
-                outXML += QString(" mesh=\"%1_%2\"")
-                                    .arg(modelId)
-                                    .arg(geom.mesh);
-            }
-            if(!geom.material.isEmpty() && geom.material != ("mat_" + modelId + "_")) {
-                outXML += QString(" material=\"mat_%1_%2\"")
-                                    .arg(modelId)
-                                    .arg(geom.material);
-            }else if(!geom.color.isEmpty()){
-                outXML += QString(" rgba=\"%1 %2 %3 %4\"")
-                                    .arg(geom.color[0])
-                                    .arg(geom.color[1])
-                                    .arg(geom.color[2])
-                                    .arg(geom.color.size() > 3 ? geom.color[3] : 1.0);
-            }
+            outXML += QString(" mesh=\"%1_%2\"")
+                                .arg(modelId)
+                                .arg(geom.mesh);
         } else if ((geom.type == "box" || geom.type == "cylinder" || geom.type == "capsule") && geom.size.size() > 0) {
             outXML += " size=\"";
             for (int j = 0; j < geom.size.size(); ++j) {
@@ -222,7 +210,34 @@ void ComponentBlueprint::traverseGraph(QString& outXML, const QString& currentNo
             }
             outXML += "\"";
         }
+
+        // Appearance, any geom type: a texture material wins over a flat color.
+        if(!geom.material.isEmpty() && geom.material != ("mat_" + modelId + "_")) {
+            outXML += QString(" material=\"mat_%1_%2\"")
+                                .arg(modelId)
+                                .arg(geom.material);
+        }else if(!geom.color.isEmpty()){
+            outXML += QString(" rgba=\"%1 %2 %3 %4\"")
+                                .arg(geom.color[0])
+                                .arg(geom.color.size() > 1 ? geom.color[1] : geom.color[0])
+                                .arg(geom.color.size() > 2 ? geom.color[2] : geom.color[0])
+                                .arg(geom.color.size() > 3 ? geom.color[3] : 1.0);
+        }
         outXML += "/>\n";
+    }
+
+    // Display screens: a visual-only quad on the display's surface, in the
+    // body that owns the target geom (see generateDisplayAssetXML).
+    for (const DisplayDef& disp : displays) {
+        if (disp.target.kind != "geom") continue;
+        bool inThisBody = false;
+        for (const Geom& g : currentNode.geoms) if (g.id == disp.target.id) { inThisBody = true; break; }
+        if (!inThisBody) continue;
+        outXML += indent + QString("  <geom name=\"%1%2_screen\" type=\"mesh\" mesh=\"%1%2_quad\" material=\"%1%2_mat\" "
+                                   "pos=\"%3 %4 %5\" quat=\"%6 %7 %8 %9\" contype=\"0\" conaffinity=\"0\" density=\"0\"/>\n")
+                        .arg(prefix, disp.id)
+                        .arg(disp.surface.position.x).arg(disp.surface.position.y).arg(disp.surface.position.z)
+                        .arg(disp.surface.rotation.w).arg(disp.surface.rotation.x).arg(disp.surface.rotation.y).arg(disp.surface.rotation.z);
     }
 
     for (const Site& site : currentNode.sites) {
@@ -236,6 +251,27 @@ void ComponentBlueprint::traverseGraph(QString& outXML, const QString& currentNo
                         .arg(site.localTransform.rotation.x)
                         .arg(site.localTransform.rotation.y)
                         .arg(site.localTransform.rotation.z);
+
+        // Cameras sit exactly on their site: a MuJoCo camera looks along the
+        // site's -Z axis with +Y up.
+        for (const CameraDef& cam : cameras) {
+            if (cam.target.kind != "site" || cam.target.id != site.id) continue;
+            outXML += indent + QString("<camera name=\"%1%2\" pos=\"%3 %4 %5\" quat=\"%6 %7 %8 %9\"")
+                            .arg(prefix)
+                            .arg(cam.id)
+                            .arg(site.localTransform.position.x)
+                            .arg(site.localTransform.position.y)
+                            .arg(site.localTransform.position.z)
+                            .arg(site.localTransform.rotation.w)
+                            .arg(site.localTransform.rotation.x)
+                            .arg(site.localTransform.rotation.y)
+                            .arg(site.localTransform.rotation.z);
+            if (cam.fovy > 0.0) outXML += QString(" fovy=\"%1\"").arg(cam.fovy);
+            if (cam.resolution.first > 0 && cam.resolution.second > 0) {
+                outXML += QString(" resolution=\"%1 %2\"").arg(cam.resolution.first).arg(cam.resolution.second);
+            }
+            outXML += "/>\n";
+        }
     }
 
     if (!parentNodeId.isEmpty()) {
@@ -290,6 +326,58 @@ void ComponentBlueprint::traverseGraph(QString& outXML, const QString& currentNo
 
 
 /*
+ * Assets of each display, named comp_<uid>_<displayId>_{tex,mat,quad}:
+ *   texture  resolution-sized, dark (a powered-off panel); DisplayTextures
+ *            uploads the live frames straight into its GL texture.
+ *   material emissive, so the screen glows regardless of scene lighting.
+ *   quad     two triangles spanning the surface (half-extents), facing +Z,
+ *            with explicit texcoords: pixel row 0 at +Y, column 0 at -X.
+ *            Shell inertia: a flat mesh has no volume.
+ */
+QString ComponentBlueprint::generateDisplayAssetXML(const int uid) const {
+    QString xml;
+    QString prefix = "comp_" + QString::number(uid) + "_";
+
+    for (const DisplayDef& disp : displays) {
+        const QString name = prefix + disp.id;
+        const double hx = disp.surfaceSize.first;
+        const double hy = disp.surfaceSize.second;
+        xml += QString("<texture name=\"%1_tex\" type=\"2d\" builtin=\"flat\" rgb1=\"0.02 0.02 0.03\" width=\"%2\" height=\"%3\"/>\n")
+                    .arg(name).arg(disp.resolution.first).arg(disp.resolution.second);
+        xml += QString("<material name=\"%1_mat\" texture=\"%1_tex\" emission=\"1\" specular=\"0\" shininess=\"0\"/>\n").arg(name);
+        xml += QString("<mesh name=\"%1_quad\" vertex=\"%2 %3 0  %4 %3 0  %4 %5 0  %2 %5 0\" "
+                       "face=\"0 1 2  0 2 3\" texcoord=\"0 1  1 1  1 0  0 0\" inertia=\"shell\"/>\n")
+                    .arg(name).arg(-hx).arg(-hy).arg(hx).arg(hy);
+    }
+    return xml;
+}
+
+
+
+
+/*
+ * Unit of the interface input that drives an actuator -- the same resolution
+ * SimulationManager::cacheMujocoIds uses: an input targeting the actuator
+ * directly, or a joint input whose first actuator on that joint is this one.
+ * Empty if no signal drives it (values are then taken as MuJoCo units).
+ */
+QString ComponentBlueprint::drivingSignalUnit(const ActuatorDef& act) const {
+    for (const InterfaceDef& def : interfaceInputs) {
+        if (def.target.kind == "actuator" && def.target.id == act.id) return def.unit;
+        if (def.target.kind == "joint") {
+            for (const ActuatorDef& a : actuators) {
+                if (a.target.kind == "joint" && a.target.id == def.target.id) {
+                    if (a.id == act.id) return def.unit;
+                    break;   // only the first actuator on the joint is driven
+                }
+            }
+        }
+    }
+    return QString();
+}
+
+
+/*
  * Constructs the <actuator> tags from devices.actuators. Each actuator is
  * named comp_<uid>_<deviceId> and drives its target joint or tendon.
  */
@@ -309,9 +397,12 @@ QString ComponentBlueprint::generateActuatorXML(const int uid) const {
                                 .arg(act.target.id);
 
         if (act.ctrlrange.size() == 2) {
+            // Authored in the driving signal's unit (degrees for a servo);
+            // MuJoCo wants radians.
+            const double f = Units::toMujoco(drivingSignalUnit(act));
             actuatorOut += QString(" ctrlrange=\"%1 %2\" ctrllimited=\"true\"")
-                            .arg(act.ctrlrange[0])
-                            .arg(act.ctrlrange[1]);
+                            .arg(act.ctrlrange[0] * f)
+                            .arg(act.ctrlrange[1] * f);
         }
 
         if (act.forceRange.size() == 2) {
@@ -363,8 +454,6 @@ QString ComponentBlueprint::generateContactsXML(const int uid) const {
  * the target kind.
  */
 QString ComponentBlueprint::generateBasicSensorXML(const int uid) const {
-    logUnsupportedDevices();
-
     QString xml = "";
     QString prefix = "comp_" + QString::number(uid) + "_";
 
@@ -408,20 +497,6 @@ QString ComponentBlueprint::generateTendonXML(const int uid) const {
     }
     return xml;
 }
-
-
-
-
-// Cameras and displays are loaded and round-tripped but have no XML/runtime
-// production yet. Logged once per blueprint.
-void ComponentBlueprint::logUnsupportedDevices() const {
-    if (unsupportedDevicesLogged) return;
-    if (cameras.isEmpty() && displays.isEmpty()) return;
-    unsupportedDevicesLogged = true;
-    Log::info(QString("ComponentBlueprint: model '%1' declares %2 camera(s) and %3 display(s); not supported yet, skipped")
-                .arg(modelId).arg(cameras.size()).arg(displays.size()));
-}
-
 
 
 

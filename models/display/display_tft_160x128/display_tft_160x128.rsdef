@@ -1,0 +1,234 @@
+{
+    "schema": 2,
+    "id": "display_tft_160x128",
+    "meta": {
+        "name": "RGB TFT Display (160x128)",
+        "version": "1.0.0",
+        "author": "Anon"
+    },
+    "resources": {
+        "meshes": {},
+        "materials": {}
+    },
+    "specs": {
+        "voltage_max": 3.3,
+        "current_ma": 40,
+        "weight_kg": 0.01,
+        "diagonal_in": 1.8
+    },
+    "pins": [
+        {
+            "id": "vcc",
+            "voltage_range": [
+                3.0,
+                3.3
+            ],
+            "description": "Power input"
+        },
+        {
+            "id": "gnd",
+            "description": "Ground"
+        },
+        {
+            "id": "sck",
+            "description": "SPI clock"
+        },
+        {
+            "id": "mosi",
+            "description": "SPI data"
+        },
+        {
+            "id": "cs",
+            "description": "SPI chip select"
+        },
+        {
+            "id": "dc",
+            "description": "Data/command select"
+        },
+        {
+            "id": "rst",
+            "description": "Reset"
+        },
+        {
+            "id": "led",
+            "description": "Backlight"
+        }
+    ],
+    "kinematics": {
+        "default_body": "base",
+        "bodies": [
+            {
+                "id": "base",
+                "overrideGeom": false,
+                "transform": {
+                    "pos": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "quat": [
+                        1,
+                        0,
+                        0,
+                        0
+                    ]
+                },
+                "geoms": [
+                    {
+                        "id": "board",
+                        "type": "box",
+                        "size": [
+                            0.02,
+                            0.017,
+                            0.001
+                        ],
+                        "pos": [
+                            0,
+                            0,
+                            0
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "mass": 0.008
+                    },
+                    {
+                        "id": "screen",
+                        "type": "box",
+                        "size": [
+                            0.017,
+                            0.0136,
+                            0.0003
+                        ],
+                        "pos": [
+                            0,
+                            0,
+                            0.0013
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "mass": 0.002
+                    }
+                ],
+                "sites": []
+            }
+        ],
+        "joints": []
+    },
+    "connectors": [
+        {
+            "id": "back",
+            "body": "base",
+            "description": "Mount on the back of the board (screen faces away)",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    90,
+                    180,
+                    270
+                ]
+            },
+            "transform": {
+                "pos": [
+                    0,
+                    0,
+                    -0.001
+                ],
+                "quat": [
+                    0,
+                    1,
+                    0,
+                    0
+                ]
+            }
+        },
+        {
+            "id": "bottom_edge",
+            "body": "base",
+            "description": "Bottom edge of the board: stands the display upright",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    90,
+                    180,
+                    270
+                ]
+            },
+            "transform": {
+                "pos": [
+                    0,
+                    -0.017,
+                    0
+                ],
+                "quat": [
+                    0.7071068,
+                    0.7071068,
+                    0,
+                    0
+                ]
+            }
+        }
+    ],
+    "devices": {
+        "displays": [
+            {
+                "id": "panel",
+                "target": {
+                    "kind": "geom",
+                    "id": "screen"
+                },
+                "resolution": [
+                    160,
+                    128
+                ],
+                "surface": {
+                    "transform": {
+                        "pos": [
+                            0,
+                            0,
+                            0.0017
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ]
+                    },
+                    "size": [
+                        0.017,
+                        0.0136
+                    ]
+                }
+            }
+        ]
+    },
+    "interface": {
+        "inputs": [
+            {
+                "name": "screen",
+                "physical": true,
+                "target": {
+                    "kind": "display",
+                    "id": "panel"
+                }
+            }
+        ],
+        "outputs": []
+    },
+    "emulator": {
+        "type": "display_emulator",
+        "source": null,
+        "parameters": {
+            "refresh_hz": 30,
+            "transfer_ms": 10
+        }
+    }
+}

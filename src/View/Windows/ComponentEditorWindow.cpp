@@ -5,6 +5,7 @@
 #include "View/Widgets/Toast.h"
 #include "Document/Components/LibraryManager.h"
 #include "Utils/Spatial.h"
+#include "Simulation/ErrorSystem/EmulatorFactory.h"
 #include <QListWidget>
 #include <QFileDialog>
 #include <QToolButton>
@@ -176,6 +177,27 @@ static QString uniqueId(const QString& base, const std::function<bool(const QStr
     QString id = QString("%1_%2").arg(base).arg(n);
     while (taken(id)) id = QString("%1_%2").arg(base).arg(++n);
     return id;
+}
+
+// Display surface covering a geom's screen face: for a box, its local +Z face
+// (0.1 mm in front, half-extents from the box's x/y); otherwise a 1 cm square
+// at the geom origin. Geoms and surfaces are both in the body frame.
+static void fitSurfaceToGeom(const ComponentData& d, const QString& geomId, DisplayDef& disp) {
+    for (const Node& body : d.bodies) {
+        for (const Geom& g : body.geoms) {
+            if (g.id != geomId) continue;
+            disp.surface.rotation = g.rot;
+            if (g.type == "box" && g.size.size() >= 3) {
+                disp.surface.position = g.pos + g.rot.rotate(Position(0, 0, g.size[2] + 0.0001));
+                disp.surfaceSize = qMakePair(g.size[0], g.size[1]);
+            } else {
+                disp.surface.position = g.pos;
+                disp.surfaceSize = qMakePair(0.005, 0.005);
+            }
+            return;
+        }
+    }
+    disp.surfaceSize = qMakePair(0.005, 0.005);
 }
 
 static QString resolutionToString(const QPair<int, int>& r) {
@@ -1446,7 +1468,7 @@ void ComponentEditorWindow::build_devices() {
             form->addRow("kv:", kvSpin);
 
             QLineEdit* ctrlRangeEdit = new QLineEdit(doubleListToString(a.ctrlrange), row);
-            ctrlRangeEdit->setPlaceholderText("min, max");
+            ctrlRangeEdit->setPlaceholderText("min, max (in the driving signal's unit, e.g. degrees)");
             form->addRow("Ctrl range:", ctrlRangeEdit);
 
             QLineEdit* forceRangeEdit = new QLineEdit(doubleListToString(a.forceRange), row);
@@ -1600,7 +1622,7 @@ void ComponentEditorWindow::build_devices() {
 
     // ---------------- cameras ----------------
     {
-        QGroupBox* box = new QGroupBox("Cameras (loaded and saved; not simulated yet)", this);
+        QGroupBox* box = new QGroupBox("Cameras", this);
         QVBoxLayout* layout = new QVBoxLayout(box);
 
         for (int i = 0; i < data.cameras.size(); ++i) {
@@ -1645,6 +1667,7 @@ void ComponentEditorWindow::build_devices() {
                 d.target.id = target.idCombo->currentText();
                 d.resolution = stringToResolution(resEdit->text(), d.resolution);
                 d.fovy = fovySpin->value();
+                schedulePreviewReload();   // camera overlay follows the edited values
             };
             connect(typeCombo, &QComboBox::currentTextChanged, this, commit);
             connect(target.idCombo, &QComboBox::currentTextChanged, this, commit);
@@ -1683,7 +1706,7 @@ void ComponentEditorWindow::build_devices() {
 
     // ---------------- displays ----------------
     {
-        QGroupBox* box = new QGroupBox("Displays (loaded and saved; not simulated yet)", this);
+        QGroupBox* box = new QGroupBox("Displays", this);
         QVBoxLayout* layout = new QVBoxLayout(box);
 
         for (int i = 0; i < data.displays.size(); ++i) {
@@ -1711,14 +1734,38 @@ void ComponentEditorWindow::build_devices() {
             resEdit->setPlaceholderText("width, height (pixels)");
             form->addRow("Resolution:", resEdit);
 
-            auto commit = [this, idx, target, resEdit]() {
+            // Screen surface (body frame of the target geom): faces +Z, image
+            // right = +X, up = +Y; size is half-extents.
+            TransformFieldRefs surfXform = addTransformFields(form, disp.surface);
+            QLineEdit* surfSizeEdit = new QLineEdit(doubleListToString({disp.surfaceSize.first, disp.surfaceSize.second}), row);
+            surfSizeEdit->setPlaceholderText("half width, half height (meters)");
+            form->addRow("Surface size:", surfSizeEdit);
+
+            auto commit = [this, idx, target, resEdit, surfXform, surfSizeEdit]() {
                 if (idx >= data.displays.size()) return;
                 DisplayDef& d = data.displays[idx];
                 d.target.id = target.idCombo->currentText();
                 d.resolution = stringToResolution(resEdit->text(), d.resolution);
+                d.surface.position = stringToPos(surfXform.posEdit->text(), d.surface.position);
+                d.surface.rotation = stringToRot(surfXform.rotEdit->text(), d.surface.rotation);
+                QList<double> size = stringToDoubleList(surfSizeEdit->text());
+                if (size.size() == 2 && size[0] > 0.0 && size[1] > 0.0) d.surfaceSize = qMakePair(size[0], size[1]);
+                schedulePreviewReload();
             };
             connect(target.idCombo, &QComboBox::currentTextChanged, this, commit);
             connect(resEdit, &QLineEdit::editingFinished, this, commit);
+            connect(surfXform.posEdit, &QLineEdit::editingFinished, this, commit);
+            connect(surfXform.rotEdit, &QLineEdit::editingFinished, this, commit);
+            connect(surfSizeEdit, &QLineEdit::editingFinished, this, commit);
+
+            QPushButton* fitBtn = new QPushButton("Fit Surface to Geom", row);
+            fitBtn->setToolTip("Box geom: cover its +Z face. Other geoms: a 1 cm square at the geom.");
+            form->addRow(fitBtn);
+            connect(fitBtn, &QPushButton::clicked, this, [this, idx]() {
+                if (idx >= data.displays.size()) return;
+                fitSurfaceToGeom(data, data.displays[idx].target.id, data.displays[idx]);
+                clearAndRebuild();
+            });
 
             QPushButton* removeBtn = new QPushButton("Remove Display", row);
             form->addRow(removeBtn);
@@ -1742,6 +1789,7 @@ void ComponentEditorWindow::build_devices() {
             d.id = uniqueId("display", [this](const QString& id) { return deviceIdTaken(data, id); });
             d.target = {"geom", geoms.first()};
             d.resolution = qMakePair(128, 64);
+            fitSurfaceToGeom(data, d.target.id, d);
             data.displays.append(d);
             clearAndRebuild();
         });
@@ -1948,11 +1996,17 @@ void ComponentEditorWindow::build_emulator() {
     QGroupBox* box = new QGroupBox("Emulator", this);
     QFormLayout* form = new QFormLayout(box);
 
-    QLineEdit* typeEdit = new QLineEdit(data.emulatorDef.type, box);
-    typeEdit->setPlaceholderText("e.g. servo, dc_gear, imu, stepper, default");
-    form->addRow("Type:", typeEdit);
-    connect(typeEdit, &QLineEdit::editingFinished, this, [this, typeEdit]() {
-        data.emulatorDef.type = typeEdit->text();
+    // Registered types to pick from; editable so a type the factory doesn't
+    // know (yet) stays visible instead of being silently replaced. Empty
+    // falls back to default_emulator at load.
+    QComboBox* typeCombo = new QComboBox(box);
+    typeCombo->setEditable(true);
+    typeCombo->addItems(EmulatorFactory::types());
+    typeCombo->setCurrentText(data.emulatorDef.type);
+    typeCombo->lineEdit()->setPlaceholderText("default_emulator");
+    form->addRow("Type:", typeCombo);
+    connect(typeCombo, &QComboBox::currentTextChanged, this, [this](const QString& text) {
+        data.emulatorDef.type = text.trimmed();
     });
 
     QLabel* paramsLabel = new QLabel("Parameters (freeform -- see the component's chosen template for expected keys):", box);

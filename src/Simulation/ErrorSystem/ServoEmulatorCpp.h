@@ -13,13 +13,12 @@
  * a non-physical output (physical=false, no real feedback pin exists on
  * real hardware) and is intentionally left untouched.
  *
- * Signal path, in causal order: delay (wire/internal latency) -> noise
- * (ADC sampling) -> deadband (digital threshold logic) -> effectiveTarget.
+ * Signal path, in causal order: deadband (digital threshold logic) ->
+ * noise (ADC sampling) -> effectiveTarget.
  *
  * update() runs once per physics tick, after syncFromMujocoSensor and
  * before pushTelemetry (see SimulationManager::physicsLoop), so
- * effectiveTarget reaches MuJoCo on the NEXT tick (one-tick input latency,
- * separate from and in addition to the modeled delay_ms).
+ * effectiveTarget reaches MuJoCo on the NEXT tick (one-tick input latency).
  *
  * Parameters (component .rsdef -> emulator.parameters), read once in init():
  *   deadband_threshold  (degrees, default 0 = disabled)

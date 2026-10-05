@@ -535,6 +535,108 @@ void VectorCanvasWindow::onUpdateTimer() {
 }
 
 
+#pragma region ImageCanvasWindow
+
+ImageView::ImageView(QWidget* parent) : QWidget(parent) {
+    setMinimumSize(160, 120);
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+}
+
+void ImageView::paintEvent(QPaintEvent* event) {
+    Q_UNUSED(event);
+    QPainter p(this);
+    p.fillRect(rect(), QColor("#111111"));
+    if (image.isNull()) {
+        p.setPen(QColor("#7a7a7a"));
+        p.drawText(rect(), Qt::AlignCenter, "No frame yet");
+        return;
+    }
+    QSize target = image.size().scaled(size(), Qt::KeepAspectRatio);
+    QRect r(QPoint((width() - target.width()) / 2, (height() - target.height()) / 2), target);
+    p.setRenderHint(QPainter::SmoothPixmapTransform, false);
+    p.drawImage(r, image);
+}
+
+ImageCanvasWindow::ImageCanvasWindow(const QString& title, QWidget* parent)
+    : CanvasWindow(DataType::IMAGE, title, parent) {
+    setStyleSheet("background-color: #1e1e1e;");
+    tilesLayout = new QHBoxLayout(this);
+    tilesLayout->setContentsMargins(8, 8, 8, 8);
+    tilesLayout->setSpacing(8);
+
+    updateTimer = new QTimer(this);
+    connect(updateTimer, &QTimer::timeout, this, &ImageCanvasWindow::onUpdateTimer);
+    updateTimer->start(33);
+}
+
+ImageCanvasWindow::~ImageCanvasWindow() {
+    updateTimer->stop();
+}
+
+void ImageCanvasWindow::addTarget(QString sourceKey, const QString& label, const QColor& color) {
+    Q_UNUSED(color);
+    if (tiles.contains(sourceKey)) return;
+
+    ImageTile tile;
+    tile.container = new QWidget(this);
+    QVBoxLayout* layout = new QVBoxLayout(tile.container);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(4);
+
+    QLabel* title = new QLabel(label, tile.container);
+    title->setStyleSheet("color: #dcdcdc; font-weight: bold;");
+    tile.view = new ImageView(tile.container);
+    tile.info = new QLabel("waiting for frames", tile.container);
+    tile.info->setStyleSheet("color: #9a9a9a;");
+
+    layout->addWidget(title);
+    layout->addWidget(tile.view, 1);
+    layout->addWidget(tile.info);
+
+    tilesLayout->addWidget(tile.container, 1);
+    tiles.insert(sourceKey, tile);
+}
+
+void ImageCanvasWindow::removeTarget(QString sourceKey) {
+    auto it = tiles.find(sourceKey);
+    if (it == tiles.end()) return;
+    it->container->deleteLater();
+    tiles.erase(it);
+}
+
+void ImageCanvasWindow::onUpdateTimer() {
+    if (!isVisible()) return;
+    auto& registry = TelemetryRegistry::getInstance();
+    for (auto it = tiles.begin(); it != tiles.end(); ++it) {
+        auto source = registry.getSource(it.key());
+        if (!source) continue;
+        ImageIOValue frame = std::any_cast<ImageIOValue>(source->snapshotAll());
+
+        // Only convert when a new frame arrived; seq 0 = cleared (sim reset).
+        if (!frame.pixels) {
+            if (it->shown) {
+                it->view->setImage(QImage());
+                it->info->setText("waiting for frames");
+                it->shown = false;
+                it->lastSeq = 0;
+            }
+            continue;
+        }
+        if (it->shown && frame.seq == it->lastSeq) continue;
+        it->lastSeq = frame.seq;
+        it->shown = true;
+        it->view->setImage(ImageBuffer::toQImage(frame));
+        it->info->setText(QString("%1x%2 %3 · frame %4 · t=%5 s")
+                              .arg(frame.width).arg(frame.height)
+                              .arg(frame.format == ImageFormat::Depth32F ? "depth" : "rgb")
+                              .arg(frame.seq)
+                              .arg(frame.time, 0, 'f', 3));
+    }
+}
+
+
+
+
 #pragma region CanvasDockItem (The Card)
 
 CanvasDockItem::CanvasDockItem(DataType type, const QString& name, QWidget* parent)
@@ -591,6 +693,7 @@ CanvasDockItem::CanvasDockItem(DataType type, const QString& name, QWidget* pare
     mainLayout->addLayout(actionsLayout);
 
     if (type == DataType::SCALAR) popUpWindow = new ScalarCanvasWindow(name, nullptr);
+    else if (type == DataType::IMAGE) popUpWindow = new ImageCanvasWindow(name, nullptr);
     else popUpWindow = new VectorCanvasWindow(name, nullptr);
 
     connect(addTargetBtn, &QPushButton::clicked, this, [this]() {
@@ -700,8 +803,8 @@ void CanvasDockItem::showAddTargetDialog() {
         auto addGroup = [&](const QMap<QString, InterfaceDef>& defs, bool isInput) {
             for (auto it = defs.constBegin(); it != defs.constEnd(); ++it) {
                 const QString key = it.key();
-                if (bp->interfaceDim(it.value()) <= 0) continue;   // image signals: nothing to plot yet
                 if (bp->interfaceShape(it.value()) != wantedShape) continue;   // canvas only takes its own data type
+                if (wantedShape != SignalShape::Image && bp->interfaceDim(it.value()) <= 0) continue;   // unresolved target
                 if (subscribedSources.contains(QString("io:%1:%2").arg(uid).arg(key))) continue;
 
                 QTreeWidgetItem* item = new QTreeWidgetItem(parentItem);

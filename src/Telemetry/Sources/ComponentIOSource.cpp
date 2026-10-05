@@ -20,11 +20,21 @@ static int signalDim(ComponentInstance* comp, const QString& ioKey, bool isInput
 }
 
 
+static bool isImageSignal(ComponentInstance* comp, const QString& ioKey, bool isInput) {
+    if (!comp || !comp->getBlueprint()) return false;
+    ComponentBlueprint* bp = comp->getBlueprint();
+    const QMap<QString, InterfaceDef>& defs = isInput ? bp->interfaceInputs : bp->interfaceOutputs;
+    auto it = defs.constFind(ioKey);
+    return it != defs.constEnd() && bp->interfaceShape(it.value()) == SignalShape::Image;
+}
+
+
 ComponentIOSource::ComponentIOSource(ComponentInstance* comp, QString ioKey, bool isInput) :
             storage(std::in_place_type<TimeSeriesBuffer>, 100, signalDim(comp, ioKey, isInput)){
     this->comp = comp;
     this->ioKey=ioKey;
     this->isInput=isInput;
+    if (isImageSignal(comp, ioKey, isInput)) storage.emplace<ImageBuffer>();
 }
 
 
@@ -44,13 +54,16 @@ void ComponentIOSource::capture(double time) {
         }
     }
     else if (auto* imgBuf = std::get_if<ImageBuffer>(&storage)) {
-        // camera & display device maybe?
+        // Camera outputs and display inputs: keep the newest frame (pointer copy).
+        imgBuf->push(comp->getImageValue(ioKey));
     }
 }
 
 
 
+// Image signals hand back an ImageIOValue (newest frame, either way).
 std::any ComponentIOSource::snapshotAll() {
+    if (auto* imgBuf = std::get_if<ImageBuffer>(&storage)) return imgBuf->snapshot();
     TimeSeriesBuffer &buffer=std::get<TimeSeriesBuffer>(storage);
     return buffer.snapshot();
 }
@@ -58,6 +71,7 @@ std::any ComponentIOSource::snapshotAll() {
 
 
 std::any ComponentIOSource::snapshotFrom(double time) {
+    if (auto* imgBuf = std::get_if<ImageBuffer>(&storage)) return imgBuf->snapshot();
     TimeSeriesBuffer &buffer=std::get<TimeSeriesBuffer>(storage);
     return buffer.snapshotFrom(time);
 }

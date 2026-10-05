@@ -174,7 +174,6 @@ void EditorWindow::setupMenuBar() {
 
     QMenu* helpMenu = topMenu->addMenu("Help");
     QAction* shortcutsAct = helpMenu->addAction("Keyboard Shortcuts");
-    QAction* rsDocsAct  = helpMenu->addAction("Robotics Studio Documentation");
     QAction* docsAct = helpMenu->addAction("MuJoCo Documentation");
     helpMenu->addSeparator();
     QAction* aboutAct = helpMenu->addAction("About RoboticsStudio");
@@ -371,13 +370,6 @@ void EditorWindow::setupMenuBar() {
         Log::info("Current Mujoco XML (Edit Mode):\n" + xml);
     });
 
-
-    connect(rsDocsAct, &QAction::triggered, this, []() {
-        QMessageBox::information(nullptr, "Robotics Studio Documentation",
-            "For documentation and tutorials, please visit our GitHub repository:\n\n"
-            "https://github.com/robotics-studio/robotics-studio"
-        );
-    });
 
     connect(docsAct, &QAction::triggered, this, []() {
         QDesktopServices::openUrl(QUrl("https://mujoco.org/book/index.html"));
@@ -580,15 +572,7 @@ void EditorWindow::setupMainViewport() {
 
     Project* project = Application::getInstance()->getProject();
     auto reloadSimulation = [this](Project* project, SimulationManager* simManager, bool isSimulation) {
-        std::lock_guard<std::mutex> lock(simManager->physicsMutex);
-
-        simManager->getMujocoContext()->loadModelFromString(
-            project->generateMujocoXML(isSimulation).toStdString()
-        );
-        simManager->cacheMujocoIds(
-            project->getRootComponent(),
-            simManager->getMujocoContext()->getModel()
-        );
+        simManager->reloadModel(project->generateMujocoXML(isSimulation), project->getRootComponent());
     };
 
     connect(playBtn, &QPushButton::clicked, this, [this, reloadSimulation]() {

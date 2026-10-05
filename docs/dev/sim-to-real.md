@@ -46,7 +46,7 @@ Consequences worth knowing:
 Set in the component file ([schema2.md](schema2.md)); no C++ needed:
 
 - **Joint**: `damping`, `armature` (rotor inertia), `frictionloss`, `range`.
-- **Actuator**: `forcerange` (stall torque limit), `ctrlrange`, `kp`/`kv` (a `position` actuator is a PD controller, so it has finite stiffness and overshoot).
+- **Actuator**: `forcerange` (stall torque limit), `ctrlrange` (in the driving signal's unit, so degrees for servos), `kp`/`kv` (a `position` actuator is a PD controller, so it has finite stiffness and overshoot).
 - **Mass**: per-geom `mass`, or `overrideGeom` with explicit `mass`/`inertia`.
 - **Backlash**: put a loose passive joint in series with the driven joint (small `range`, low damping, `collision: false`), and add a `fixed` tendon summing both with a `tendonpos` sensor. The drive joint moves, the gap joint lets the output wander, and the tendon sensor reports the total angle. Schema 2 allows several sensors per joint and sensors on tendons for exactly this.
 
@@ -57,10 +57,23 @@ An `Emulator` is a `QObject` created per `ComponentInstance` by `EmulatorFactory
 ```cpp
 class Emulator : public QObject {
     virtual void init();    // Play pressed: read parameters from emulatorDef
-    virtual void update();  // every physics iteration: apply error model, write actuator values
+    virtual void update();  // per the schedule: apply error model, write actuator values
     virtual void reset();   // Edit pressed: clear internal state
+
+    virtual Schedule schedule() const;          // default: Synchronous
+    virtual void sample(const SampleContext&);  // Async only
 };
 ```
+
+**Cadence.** `SimulationManager` reads `schedule()` at Play and flattens the tree into one list per cadence. Periods are in sim time, so a 30 Hz device stays 30 Hz at any time scale. The physics thread is the only clock; no emulator can slow it down.
+
+| Cadence | When it runs | For |
+|---|---|---|
+| `Synchronous` | `update()` once per physics tick, after the sensor sync | servos, motors, IMUs |
+| `Throttled` | `update()` once per period, on the first tick past the deadline | low-rate devices (display refresh) |
+| `Async` | `sample()` at the exact step that reaches the deadline (inside the step loop, `physicsMutex` held), plus `update()` every tick | cameras: `sample()` only builds the scene and queues it on the `CameraRenderer`; the worker renders it; `update()` publishes finished frames |
+
+`sample()` must never block. If the camera worker falls behind, frames are dropped (counted), never waited for.
 
 Subclasses add `Q_INVOKABLE` methods; those are the script API for that component. Parameters come from `emulator.parameters` in the `.rsdef` via `component->getBlueprint()->emulatorDef.parameters`, so a different part (SG90 vs MG996R) is the same class with different numbers.
 
@@ -68,13 +81,15 @@ Registered types and what is actually implemented today:
 
 | `type` | Script API | Error model implemented | Declared but not yet used |
 |---|---|---|---|
-| `servo_emulator` | `write(deg)`, `read()` | **deadband** (`deadband_threshold`, degrees) and **Gaussian noise** (`noise_stddev`, degrees) on the target | `delay_ms` (documented in the class comment, no delay buffer exists) |
+| `servo_emulator` | `write(deg)`, `read()` | **deadband** (`deadband_threshold`, degrees) and **Gaussian noise** (`noise_stddev`, degrees) on the target | |
 | `dc_gear_emulator` | `set_pwm(-255..255)`, `brake()`, `read_velocity()` | PWM clamped to the 8-bit range; the value is forwarded to the `target_velocity` input | `max_rpm_at_12v`, `deadband_pwm`, `acceleration_delay_ms`: the PWM-to-velocity, deadband and ramp code is commented out |
 | `stepper_emulator` | `set_velocity(rad/s)`, `set_rpm(rpm)`, `stop()`, `read_position()`, `read_velocity()` | none (smooth pass-through of the requested velocity) | `step_angle_deg`, `microstepping`, `holding_torque_factor` |
-| `imu_emulator` | `getAcceleration()`, `getRotation()` (objects with `x`,`y`,`z`) | none (returns the raw sensor values) | `noise_stddev`, `delay_ms` |
+| `imu_emulator` | `getAcceleration()`, `getRotation()` (objects with `x`,`y`,`z`) | none (returns the raw sensor values) | `noise_stddev` |
+| `camera_emulator` | `capture()` (`{width, height, time, seq, format, data: ArrayBuffer}`), `available()`, `seq()`, `width()`, `height()`, `getPixel(x,y)`, `getDepth(x,y)`, `toGray()`, `regionMean(x,y,w,h)`, `droppedFrames()`, `lateFrames()`; each takes an optional signal name for multi-camera parts | Async at `fps`. Frames become visible `latency_ms` (sim time) after capture. rgb: `noise_stddev` (0..255), `color_gain` `[r,g,b]`, `bits_per_channel`; depth: `depth_noise_stddev`, `depth_min`/`depth_max` (outside reads 0); both: `drop_probability` | |
+| `display_emulator` | `width()`, `height()`, `clear()`, `fill(c)`, `drawPixel`, `drawLine`, `drawRect`, `fillRect`, `drawCircle`, `fillCircle`, `drawText(x,y,text,c,size)`, `drawGray(data,w,h,x,y)`, `drawRGB(data,w,h,x,y)`, `display()`; colours are `0xRRGGBB` or CSS strings | Throttled at `refresh_hz`: the panel shows the newest buffer `display()` sent, on the part's screen in 3D and in Image canvases. `display()` blocks for `transfer_ms` (bus transfer). Drives the first display signal only | |
 | `default_emulator` | none | none | |
 
-So today the physics layer carries most of the realism, and the servo is the only part with real signal-level error injection. The other parameters are placeholders for planned models.
+So today the physics layer carries most of the realism; the servo and the camera are the parts with real signal-level error injection. The other parameters are placeholders for planned models.
 
 ### Adding an error model
 

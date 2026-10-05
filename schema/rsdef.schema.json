@@ -104,7 +104,7 @@
         },
         "devices": {
             "type": "object",
-            "description": "Things attached to the structure. Omit empty families. Unknown families are rejected (typo detection). Cameras and displays are loaded and saved but not simulated yet.",
+            "description": "Things attached to the structure. Omit empty families. Unknown families are rejected (typo detection). Cameras render from their site (looking along its -Z, +Y up); displays take pixels from the script.",
             "additionalProperties": false,
             "properties": {
                 "actuators": { "type": "array", "items": { "$ref": "#/definitions/actuator" } },
@@ -124,12 +124,27 @@
         },
         "emulator": {
             "type": "object",
+            "description": "Hardware-error model: the C++ class (EmulatorFactory) that turns script calls into device values and back.",
             "additionalProperties": false,
             "properties": {
-                "type": { "type": "string" },
-                "source": { "type": ["object", "null"] },
-                "parameters": { "type": "object" }
-            }
+                "type": {
+                    "type": "string",
+                    "description": "EmulatorFactory type. Empty or absent: default_emulator. Unknown types are logged and the component gets no emulator.",
+                    "examples": ["servo_emulator", "stepper_emulator", "dc_gear_emulator", "imu_emulator", "camera_emulator", "display_emulator", "default_emulator"]
+                },
+                "source": { "type": ["object", "null"], "description": "Reserved for a custom emulator script; unused." },
+                "parameters": { "type": "object", "description": "Free-form, read by the emulator in init(). Known keys of some types are typed below; others pass through." }
+            },
+            "allOf": [
+                {
+                    "if": { "properties": { "type": { "const": "camera_emulator" } }, "required": ["type"] },
+                    "then": { "properties": { "parameters": { "$ref": "#/definitions/cameraEmulatorParameters" } } }
+                },
+                {
+                    "if": { "properties": { "type": { "const": "display_emulator" } }, "required": ["type"] },
+                    "then": { "properties": { "parameters": { "$ref": "#/definitions/displayEmulatorParameters" } } }
+                }
+            ]
         }
     },
     "definitions": {
@@ -301,7 +316,7 @@
                         { "properties": { "kind": { "enum": ["joint", "tendon"] } } }
                     ]
                 },
-                "ctrlrange": { "$ref": "#/definitions/pair" },
+                "ctrlrange": { "$ref": "#/definitions/pair", "description": "Command limits in the unit of the input signal that drives this actuator (degrees for a degrees signal); converted to MuJoCo units on load." },
                 "forcerange": { "$ref": "#/definitions/pair" },
                 "kp": { "type": "number" },
                 "kv": { "type": "number" }
@@ -334,25 +349,58 @@
         },
         "camera": {
             "type": "object",
+            "description": "A MuJoCo camera placed exactly on its target site: it looks along the site's -Z axis with +Y up. Frames reach scripts through camera_emulator.",
             "required": ["id", "type", "target", "resolution", "fovy"],
             "additionalProperties": false,
             "properties": {
                 "id": { "type": "string", "minLength": 1 },
-                "type": { "enum": ["rgb", "depth"] },
+                "type": {
+                    "enum": ["rgb", "depth"],
+                    "description": "rgb: 3 bytes per pixel. depth: float meters along the view axis, 0 = no return."
+                },
                 "target": {
                     "allOf": [
                         { "$ref": "#/definitions/targetOf" },
                         { "properties": { "kind": { "const": "site" } } }
                     ]
                 },
-                "resolution": { "$ref": "#/definitions/resolution" },
-                "fovy": { "type": "number", "exclusiveMinimum": 0 }
+                "resolution": { "$ref": "#/definitions/resolution", "description": "[width, height] in pixels. The generated model sizes MuJoCo's offscreen buffer for the largest camera." },
+                "fovy": { "type": "number", "exclusiveMinimum": 0, "description": "Vertical field of view, degrees." }
+            }
+        },
+        "cameraEmulatorParameters": {
+            "type": "object",
+            "description": "camera_emulator parameters. All optional.",
+            "properties": {
+                "fps": { "type": "number", "exclusiveMinimum": 0, "description": "Frames per sim second (default 15)." },
+                "latency_ms": { "type": "number", "minimum": 0, "description": "Capture to visible-to-script delay, sim ms (default 50)." },
+                "drop_probability": { "type": "number", "minimum": 0, "maximum": 1, "description": "Chance a frame is lost (default 0)." },
+                "noise_stddev": { "type": "number", "minimum": 0, "description": "rgb: per-channel Gaussian noise, 0..255 scale (default 0)." },
+                "color_gain": {
+                    "type": "array",
+                    "items": { "type": "number", "minimum": 0 },
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "rgb: [r, g, b] channel gains (default [1, 1, 1])."
+                },
+                "bits_per_channel": { "type": "integer", "minimum": 1, "maximum": 8, "description": "rgb: quantisation (default 8)." },
+                "depth_noise_stddev": { "type": "number", "minimum": 0, "description": "depth: Gaussian noise, meters (default 0)." },
+                "depth_min": { "type": "number", "minimum": 0, "description": "depth: closer reads 0; 0 = no limit (default 0)." },
+                "depth_max": { "type": "number", "minimum": 0, "description": "depth: farther reads 0; 0 = no limit (default 0)." }
+            }
+        },
+        "displayEmulatorParameters": {
+            "type": "object",
+            "description": "display_emulator parameters. All optional.",
+            "properties": {
+                "refresh_hz": { "type": "number", "exclusiveMinimum": 0, "description": "Panel refresh rate, sim time (default 30)." },
+                "transfer_ms": { "type": "integer", "minimum": 0, "maximum": 200, "description": "How long display() blocks the script, like a bus transfer (default 0)." }
             }
         },
         "display": {
             "type": "object",
             "description": "A pixel buffer shown on a geom. Displays take no 'type'.",
-            "required": ["id", "target", "resolution"],
+            "required": ["id", "target", "resolution", "surface"],
             "additionalProperties": false,
             "properties": {
                 "id": { "type": "string", "minLength": 1 },
@@ -362,7 +410,22 @@
                         { "properties": { "kind": { "const": "geom" } } }
                     ]
                 },
-                "resolution": { "$ref": "#/definitions/resolution" }
+                "resolution": { "$ref": "#/definitions/resolution" },
+                "surface": {
+                    "type": "object",
+                    "description": "Where the screen is drawn, in the target geom's parent body frame. Faces +Z; image right = +X, image up = +Y. size: half-extents in meters.",
+                    "required": ["transform", "size"],
+                    "additionalProperties": false,
+                    "properties": {
+                        "transform": { "$ref": "#/definitions/transform" },
+                        "size": {
+                            "type": "array",
+                            "items": { "type": "number", "exclusiveMinimum": 0 },
+                            "minItems": 2,
+                            "maxItems": 2
+                        }
+                    }
+                }
             }
         },
         "domain": {
@@ -406,7 +469,7 @@
             "required": ["name", "physical", "target"],
             "properties": {
                 "name": { "type": "string", "minLength": 1, "description": "Unique across inputs and outputs." },
-                "unit": { "type": "string" },
+                "unit": { "type": "string", "description": "degrees/deg/degree and degrees/s/deg/s/degree/s/dps are converted to radians (per second) for MuJoCo; any other unit is a label." },
                 "domain": { "$ref": "#/definitions/domain" },
                 "physical": { "type": "boolean", "description": "true if a real device would expose it (a pin), false for simulation-only ground truth." },
                 "componentLabels": { "type": "array", "items": { "type": "string" } },

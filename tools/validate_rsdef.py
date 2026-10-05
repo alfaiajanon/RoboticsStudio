@@ -169,6 +169,16 @@ def validate(d):
                     errs.add(f"{owner}: 'resolution' must be two positive integers")
             if fam == "cameras" and "fovy" not in dev:
                 errs.add(f"{owner}: missing 'fovy'")
+            if fam == "displays":
+                surf = dev.get("surface")
+                if not isinstance(surf, dict):
+                    errs.add(f"{owner}: missing 'surface' (transform + size)")
+                else:
+                    if not isinstance(surf.get("transform"), dict):
+                        errs.add(f"{owner}: surface: missing 'transform'")
+                    size = surf.get("size")
+                    if not (isinstance(size, list) and len(size) == 2 and all(isinstance(x, (int, float)) and x > 0 for x in size)):
+                        errs.add(f"{owner}: surface: 'size' must be two positive half-extents [hx, hy]")
 
     iface = d.get("interface", {})
     names = []

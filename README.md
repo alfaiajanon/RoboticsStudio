@@ -77,6 +77,12 @@ function loop() {
 }
 ```
 
+## Documentation
+
+* [Using RoboticsStudio](docs/user/overview.md): projects, assembly, scripting, running, plotting.
+* Creating parts: [basics](docs/user/component_basics.md), [servo](docs/user/create_servo.md), [stepper](docs/user/create_stepper.md), [DC motor](docs/user/create_dc_motor.md), [IMU](docs/user/create_imu.md), [brackets & wheels](docs/user/create_structural.md), [camera](docs/user/create_camera.md), [display](docs/user/create_display.md).
+* Developer docs (architecture, file format, internals): [docs/dev](docs/dev/overview.md).
+
 ## Building from Source
 
 If you prefer to compile the application yourself:

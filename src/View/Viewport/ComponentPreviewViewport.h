@@ -59,6 +59,7 @@ class ComponentPreviewViewport : public QLabel {
         QCheckBox* orthoBox = nullptr;
         bool showConnectors = true;
         bool showJoints = true;
+        bool showCameras = true;
 
 
         void applyCamera();

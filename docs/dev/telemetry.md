@@ -6,7 +6,7 @@ How simulation data gets from MuJoCo to the plots. Code: `src/Telemetry/` (produ
 flowchart LR
     subgraph PHY["Physics thread (physicsMutex held)"]
         direction TB
-        STEP["mj_step x N"] --> SYNC["syncFromMujocoSensor"] --> EMU["processEmulators"] --> CAP["TelemetryRegistry::captureAll(time)"]
+        STEP["mj_step x N"] --> SYNC["syncFromMujocoSensor"] --> EMU["runEmulators"] --> CAP["TelemetryRegistry::captureAll(time)"]
     end
 
     subgraph REG["TelemetryRegistry (singleton, mutex)"]
@@ -51,10 +51,10 @@ flowchart LR
 | Piece | Role |
 |---|---|
 | `TelemetrySource` | Abstract producer: `key`, `name`, `description`, `DataType` (`SCALAR`/`VECTOR`/`IMAGE`), ref-count, `capture(time)`, `snapshotAll()`, `snapshotFrom(time)`. Subclass it to add a telemetry kind. |
-| `ComponentIOSource` | Plots one interface signal of a component (`isInput` selects `getActuatorValue` vs `getSensorValue`). Width comes from `ComponentBlueprint::interfaceDim`; image signals (dim 0) are not offered yet. Buffer: 100 points. Storage is a `variant<TimeSeriesBuffer, ImageBuffer>`; the image branch of `capture()` is a stub (camera/display not supported yet). |
+| `ComponentIOSource` | Plots one interface signal of a component (`isInput` selects `getActuatorValue` vs `getSensorValue`). Width comes from `ComponentBlueprint::interfaceDim`. Buffer: 100 points. Storage is a `variant<TimeSeriesBuffer, ImageBuffer>`, picked from the signal shape: image signals (camera outputs, display inputs) use the `ImageBuffer`, and their `snapshotAll()`/`snapshotFrom()` return the newest `ImageIOValue`. |
 | `BodyMotionSource` | Linear/angular velocity or acceleration of one MuJoCo body (`comp_<uid>_<body>`), global or local frame. Uses `mj_objectVelocity`/`mj_objectAcceleration` (result is `[angular(3); linear(3)]`). The body id is resolved lazily on the first capture because the model can be reloaded. Dim 3, buffer 1000 points. |
 | `TimeSeriesBuffer` | Mutex-protected ring buffer of `(time, vector<double>)`. `push` silently drops a vector whose width differs from the buffer's `dim`. `snapshot()` returns the ring contents oldest first (the plot code still skips points from before a clock reset). `snapshotFrom(t)` returns only points with time > t, copying just the new tail. `pullNewData(cursor)` returns only the points added since the cursor. |
-| `ImageBuffer` | Front/back `QImage` pair, reserved for camera/display. No UI consumer yet. |
+| `ImageBuffer` | Newest `ImageIOValue` of an image signal (a pointer copy of the shared, immutable pixels; the physics thread never copies pixels). `ImageBuffer::toQImage` converts on the UI side (depth shown as grayscale, near = bright). Shown by `ImageCanvasWindow` ("Image" canvases). |
 | `TelemetryRegistry` | Owns all sources. `clearAll()` (currently only called from the `MotionPanel` destructor); `clearInactive()` drops sources with no subscribers (called when a Motion target is removed). |
 
 ## UI

@@ -1,8 +1,6 @@
 #include "ComponentInstance.h"
 
-#include "Utils/Log.h"
 #include "Document/Project.h"
-#include "Telemetry/TelemetryRegistry.h"
 #include "Simulation/ErrorSystem/Emulator.h"
 #include "ComponentBlueprint.h"
 #include <qobject.h>
@@ -53,8 +51,8 @@ ComponentBlueprint* ComponentInstance::getBlueprint() const {
 /*
  * Builds the runtime value maps from the blueprint's interface. Signal slots
  * are keyed by signal name, joint slots by joint id (D8). Sizes come from the
- * DeviceTypes table via ComponentData::interfaceDim; image signals
- * (camera/display) have no runtime slot yet.
+ * DeviceTypes table via ComponentData::interfaceDim. Image signals
+ * (camera outputs, display inputs) get an ImageIOValue sized from their device.
  */
 void ComponentInstance::setBlueprint(ComponentBlueprint *blueprint){
     this->blueprint = blueprint;
@@ -66,10 +64,30 @@ void ComponentInstance::setBlueprint(ComponentBlueprint *blueprint){
         return data;
     };
 
+    auto makeImage = [blueprint](const TargetRef& target) {
+        auto img = std::make_shared<ImageIOValue>();
+        if (target.kind == "camera") {
+            for (const CameraDef& c : blueprint->cameras) {
+                if (c.id != target.id) continue;
+                img->width = c.resolution.first;
+                img->height = c.resolution.second;
+                img->format = c.type == "depth" ? ImageFormat::Depth32F : ImageFormat::RGB888;
+            }
+        } else if (target.kind == "display") {
+            for (const DisplayDef& d : blueprint->displays) {
+                if (d.id != target.id) continue;
+                img->width = d.resolution.first;
+                img->height = d.resolution.second;
+            }
+        }
+        return img;
+    };
+
     for (auto it = blueprint->interfaceInputs.constBegin(); it != blueprint->interfaceInputs.constEnd(); ++it) {
         const InterfaceDef &def = it.value();
         int dim = blueprint->interfaceDim(def);
         if (dim > 0) actuators[it.key()] = makeValue(dim);
+        else if (def.target.kind == "display") images[it.key()] = makeImage(def.target);
 
         if (def.target.kind == "joint" && !joints.contains(def.target.id)) {
             joints[def.target.id] = makeValue(1);
@@ -78,63 +96,11 @@ void ComponentInstance::setBlueprint(ComponentBlueprint *blueprint){
     for (auto it = blueprint->interfaceOutputs.constBegin(); it != blueprint->interfaceOutputs.constEnd(); ++it) {
         int dim = blueprint->interfaceDim(it.value());
         if (dim > 0) sensors[it.key()] = makeValue(dim);
+        else if (it.value().target.kind == "camera") images[it.key()] = makeImage(it.value().target);
     }
 }
 
 
-
-
-
-/*
- * Initializes the IO memory buffers based on the component's blueprint.
- * Registers active channels with the central TelemetryRegistry for tracking.
- */
-// void ComponentInstance::initializeIO() {
-//     std::lock_guard<std::mutex> lock(ioMutex);
-//     if (!blueprint) return;
-
-//     auto& registry = TelemetryRegistry::getInstance();
-//     QString prefix = "comp_" + QString::number(uid) + "_";
-
-//     for (const QString& key : blueprint->inputDefs.keys()) {
-//         auto stream = std::make_shared<IOStream>();
-//         const IODef& def = blueprint->inputDefs[key];
-
-//         ChannelMeta meta;
-//         meta.name = prefix + def.name;
-//         meta.source = SourceKind::INPUT;
-//         meta.physical = def.physical;
-//         meta.dim = def.dim;
-
-//         if (def.channelType == "scalar") stream->channelId = registry.registerScalar(meta);
-//         else if (def.channelType == "vector") stream->channelId = registry.registerVector(meta);
-//         else if (def.channelType == "image") stream->channelId = registry.registerImage(meta);
-
-//         actuators[key] = stream;
-
-//         QString targetJoint = def.targetJoint;
-//         if (!joints.contains(targetJoint)) {
-//             joints[targetJoint] = std::make_shared<IOStream>();
-//         }
-//     }
-
-//     for (const QString& key : blueprint->outputDefs.keys()) {
-//         auto stream = std::make_shared<IOStream>();
-//         const IODef& def = blueprint->outputDefs[key];
-
-//         ChannelMeta meta;
-//         meta.name = prefix + def.name;
-//         meta.source = SourceKind::OUTPUT;
-//         meta.physical = def.physical;
-//         meta.dim = def.dim;
-
-//         if (def.channelType == "scalar") stream->channelId = registry.registerScalar(meta);
-//         else if (def.channelType == "vector") stream->channelId = registry.registerVector(meta);
-//         else if (def.channelType == "image") stream->channelId = registry.registerImage(meta);
-
-//         sensors[key] = stream;
-//     }
-// }
 
 
 
@@ -171,6 +137,24 @@ void ComponentInstance::setSensorValue(const QString& key, BasicIOValue& data) {
 
 
 
+void ComponentInstance::setImageValue(const QString& key, ImageIOValue& data) {
+    std::lock_guard<std::mutex> lock(ioMutex);
+    if (images.contains(key)) {
+        *images[key] = data;
+    }
+}
+
+ImageIOValue ComponentInstance::getImageValue(const QString& key) const {
+    std::lock_guard<std::mutex> lock(ioMutex);
+    auto it = images.constFind(key);
+    if (it != images.constEnd() && *it != nullptr) {
+        return *(*it);
+    }
+    return ImageIOValue{};
+}
+
+
+
 BasicIOValue ComponentInstance::getActuatorValue(const QString& key) const {
     std::lock_guard<std::mutex> lock(ioMutex);
     auto it = actuators.constFind(key);
@@ -197,102 +181,3 @@ BasicIOValue ComponentInstance::getSensorValue(const QString& key) const {
     }
     return BasicIOValue{0};
 }
-
-
-
-
-
-/*
- * Retrieves the global TelemetryRegistry channel ID linked to a specific actuator.
- */
-// int ComponentInstance::getActuatorChannelId(const QString& key) const {
-//     std::lock_guard<std::mutex> lock(ioMutex);
-//     if (actuators.contains(key)) {
-//         return actuators.value(key)->channelId;
-//     }
-//     return -1;
-// }
-
-
-
-
-
-// /*
-//  * Retrieves the global TelemetryRegistry channel ID linked to a specific sensor.
-//  */
-// int ComponentInstance::getSensorChannelId(const QString& key) const {
-//     std::lock_guard<std::mutex> lock(ioMutex);
-//     if (sensors.contains(key)) {
-//         return sensors.value(key)->channelId;
-//     }
-//     return -1;
-// }
-
-
-
-
-
-/*
- * Safely caches the pre-computed MuJoCo integer ID for an IO stream.
- */
-// void ComponentInstance::setMujocoActuatorId(const QString& key, int id) {
-//     std::lock_guard<std::mutex> lock(ioMutex);
-//     if (actuators.contains(key)) {
-//         actuators[key]->mujocoId = id;
-//     }
-// }
-
-
-
-
-
-// void ComponentInstance::setMujocoSensorId(const QString& key, int id) {
-//     std::lock_guard<std::mutex> lock(ioMutex);
-//     if (sensors.contains(key)) {
-//         sensors[key]->mujocoId = id;
-//     }
-// }
-
-
-
-
-
-// void ComponentInstance::setMujocoJointId(const QString& key, int id) {
-//     std::lock_guard<std::mutex> lock(ioMutex);
-//     if (joints.contains(key)) {
-//         joints[key]->mujocoId = id;
-//     }
-// }
-
-
-
-
-
-// int ComponentInstance::getMujocoActuatorId(const QString& key) const {
-//     std::lock_guard<std::mutex> lock(ioMutex);
-//     if (actuators.contains(key))
-//         return actuators.value(key)->mujocoId;
-//     return -1;
-// }
-
-
-
-
-
-// int ComponentInstance::getMujocoSensorId(const QString& key) const {
-//     std::lock_guard<std::mutex> lock(ioMutex);
-//     if (sensors.contains(key))
-//         return sensors.value(key)->mujocoId;
-//     return -1;
-// }
-
-
-
-
-
-// int ComponentInstance::getMujocoJointId(const QString& key) const {
-//     std::lock_guard<std::mutex> lock(ioMutex);
-//     if (joints.contains(key))
-//         return joints.value(key)->mujocoId;
-//     return -1;
-// }

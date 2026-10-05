@@ -2,13 +2,17 @@
 #include "MujocoContext.h"
 
 #include <chrono>
+#include <limits>
 #include <qobject.h>
 #include "Utils/Log.h"
 #include "Document/Project.h"
 #include "Document/Components/ComponentBlueprint.h"
 #include "Document/Components/ComponentInstance.h"
+#include "Document/Components/Units.h"
 #include "Telemetry/TelemetryRegistry.h"
 #include "Simulation/ErrorSystem/Emulator.h"
+#include "Simulation/Rendering/CameraRenderer.h"
+#include "Simulation/Rendering/DisplayTextures.h"
 #include "mujoco/mjdata.h"
 
 
@@ -23,7 +27,16 @@ SimulationManager::SimulationManager(Project* project): project(project),
                                                         isAlive(true),
                                                         currentState(SimulationState::PAUSED),
                                                         timeScale(1.0f),
-                                                        stepAccumulator(0.0f) {}
+                                                        stepAccumulator(0.0f) {
+    displayTextures = new DisplayTextures();
+    cameraRenderer = new CameraRenderer(&mujocoContext, &physicsMutex, displayTextures);
+
+    // Main viewport: upload display frames in the viewport's GL context. The
+    // cache lives in the lambda; only the UI thread renders this context.
+    mujocoContext.beforeRender = [this, cache = DisplayTextures::UploadCache()](const mjrContext* con) mutable {
+        displayTextures->upload(con, cache);
+    };
+}
 
 
 
@@ -45,6 +58,13 @@ SimulationManager::~SimulationManager() {
     if (physicsThread.joinable()) {
         physicsThread.join();
     }
+
+    // After the physics thread is gone: it is the only producer.
+    delete cameraRenderer;
+    cameraRenderer = nullptr;
+    mujocoContext.beforeRender = nullptr;
+    delete displayTextures;
+    displayTextures = nullptr;
 }
 
 
@@ -60,6 +80,7 @@ void SimulationManager::play() {
 
     ComponentInstance* root = project->getRootComponent();
     initEmulators(root);
+    buildSchedule(root);
 
     if (currentState == SimulationState::PAUSED) {
         if(!physicsThread.joinable()) {
@@ -96,6 +117,7 @@ void SimulationManager::edit() {
     mcu->stop();
 
     ComponentInstance* root = project->getRootComponent();
+    clearSchedule();
     resetEmulators(root);
 
     mj_resetData(mj->getModel(), mj->getData());
@@ -219,10 +241,15 @@ void SimulationManager::physicsLoop() {
                     syncToMujocoActuator(root, mj->getModel(), mj->getData());
                     for(int i = 0; i < stepsToTake; ++i) {
                         mj->step();
+                        // Async devices sample at the exact step that reaches their deadline.
+                        if (!asyncEmulators.empty() && mj->getData()->time >= nextAsyncDue) {
+                            runDueAsync(mj->getData()->time);
+                        }
                     }
                     syncFromMujocoSensor(root, mj->getModel(), mj->getData());
 
-                    processEmulators(root); // position it here to capture both sensor and actuator properly
+                    runEmulators(mj->getData()->time); // position it here to capture both sensor and actuator properly
+                    displayTextures->collect();
 
                     // pushTelemetry(root, mj->getData()->time);
                     TelemetryRegistry::getInstance().captureAll(mj->getData()->time);
@@ -253,6 +280,7 @@ void SimulationManager::physicsLoop() {
             mj->forward();
 
             syncFromMujocoSensor(root, mj->getModel(), mj->getData());
+            displayTextures->collect();   // emulator resets blank the screens
         }
 
         trackFps();
@@ -279,14 +307,133 @@ void SimulationManager::initEmulators(ComponentInstance* comp) {
 
 
 
-void SimulationManager::processEmulators(ComponentInstance* comp) {
+/*
+ * Flattens the component tree into the per-cadence emulator lists (pre-order,
+ * so synchronous emulators keep the order the old recursive pass had).
+ * Throttled/async deadlines start at the current sim time: the first update or
+ * sample happens on the first tick. Periods shorter than one physics step are
+ * clamped to one step.
+ */
+void SimulationManager::buildSchedule(ComponentInstance* root) {
+    std::lock_guard<std::mutex> lock(physicsMutex);
+
+    syncEmulators.clear();
+    throttledEmulators.clear();
+    asyncEmulators.clear();
+
+    mjModel* m = mujocoContext.getModel();
+    mjData* d = mujocoContext.getData();
+    if (!m || !d) return;
+
+    collectEmulators(root, d->time, m->opt.timestep);
+
+    nextAsyncDue = d->time;
+}
+
+
+void SimulationManager::clearSchedule() {
+    std::lock_guard<std::mutex> lock(physicsMutex);
+    syncEmulators.clear();
+    throttledEmulators.clear();
+    asyncEmulators.clear();
+}
+
+
+void SimulationManager::collectEmulators(ComponentInstance* comp, double now, double minPeriod) {
     if (!comp) return;
-    if (comp->emulator) {
-        comp->emulator->update();
+    if (Emulator* e = comp->emulator) {
+        Schedule s = e->schedule();
+        if (s.cadence == Cadence::Synchronous) {
+            syncEmulators.push_back(e);
+        } else {
+            double period = s.periodSec;
+            if (period < minPeriod) {
+                Log::warning(QString("SimulationManager: component %1 (%2): emulator period %3 s is shorter than one physics step; using %4 s")
+                                .arg(comp->uid).arg(comp->modelId).arg(period).arg(minPeriod));
+                period = minPeriod;
+            }
+            ScheduledEmulator entry{e, period, now};
+            if (s.cadence == Cadence::Throttled) throttledEmulators.push_back(entry);
+            else                                 asyncEmulators.push_back(entry);
+        }
     }
     for (ComponentInstance* child : comp->children) {
-        processEmulators(child);
+        collectEmulators(child, now, minPeriod);
     }
+}
+
+
+// Next deadline after `now`, keeping the phase; if the loop fell more than a
+// period behind (a hitch), skip the missed samples instead of bursting.
+static double advanceDeadline(double due, double period, double now) {
+    due += period;
+    if (due <= now) due = now + period;
+    return due;
+}
+
+
+/*
+ * Called from inside the step loop (physicsMutex held) once sim time reaches
+ * nextAsyncDue: samples every async emulator that is due, then recomputes the
+ * earliest deadline.
+ */
+void SimulationManager::runDueAsync(double now) {
+    SampleContext ctx;
+    ctx.m = mujocoContext.getModel();
+    ctx.d = mujocoContext.getData();
+    ctx.simTime = now;
+    ctx.cameraRenderer = cameraRenderer;
+
+    double earliest = std::numeric_limits<double>::infinity();
+    for (ScheduledEmulator& s : asyncEmulators) {
+        if (now >= s.nextDue) {
+            s.emulator->sample(ctx);
+            s.nextDue = advanceDeadline(s.nextDue, s.periodSec, now);
+        }
+        earliest = std::min(earliest, s.nextDue);
+    }
+    nextAsyncDue = earliest;
+}
+
+
+/*
+ * Once per physics tick, after the sensor sync (physicsMutex held):
+ * synchronous emulators every tick, throttled ones when due, async ones every
+ * tick so they can publish what their worker finished.
+ */
+void SimulationManager::runEmulators(double now) {
+    for (Emulator* e : syncEmulators) {
+        e->setSimTime(now);
+        e->update();
+    }
+    for (ScheduledEmulator& s : throttledEmulators) {
+        if (now >= s.nextDue) {
+            s.emulator->setSimTime(now);
+            s.emulator->update();
+            s.nextDue = advanceDeadline(s.nextDue, s.periodSec, now);
+        }
+    }
+    for (ScheduledEmulator& s : asyncEmulators) {
+        s.emulator->setSimTime(now);
+        s.emulator->update();
+    }
+}
+
+
+
+/*
+ * Swaps the model in under physicsMutex and re-resolves MuJoCo ids. The
+ * camera renderer is told first, while the old model is still alive, so it
+ * drops queued frames and rebuilds its GPU context for the new model.
+ */
+bool SimulationManager::reloadModel(const QString& xml, ComponentInstance* root) {
+    std::lock_guard<std::mutex> lock(physicsMutex);
+
+    if (cameraRenderer) cameraRenderer->invalidate();
+    bool ok = mujocoContext.loadModelFromString(xml.toStdString());
+    cacheMujocoIds(root, mujocoContext.getModel());
+    displayTextures->rebuild(root, mujocoContext.getModel());
+    return ok;
 }
 
 
@@ -360,10 +507,6 @@ void SimulationManager::resetEmulators(ComponentInstance* comp) {
 
 #pragma region mujoco stuff
 
-static bool isDegreeUnit(const QString& unit) {
-    QString u = unit.toLower();
-    return u == "degree" || u == "deg" || u == "degrees";
-}
 
 
 /*
@@ -376,7 +519,8 @@ static bool isDegreeUnit(const QString& unit) {
  *   input  kind actuator : actuator id from the actuator name
  *   output kind sensor   : sensor id from the sensor name (dimension cross-checked
  *                          against the model once, here)
- *   emulator / camera / display kinds have no MuJoCo id and are left at -1.
+ *   output kind camera   : camera id from the camera name (into the ImageIOValue)
+ *   emulator / display kinds have no MuJoCo id and are left at -1.
  */
 void SimulationManager::cacheMujocoIds(ComponentInstance* root, mjModel* m) {
     if (!m || !root) return;
@@ -417,6 +561,17 @@ void SimulationManager::cacheMujocoIds(ComponentInstance* root, mjModel* m) {
         for (auto it = bp->interfaceOutputs.constBegin(); it != bp->interfaceOutputs.constEnd(); ++it) {
             const QString& key = it.key();
             const InterfaceDef& def = it.value();
+
+            if (def.target.kind == "camera") {
+                ImageIOValue img = root->getImageValue(key);
+                img.mujocoId = mj_name2id(m, mjOBJ_CAMERA, (prefix + def.target.id).toStdString().c_str());
+                if (img.mujocoId < 0) {
+                    Log::error(QString("SimulationManager: component %1 (%2): camera '%3' not found in the MuJoCo model; signal '%4' disabled")
+                                    .arg(root->uid).arg(root->modelId, def.target.id, key));
+                }
+                root->setImageValue(key, img);
+                continue;
+            }
             if (def.target.kind != "sensor") continue;
 
             int id = mj_name2id(m, mjOBJ_SENSOR, (prefix + def.target.id).toStdString().c_str());
@@ -459,9 +614,7 @@ void SimulationManager::syncToMujocoActuator(ComponentInstance* root, mjModel* m
 
                 double val = data.dim == 1 ? data.data[0] : 0.0;
 
-                if (isDegreeUnit(it.value().unit)) {
-                    val = val * (M_PI / 180.0);
-                }
+                val *= Units::toMujoco(it.value().unit);
 
                 d->ctrl[mujocoId] = val;
             }
@@ -497,9 +650,7 @@ void SimulationManager::syncToMujocoJoint(ComponentInstance* root, mjModel* m, m
 
                 double targetVal = data.dim == 1 ? data.data[0] : 0.0;
 
-                if (isDegreeUnit(def.unit)) {
-                    targetVal = targetVal * (M_PI / 180.0);
-                }
+                targetVal *= Units::toMujoco(def.unit);
 
                 int qposIndex = m->jnt_qposadr[mujocoId];
                 double currentPos = d->qpos[qposIndex];
@@ -545,20 +696,20 @@ void SimulationManager::syncFromMujocoSensor(ComponentInstance* root, mjModel* m
                 int dim = bp->interfaceDim(def);
 
                 if (dim > 0 && adr + dim <= m->nsensordata) {
-                    bool isDegree = isDegreeUnit(def.unit);
+                    const double fromMujoco = 1.0 / Units::toMujoco(def.unit);
 
                     if (dim > 1 || bp->interfaceShape(def) == SignalShape::Vector) {
                         std::vector<double> vec(dim);
                         for (int i = 0; i < dim; ++i) {
                             double val = d->sensordata[adr + i];
-                            if (isDegree) val *= (180.0 / M_PI);
+                            val *= fromMujoco;
                             vec[i] = val;
                         }
                         data.data = vec;
                         root->setSensorValue(key, data);
                     } else {
                         double val = d->sensordata[adr];
-                        if (isDegree) val *= (180.0 / M_PI);
+                        val *= fromMujoco;
 
                         data.data[0] = val;
                         root->setSensorValue(key, data);

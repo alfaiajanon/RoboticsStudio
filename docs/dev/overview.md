@@ -43,7 +43,7 @@ flowchart TB
    - `EDITING`: joint values drive `qpos` and `mj_forward` runs, with no stepping, so parts can be posed. Switching to it stops the script, resets emulators and resets MuJoCo data.
    - `PLAYING`: the physics thread steps the model (scaled by time scale) and the MCU thread runs the script.
    - `PAUSED`: both threads idle.
-6. **Signals.** Every component exposes named interface signals (inputs and outputs). Each physics tick: write input values to `ctrl` (degrees converted to radians), `mj_step`, read `sensordata` back into output values (radians to degrees), run each emulator's `update()`.
+6. **Signals.** Every component exposes named interface signals (inputs and outputs). Each physics tick: write input values to `ctrl` (degrees converted to radians), `mj_step`, read `sensordata` back into output values (radians to degrees), run the emulators. Each emulator declares a cadence: every tick, throttled to a sim-time period, or async (sampled inside the step loop, heavy work done on a worker; see [sim-to-real.md](sim-to-real.md)). Image signals (camera outputs, display inputs) live in `ImageIOValue`s next to the numeric values.
 7. **Scripting.** `MicroController` compiles the user's JavaScript in a `QJSEngine` and calls `loop()` repeatedly on its own thread, throttled to imitate a cheap processor. Each component's emulator is injected as `comp_<uid>`, and its `Q_INVOKABLE` methods (`write`, `read`, ...) are the script API. `delay(ms)` is provided natively.
 8. **Observation.** The viewport renders the MuJoCo state. `TelemetryRegistry` sources capture signals and body motion after each batch of steps for the plot panels ([telemetry.md](telemetry.md)).
 
@@ -53,7 +53,7 @@ flowchart TB
 |---|---|
 | `Document/` | `Project`, `ComponentData`/`ComponentBlueprint`/`ComponentInstance`, `LibraryManager`, `DeviceTypes`. No widgets. |
 | `Commands/` | Undoable edits. The only way the View mutates authored state. |
-| `Simulation/` | `SimulationManager` (threads, sync), `MujocoContext`, `MicroController` (JS), `ErrorSystem/` emulators. |
+| `Simulation/` | `SimulationManager` (threads, sync, emulator schedule), `MujocoContext`, `MicroController` (JS), `ErrorSystem/` emulators, `Rendering/` (`CameraRenderer`). |
 | `Telemetry/` | Registry, sources, storage buffers. |
 | `View/` | Windows (launcher, editor, component editor), panels, OpenGL viewports. |
 | `Application/` | Singleton that owns the project, simulation manager, editor and undo stack. |
@@ -65,5 +65,6 @@ flowchart TB
 | UI | Qt widgets, commands, plot polling | Mutates the document, reads telemetry |
 | Physics | Stepping, signal sync, emulators, telemetry capture | `physicsMutex` guards the MuJoCo model and data; reloads take the same lock |
 | MCU | Runs user `loop()` | Talks to components only through emulators and `ComponentInstance` IO values (`ioMutex`) |
+| Camera render | `CameraRenderer` worker: GL render + readback of camera scenes the physics thread queued, emulator post-processing. Display frames reach every GL context (this one and the viewport) through `DisplayTextures` (collected on the physics thread, uploaded with `glTexSubImage2D` into each context's copy of the screen texture) | Own GL context and `mjrContext`; takes `physicsMutex` only to rebuild its GPU context after a model reload. Model reloads go through `SimulationManager::reloadModel` so queued frames of the old model are dropped |
 
 Two layering rules: `Document/` and `Simulation/` must not include `Application/Application.h`, and only commands change authored state from the View. Runtime values written by the simulation are not undoable.

@@ -7,6 +7,14 @@
 #include "Simulation/ErrorSystem/ServoEmulatorCpp.h"
 #include "Simulation/ErrorSystem/StepperEmulatorCpp.h"
 #include "Simulation/ErrorSystem/DcGearEmulatorCpp.h"
+#include "Simulation/ErrorSystem/CameraEmulatorCpp.h"
+#include "Simulation/ErrorSystem/DisplayEmulatorCpp.h"
+
+QStringList EmulatorFactory::types() {
+    return {"servo_emulator", "stepper_emulator", "dc_gear_emulator", "imu_emulator",
+            "camera_emulator", "display_emulator", "default_emulator"};
+}
+
 
 Emulator* EmulatorFactory::create(const QString& type, ComponentInstance* comp) {
     if (type == "servo_emulator") {
@@ -20,6 +28,12 @@ Emulator* EmulatorFactory::create(const QString& type, ComponentInstance* comp) 
     }
     else if (type == "imu_emulator") {
         return new IMUEmulatorCpp(comp);
+    }
+    else if (type == "camera_emulator") {
+        return new CameraEmulatorCpp(comp);
+    }
+    else if (type == "display_emulator") {
+        return new DisplayEmulatorCpp(comp);
     }
     else if(type == "custom_emulator"){
         Log::error("Custom Emulator requested but factory logic not implemented. Returning nullptr.");

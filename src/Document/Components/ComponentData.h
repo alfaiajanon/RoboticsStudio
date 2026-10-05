@@ -78,10 +78,15 @@ struct CameraDef {
     double fovy = 0.0;
 };
 
+// The screen surface is a rectangle in the target geom's parent body frame:
+// it faces its +Z, image right = +X, image up = +Y (pixel 0,0 at the -X,+Y
+// corner). surfaceSize is half-extents in meters, like a box geom's x/y.
 struct DisplayDef {
     QString id;
     TargetRef target;
     QPair<int, int> resolution = qMakePair(0, 0);
+    Transform surface;
+    QPair<double, double> surfaceSize = qMakePair(0.0, 0.0);
 };
 
 // Advisory value domain of a signal, in the signal's own unit.

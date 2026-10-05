@@ -251,8 +251,8 @@ void InspectorPanel::buildUI() {
     infoLayout->addRow("UID:", createShrinkableLabel(QString::number(comp->uid), infoBox));
     mainLayout->addWidget(infoBox);
 
-    // Controls come from kind-joint inputs, readouts from outputs that have a runtime slot
-    // (camera signals have none yet).
+    // Controls come from kind-joint inputs, readouts from outputs with a numeric runtime
+    // slot; image signals (camera outputs, display inputs) get their own group.
     bool hasControls = false;
     for (const InterfaceDef& def : comp->getBlueprint()->interfaceInputs) {
         if (def.target.kind == "joint") { hasControls = true; break; }
@@ -266,6 +266,10 @@ void InspectorPanel::buildUI() {
     }
     if (hasReadouts) {
         build_outputs(comp);
+    }
+    const bool hasImages = !comp->getBlueprint()->cameras.isEmpty() || !comp->getBlueprint()->displays.isEmpty();
+    if (hasImages) {
+        build_images(comp);
     }
     if (!comp->getBlueprint()->connectors.isEmpty()) {
         build_connectors(comp);
@@ -457,7 +461,7 @@ void InspectorPanel::build_outputs(ComponentInstance* comp) {
     QFormLayout* outputLayout = new QFormLayout(outputBox);
     for (const QString& key : comp->getBlueprint()->interfaceOutputs.keys()) {
         BasicIOValue data = comp->getSensorValue(key);
-        if (data.data.empty()) continue;   // no runtime slot (camera): nothing to read out yet
+        if (data.data.empty()) continue;   // no numeric slot (camera: see build_images)
         QLineEdit* valueLabel = createShrinkableLabel("", outputBox);
         valueLabel->setObjectName("lbl_out_" + key);
         valueLabel->setText(formatReadout(data, true));
@@ -465,6 +469,37 @@ void InspectorPanel::build_outputs(ComponentInstance* comp) {
         outputLayout->addRow(comp->getBlueprint()->interfaceOutputs[key].name + " (" + comp->getBlueprint()->interfaceOutputs[key].unit + "):", valueLabel);
     }
     mainLayout->addWidget(outputBox);
+}
+
+
+// Status line of an image signal: size, format, newest frame.
+static QString formatImageReadout(const ImageIOValue& img) {
+    QString text = QString("%1x%2 %3").arg(img.width).arg(img.height)
+                       .arg(img.format == ImageFormat::Depth32F ? "depth" : "rgb");
+    if (!img.pixels) return text + " · no frame";
+    return text + QString(" · frame %1 · t=%2 s").arg(img.seq).arg(img.time, 0, 'f', 2);
+}
+
+
+// Image signals: camera outputs and display inputs. View the pixels with an
+// Image canvas in the plot panel.
+void InspectorPanel::build_images(ComponentInstance* comp) {
+    QGroupBox* imageBox = new QGroupBox("Cameras & Displays", this);
+    QFormLayout* imageLayout = new QFormLayout(imageBox);
+    ComponentBlueprint* bp = comp->getBlueprint();
+
+    auto addRows = [&](const QMap<QString, InterfaceDef>& defs, const char* kind) {
+        for (auto it = defs.constBegin(); it != defs.constEnd(); ++it) {
+            if (it.value().target.kind != kind) continue;
+            QLineEdit* valueLabel = createShrinkableLabel("", imageBox);
+            valueLabel->setObjectName("lbl_img_" + it.key());
+            valueLabel->setText(formatImageReadout(comp->getImageValue(it.key())));
+            imageLayout->addRow(it.value().name + ":", valueLabel);
+        }
+    };
+    addRows(bp->interfaceOutputs, "camera");
+    addRows(bp->interfaceInputs, "display");
+    mainLayout->addWidget(imageBox);
 }
 
 
@@ -1146,6 +1181,16 @@ void InspectorPanel::updateLiveValues() {
             if (QLineEdit* label = this->findChild<QLineEdit*>("lbl_out_" + key)) {
                 BasicIOValue data = comp->getSensorValue(key);
                 if (!data.data.empty()) label->setText(formatReadout(data, false));
+                label->setCursorPosition(0);
+            }
+            if (QLineEdit* label = this->findChild<QLineEdit*>("lbl_img_" + key)) {
+                label->setText(formatImageReadout(comp->getImageValue(key)));
+                label->setCursorPosition(0);
+            }
+        }
+        for (const QString& key : comp->getBlueprint()->interfaceInputs.keys()) {
+            if (QLineEdit* label = this->findChild<QLineEdit*>("lbl_img_" + key)) {
+                label->setText(formatImageReadout(comp->getImageValue(key)));
                 label->setCursorPosition(0);
             }
         }

@@ -90,8 +90,11 @@ ComponentPreviewViewport::ComponentPreviewViewport(QWidget* parent) : QLabel(par
     connectorsBox->setChecked(showConnectors);
     QCheckBox* jointsBox = new QCheckBox("Joints", hud);
     jointsBox->setChecked(showJoints);
+    QCheckBox* camerasBox = new QCheckBox("Cameras", hud);
+    camerasBox->setChecked(showCameras);
     hudLayout->addWidget(connectorsBox);
     hudLayout->addWidget(jointsBox);
+    hudLayout->addWidget(camerasBox);
 
     QCheckBox* orthoBox = new QCheckBox("Orthographic", hud);  // becomes this->orthoBox now
     orthoBox->setChecked(orthographic);
@@ -115,6 +118,7 @@ ComponentPreviewViewport::ComponentPreviewViewport(QWidget* parent) : QLabel(par
     });
     connect(connectorsBox, &QCheckBox::toggled, this, [this](bool on) { showConnectors = on; });
     connect(jointsBox, &QCheckBox::toggled, this, [this](bool on) { showJoints = on; });
+    connect(camerasBox, &QCheckBox::toggled, this, [this](bool on) { showCameras = on; });
 
     hud->adjustSize();
     positionHud();
@@ -184,7 +188,7 @@ void ComponentPreviewViewport::loadComponentData(const ComponentData& data) {
         "  <sensor>\n%6  </sensor>\n"
         "</mujoco>\n")
         .arg(blueprint.getModelId().isEmpty() ? QString("component") : blueprint.getModelId())
-        .arg(blueprint.getAssetXML())
+        .arg(blueprint.getAssetXML() + blueprint.generateDisplayAssetXML(0))
         .arg(blueprint.generateTreeXML(0, QString(), Transform()))
         .arg(blueprint.generateContactsXML(0))
         .arg(blueprint.generateActuatorXML(0))
@@ -344,6 +348,10 @@ void ComponentPreviewViewport::paintEvent(QPaintEvent* event) {
  * is Z) plus a line to each connected body's origin with a filled circle
  * at the body end.
  *
+ * Camera: view frustum from the target site (a MuJoCo camera looks along
+ * the site's -Z with +Y up), opening angle from fovy, aspect from the
+ * resolution, plus a small triangle on the top edge marking "up".
+ *
  * Marker world poses are composed from the EDITED data (currentData) and
  * the preview model's body poses: connectors/joints are stored in the
  * component root frame, so world = bodyWorld * (bodyLocal^-1 * transform).
@@ -412,6 +420,50 @@ void ComponentPreviewViewport::drawOverlays(mjModel* m, mjData* d, mjvScene* scn
             addConnectorGeom(scn, mjGEOM_LINE, 1.5, jointWorld.position, posB, rgbaLink);
             addSphereGeom(scn, posA, 0.0025, rgbaJoint);
             addSphereGeom(scn, posB, 0.0025, rgbaJoint);
+        }
+    }
+
+    if (showCameras) {
+        const double length = 0.03;     // frustum depth, 3 cm
+        const float rgbaCam[4] = {0.3f, 0.9f, 1.0f, 1.0f};
+
+        for (const CameraDef& cam : currentData.cameras) {
+            if (cam.target.kind != "site") continue;
+
+            // Sites are stored in their body's local frame.
+            QString bodyId;
+            Transform siteLocal;
+            for (auto it = currentData.bodies.constBegin(); it != currentData.bodies.constEnd() && bodyId.isEmpty(); ++it) {
+                for (const Site& site : it.value().sites) {
+                    if (site.id == cam.target.id) { bodyId = it.key(); siteLocal = site.localTransform; break; }
+                }
+            }
+            if (bodyId.isEmpty()) continue;
+
+            Position bodyPos;
+            Rotation bodyRot;
+            if (!bodyWorldPose(m, d, bodyId, bodyPos, bodyRot)) continue;
+            Transform world = Transform(bodyPos, bodyRot) * siteLocal;
+
+            const double fovy = cam.fovy > 0.0 ? cam.fovy : 45.0;   // MuJoCo's default
+            const double aspect = (cam.resolution.first > 0 && cam.resolution.second > 0)
+                                ? double(cam.resolution.first) / cam.resolution.second : 4.0 / 3.0;
+            const double hh = length * std::tan(fovy * 0.5 * M_PI / 180.0);
+            const double hw = hh * aspect;
+            auto at = [&world](double x, double y, double z) {
+                return world.position + world.rotation.rotate(Position(x, y, z));
+            };
+
+            Position apex = world.position;
+            Position corners[4] = {at(hw, hh, -length), at(-hw, hh, -length), at(-hw, -hh, -length), at(hw, -hh, -length)};
+            for (int i = 0; i < 4; ++i) {
+                addConnectorGeom(scn, mjGEOM_LINE, 2.0, apex, corners[i], rgbaCam);
+                addConnectorGeom(scn, mjGEOM_LINE, 2.0, corners[i], corners[(i + 1) % 4], rgbaCam);
+            }
+            Position upTip = at(0, hh * 1.4, -length);
+            addConnectorGeom(scn, mjGEOM_LINE, 2.0, at(-hw * 0.4, hh, -length), upTip, rgbaCam);
+            addConnectorGeom(scn, mjGEOM_LINE, 2.0, upTip, at(hw * 0.4, hh, -length), rgbaCam);
+            addSphereGeom(scn, apex, 0.0015, rgbaCam);
         }
     }
 }

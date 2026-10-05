@@ -24,7 +24,8 @@ flowchart LR
     KIN -->|"body tree, joints, tendons"| TREE["MJCF worldbody + tendon"]
     CON -->|"snap points + angles"| ASM["Assembly: attach part to part"]
     DEV -->|"actuator / sensor elements"| MJ["MuJoCo model<br/>ctrl and sensordata"]
-    DEV -.->|"cameras, displays: parsed, skipped"| NOP["not simulated yet"]
+    DEV -->|"cameras"| CAM["MJCF camera on the site<br/>rendered off the physics thread"]
+    DEV -->|"displays"| DSP["framebuffer the script draws into"]
     INT -->|"public signals"| RT["Runtime values on ComponentInstance"]
     EMU -->|"error model"| EM["Emulator: JS API + noise, delay, deadband"]
 
@@ -75,9 +76,12 @@ Every device has a unique `id` (across all families), a `type`, and a `target {k
 | | `tendonpos`, `tendonvel` | tendon | 1 | |
 | | `accelerometer`, `gyro` | site | 3 | |
 | cameras | `rgb`, `depth` | site | image | `resolution [w,h]`, `fovy` |
-| displays | (no type) | geom | image | `resolution [w,h]` |
+| displays | (no type) | geom | image | `resolution [w,h]`, `surface {transform, size}` (required) |
 
-Width is fixed by the device type (it matches MuJoCo's `sensor_dim`), so it is never declared by hand. Cameras and displays are validated but skipped by the simulator for now (a log line says so).
+Width is fixed by the device type (it matches MuJoCo's `sensor_dim`), so it is never declared by hand.
+
+- **cameras** become an MJCF `<camera>` placed exactly on the target site, so the site's frame is the camera frame: it **looks along the site's −Z axis with +Y up**. `fovy` is the vertical field of view in degrees (0 or omitted: MuJoCo's 45). The generated model sizes MuJoCo's offscreen buffer for the largest camera. `rgb` frames are 3 bytes per pixel; `depth` frames are float meters along the view axis (0 = no return). Frames reach scripts through `camera_emulator` (see [sim-to-real.md](sim-to-real.md)).
+- **displays**: the framebuffer (`resolution`) is drawn by the script through `display_emulator`. It shows in the 3D view (and in camera images) on a generated, visual-only screen quad, and in Image canvases of the plot panel. `surface` says where the quad goes: `transform` is in the target geom's parent body frame (like geoms and sites), and `size` is the half-extents `[hx, hy]` in meters. The screen faces the surface's **+Z**, image right is **+X** and image up is **+Y** (pixel 0,0 at the −X,+Y corner). Put it about 0.1 mm in front of the geom's face to avoid z-fighting. The component editor's "Fit Surface to Geom" does that for box geoms. Until the script sends a frame, the screen is a dark panel.
 
 ## interface
 
@@ -87,20 +91,21 @@ Each signal has a unique `name` (across inputs and outputs), optional `unit`, `p
 |---|---|---|
 | inputs | `joint` | the first actuator that targets that joint (warns if none) |
 | | `actuator` | that actuator directly |
-| | `display` | a display (not simulated yet) |
+| | `display` | a display's framebuffer (image) |
 | | `emulator` | no MuJoCo object; the emulator owns it |
 | outputs | `sensor` | that sensor's data |
-| | `camera` | a camera (not simulated yet) |
+| | `camera` | a camera's newest frame (image) |
 | | `emulator` | no MuJoCo object; the emulator owns it |
 
 - `domain`: `{"type": "ranged", "parameters": {"min": a, "max": b}}` or `{"type": "unbounded"}` (default). Advisory only: the range of the signal in its own unit.
-- `unit`: `degrees` (also `deg`, `degree`) makes the simulator convert to and from radians at the MuJoCo boundary. Any other unit is passed through unchanged.
+- `unit`: angular units are converted at the MuJoCo boundary (`Document/Components/Units.h`): `degrees` / `deg` / `degree` to radians, and `degrees/s` / `deg/s` / `degree/s` / `dps` to rad/s. Any other unit is passed through unchanged. Users therefore see and author angles in degrees only.
+- An actuator's `ctrlrange` is authored in the unit of the input signal that drives it (an input targeting the actuator, or a joint input whose first actuator it is), and converted the same way when the MJCF is generated. A servo with a `degrees` signal writes `ctrlrange: [-90, 90]`. An actuator no signal drives keeps raw MuJoCo units. `forcerange`, `kp` and `kv` are not converted (N·m, N·m/rad, N·m·s/rad).
 - `emulator`-kind signals must also give `channel_type` (`scalar` or `vector`) and `dim`. For every other kind these keys are forbidden, because shape and width come from the target device.
 - Runtime values are floats only; there is no `data_type`.
 
 ## emulator
 
-`type` selects the C++ class in `EmulatorFactory` (`servo_emulator`, `stepper_emulator`, `dc_gear_emulator`, `imu_emulator`, `default_emulator`). An empty type falls back to `default_emulator`. `parameters` is a free-form object read by the emulator (the servo uses `deadband_threshold` and `noise_stddev`, in degrees). `source` is reserved for a custom emulator script and is currently unused.
+`type` selects the C++ class in `EmulatorFactory` (`servo_emulator`, `stepper_emulator`, `dc_gear_emulator`, `imu_emulator`, `camera_emulator`, `display_emulator`, `default_emulator`). An empty type falls back to `default_emulator`. `parameters` is a free-form object read by the emulator (the servo uses `deadband_threshold` and `noise_stddev`, in degrees). `source` is reserved for a custom emulator script and is currently unused.
 
 ## Minimal example
 

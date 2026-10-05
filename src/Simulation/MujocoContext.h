@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include "mujoco/mujoco.h"
 #include "Utils/Log.h"
 
@@ -24,6 +25,11 @@ class MujocoContext {
 
     public:
         MujocoContext();
+
+        // Optional: run by render() with the GL context current, after the
+        // mjrContext is (re)built and before mjr_render -- e.g. to upload
+        // live display textures. Null by default.
+        std::function<void(const mjrContext*)> beforeRender;
 
         void loadModel(const char* model_path);
         bool loadModelFromString(const std::string& model_xml);

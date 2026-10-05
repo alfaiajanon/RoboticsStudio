@@ -107,22 +107,15 @@ void Application::openProject(const QString& projectPath) {
 
     undoStack.clear();
 
-    {
-        // The physics thread may still be live from a previously opened
-        // project -- don't swap the model out from under it.
-        std::lock_guard<std::mutex> lock(simManager->physicsMutex);
-        simManager->getMujocoContext()->loadModelFromString(
-            currentProject.generateMujocoXML().toStdString()
-        );
-    }
+    // The physics thread may still be live from a previously opened
+    // project -- reloadModel takes physicsMutex for the swap.
+    simManager->reloadModel(currentProject.generateMujocoXML(), currentProject.getRootComponent());
 
     editor.sceneTree->buildFromProject(&currentProject);
     editor.scriptPanel->loadScript(
         currentProject.getProjectDirectory() + "/" + currentProject.getScriptPath()
     );
 
-    ComponentInstance* root = currentProject.getRootComponent();
-    simManager->cacheMujocoIds(root, simManager->getMujocoContext()->getModel());
     simManager->edit();
 
     editor.setupSimConn();
@@ -218,16 +211,9 @@ void Application::reloadSimulation() {
         reloadScheduled = false;
 
         SimulationManager* simManager = Application::getInstance()->getSimulationManager();
-        std::lock_guard<std::mutex> lock(simManager->physicsMutex);
 
         project->refresh();
-        simManager->getMujocoContext()->loadModelFromString(
-            project->generateMujocoXML().toStdString()
-        );
-        simManager->cacheMujocoIds(
-            project->getRootComponent(),
-            simManager->getMujocoContext()->getModel()
-        );
+        simManager->reloadModel(project->generateMujocoXML(), project->getRootComponent());
         // Coalesced: the command that triggered this reload also fires the
         // undo stack's indexChanged -> scheduleRefresh() in the same turn.
         Application::getInstance()->getEditor()->scheduleRefresh();
