@@ -3,6 +3,9 @@
     "title": "Robotics Studio Project (RSPROJ)",
     "type": "object",
     "required": ["assembly", "meta", "script", "version"],
+    "definitions": {
+        "vec3": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 }
+    },
     "properties": {
         "assembly": {
             "type": "object",
@@ -138,6 +141,85 @@
         },
         "simulation": {
             "type": "object"
+        },
+        "stage": {
+            "type": "object",
+            "description": "The world around the robot, edited in the Stage panel. Missing fields take their defaults.",
+            "properties": {
+                "environment": {
+                    "type": "object",
+                    "properties": {
+                        "skyTop": { "$ref": "#/definitions/vec3" },
+                        "skyBottom": { "$ref": "#/definitions/vec3" },
+                        "ambient": { "$ref": "#/definitions/vec3", "description": "Headlight ambient color." },
+                        "headlight": { "$ref": "#/definitions/vec3", "description": "Headlight diffuse color." },
+                        "light": {
+                            "type": "object",
+                            "properties": {
+                                "dir": { "$ref": "#/definitions/vec3" },
+                                "diffuse": { "$ref": "#/definitions/vec3" },
+                                "castShadow": { "type": "boolean" }
+                            }
+                        },
+                        "shadowSize": { "type": "integer" },
+                        "fog": {
+                            "type": "object",
+                            "properties": {
+                                "enabled": { "type": "boolean" },
+                                "start": { "type": "number", "description": "Multiple of the model extent." },
+                                "end": { "type": "number", "description": "Multiple of the model extent." },
+                                "color": { "$ref": "#/definitions/vec3" }
+                            }
+                        },
+                        "gravity": { "$ref": "#/definitions/vec3" },
+                        "timestep": { "type": "number", "exclusiveMinimum": 0 }
+                    }
+                },
+                "floor": {
+                    "type": "object",
+                    "properties": {
+                        "type": { "enum": ["plane", "mesh", "heightfield", "none"] },
+                        "pattern": { "enum": ["checker", "solid"] },
+                        "color1": { "$ref": "#/definitions/vec3" },
+                        "color2": { "$ref": "#/definitions/vec3" },
+                        "texRepeat": { "type": "number" },
+                        "file": { "type": "string", "description": "Mesh (.stl/.obj/.msh) or heightfield (.png), relative to the project." },
+                        "scale": { "$ref": "#/definitions/vec3", "description": "Mesh scale; heightfield half x, half y, max height." },
+                        "pos": { "$ref": "#/definitions/vec3" },
+                        "euler": { "$ref": "#/definitions/vec3" },
+                        "friction": { "$ref": "#/definitions/vec3" }
+                    }
+                },
+                "props": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": ["id"],
+                        "properties": {
+                            "id": { "type": "string", "pattern": "^[A-Za-z0-9_]+$", "description": "Unique; the stage script sees prop_<id>." },
+                            "shape": { "enum": ["box", "sphere", "cylinder", "capsule", "mesh"] },
+                            "size": { "$ref": "#/definitions/vec3", "description": "MuJoCo geom size; mesh scale for meshes." },
+                            "mesh": { "type": "string", "description": "Mesh file relative to the project (shape mesh)." },
+                            "pos": { "$ref": "#/definitions/vec3" },
+                            "euler": { "$ref": "#/definitions/vec3", "description": "Degrees." },
+                            "rgba": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 },
+                            "mass": { "type": "number", "exclusiveMinimum": 0 },
+                            "friction": { "$ref": "#/definitions/vec3" },
+                            "motion": { "enum": ["static", "dynamic", "controlled"] },
+                            "control": {
+                                "type": "object",
+                                "properties": {
+                                    "maxSpeed": { "type": "number", "description": "m/s" },
+                                    "maxYawRate": { "type": "number", "description": "deg/s" },
+                                    "response": { "type": "number", "description": "1/s; velocity gain = response * mass." }
+                                }
+                            }
+                        }
+                    }
+                },
+                "script": { "type": "string", "description": "Stage script, relative to the project." },
+                "robotSpawn": { "$ref": "#/definitions/vec3", "description": "Offset of the robot's base body." }
+            }
         },
         "version": {
             "type": "integer"

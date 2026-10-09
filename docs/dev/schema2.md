@@ -60,7 +60,7 @@ Dotted arrows are references by `target {kind, id}`: signals point at devices (o
 - **body**: `id`, `transform {pos, quat}`, `geoms[]`, `sites[]`, `overrideGeom` (default false). `mass` and `inertia` are required when `overrideGeom` is true and forbidden otherwise (then mass comes from the geoms, and a geom `mass` is forbidden when it is true).
 - **geom**: `id`, `type` (`mesh`, `box`, ...), `mesh`/`material` resource keys or `color`, `size`, `pos`, `quat`, `mass`.
 - **site**: `id`, `transform`. A named point on a body; target for accelerometers, gyros and cameras. Sensors are *not* nested in sites.
-- **joint**: `id`, `type`, `body_a`, `body_b`, `transform`, `range`, `damping`, `armature`, `frictionloss`, `collision`. Actuators and sensors are *not* nested in joints.
+- **joint**: `id`, `type`, `body_a`, `body_b`, `transform`, `range`, `damping`, `armature`, `frictionloss`, `collision`. Actuators and sensors are *not* nested in joints. Several joints may link the same two bodies; they are stacked on the child body in file order (e.g. a servo's `servo_joint` + `backlash_joint`, both `base -> horn`). Every joint in such a stack needs `armature > 0`. Don't put a geom-less helper body between them instead: a jointed helper body breaks MuJoCo's parent/child contact filter, so neighbouring parts start colliding.
 - **tendon**: `id`, `type: "fixed"` (only), `terms[{joint, coef}]`. A weighted sum of joints, useful for backlash: one sensor measures the total of a drive joint plus a passive gap joint.
 
 Frames: joint and connector transforms are in the **component root frame**. Geom and site transforms are in the **parent body's local frame**. Quaternions are `[w, x, y, z]`.

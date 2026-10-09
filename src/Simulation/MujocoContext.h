@@ -12,6 +12,12 @@ class MujocoContext {
         mjvOption opt;
         mjrContext con;
         mjvCamera cam;
+        // World render flags (fog, shadows, ...) for every scene drawn from
+        // this model: reapplied to scn after each mjv_makeScene (which resets
+        // them) and copied into other renderers' scenes via applySceneFlags.
+        // -1 = never set: keep the scene's own value (mjv_makeScene's
+        // defaults; mjv_defaultScene zeroes them all, so don't copy those).
+        signed char sceneFlags[mjNRNDFLAG];
 
         bool isGPUInitialized = false;
         // Set by loadModelFromString instead of freeing the mjrContext
@@ -43,6 +49,8 @@ class MujocoContext {
         mjData* getData();
         mjvScene* getScene();
         mjvOption* getOption();
+        void setSceneFlag(mjtRndFlag flag, bool enabled);
+        void applySceneFlags(mjvScene* scene) const;
         mjrContext* getContext();
         mjvCamera* getCamera();
         

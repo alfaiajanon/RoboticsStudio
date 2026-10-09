@@ -6,6 +6,7 @@
 #include <qobject.h>
 #include "Utils/Log.h"
 #include "Document/Project.h"
+#include "Document/Stage.h"
 #include "Document/Components/ComponentBlueprint.h"
 #include "Document/Components/ComponentInstance.h"
 #include "Document/Components/Units.h"
@@ -49,11 +50,14 @@ SimulationManager::SimulationManager(Project* project): project(project),
 SimulationManager::~SimulationManager() {
     isAlive = false;
 
-    MicroController* mcu = project->getMicroController();
-    mcu->stop();
+    project->getMicroController()->stop();
+    project->getStageController()->stop();
 
     if (mcuThread.joinable()) {
         mcuThread.join();
+    }
+    if (stageThread.joinable()) {
+        stageThread.join();
     }
     if (physicsThread.joinable()) {
         physicsThread.join();
@@ -76,20 +80,27 @@ SimulationManager::~SimulationManager() {
  */
 #pragma region play/edit
 
+void SimulationManager::startThreads() {
+    if (currentState != SimulationState::PAUSED) return;
+    if (!physicsThread.joinable()) {
+        physicsThread = std::thread(&SimulationManager::physicsLoop, this);
+    }
+    if (!mcuThread.joinable()) {
+        mcuThread = std::thread(&SimulationManager::mcuLoop, this, project->getMicroController());
+    }
+    if (!stageThread.joinable()) {
+        stageThread = std::thread(&SimulationManager::mcuLoop, this, project->getStageController());
+    }
+}
+
+
 void SimulationManager::play() {
 
     ComponentInstance* root = project->getRootComponent();
     initEmulators(root);
     buildSchedule(root);
 
-    if (currentState == SimulationState::PAUSED) {
-        if(!physicsThread.joinable()) {
-            physicsThread = std::thread(&SimulationManager::physicsLoop, this);
-        }
-        if(!mcuThread.joinable()) {
-            mcuThread = std::thread(&SimulationManager::mcuLoop, this);
-        }
-    }
+    startThreads();
 
     // move joint data to actuator targets before starting simulation
     #pragma region todo
@@ -97,24 +108,32 @@ void SimulationManager::play() {
     MicroController* mcu = project->getMicroController();
     mcu->compile(project->getScript(), project->getRootComponent());
 
+    // Stage script: sees the controlled props and the robot pose, nothing else.
+    Stage* stage = project->getStage();
+    MicroController* stageMcu = project->getStageController();
+    QString stageScript = project->readStageScript();
+    if (stageScript.isEmpty()) {
+        stageMcu->stop();
+    } else {
+        for (const auto& h : stage->getHandles()) {
+            stageMcu->setGlobal("prop_" + h->id, h.get());
+        }
+        stageMcu->setGlobal("robot", stage->getRobotPose());
+        stageMcu->compile(stageScript, nullptr);
+    }
+
     currentState = SimulationState::PLAYING;
 }
 
 
 
 void SimulationManager::edit() {
-    if (currentState == SimulationState::PAUSED) {
-        if(!physicsThread.joinable()){
-            physicsThread = std::thread(&SimulationManager::physicsLoop, this);
-        }
-        if (!mcuThread.joinable()) {
-            mcuThread = std::thread(&SimulationManager::mcuLoop, this);
-        }
-    }
+    startThreads();
 
     MujocoContext* mj = &mujocoContext;
-    MicroController* mcu = project->getMicroController();
-    mcu->stop();
+    project->getMicroController()->stop();
+    project->getStageController()->stop();
+    for (const auto& h : project->getStage()->getHandles()) h->resetRuntime();
 
     ComponentInstance* root = project->getRootComponent();
     clearSchedule();
@@ -184,9 +203,7 @@ void SimulationManager::trackFps() {
 #pragma region mcuLoop
 
 
-void SimulationManager::mcuLoop() {
-    MicroController* mcu = project->getMicroController();
-
+void SimulationManager::mcuLoop(MicroController* mcu) {
     while (isAlive) {
         if (currentState == SimulationState::PLAYING) {
 
@@ -239,6 +256,7 @@ void SimulationManager::physicsLoop() {
                     std::lock_guard<std::mutex> lock(physicsMutex);
 
                     syncToMujocoActuator(root, mj->getModel(), mj->getData());
+                    syncToMujocoProps(project->getStage(), mj->getModel(), mj->getData());
                     for(int i = 0; i < stepsToTake; ++i) {
                         mj->step();
                         // Async devices sample at the exact step that reaches their deadline.
@@ -247,6 +265,7 @@ void SimulationManager::physicsLoop() {
                         }
                     }
                     syncFromMujocoSensor(root, mj->getModel(), mj->getData());
+                    syncFromMujocoProps(project->getStage(), mj->getModel(), mj->getData());
 
                     runEmulators(mj->getData()->time); // position it here to capture both sensor and actuator properly
                     displayTextures->collect();
@@ -430,8 +449,12 @@ bool SimulationManager::reloadModel(const QString& xml, ComponentInstance* root)
     std::lock_guard<std::mutex> lock(physicsMutex);
 
     if (cameraRenderer) cameraRenderer->invalidate();
+    // Fog is a render flag, not MJCF; set before the load so the rebuilt
+    // scene (and every camera scene) picks it up.
+    mujocoContext.setSceneFlag(mjRND_FOG, project->getStage()->getData().env.fog);
     bool ok = mujocoContext.loadModelFromString(xml.toStdString());
     cacheMujocoIds(root, mujocoContext.getModel());
+    cacheStageIds(project->getStage(), mujocoContext.getModel());
     displayTextures->rebuild(root, mujocoContext.getModel());
     return ok;
 }
@@ -721,5 +744,96 @@ void SimulationManager::syncFromMujocoSensor(ComponentInstance* root, mjModel* m
 
     for (ComponentInstance* child : root->children) {
         syncFromMujocoSensor(child, m, d);
+    }
+}
+
+
+
+
+
+#pragma region stage
+
+
+
+/*
+ * Resolves the controlled props' joints/actuators and the robot root body.
+ * Names that are absent (edit mode: no joints/actuators, no robot freejoint)
+ * leave the ids at -1 and the syncs skip them.
+ */
+void SimulationManager::cacheStageIds(Stage* stage, mjModel* m) {
+    if (!stage || !m) return;
+
+    for (const auto& h : stage->getHandles()) {
+        auto id = [&](mjtObj type, const QString& suffix) {
+            return mj_name2id(m, type, ("prop_" + h->id + suffix).toStdString().c_str());
+        };
+        h->bodyId = id(mjOBJ_BODY, "");
+        int jx = id(mjOBJ_JOINT, "_x");
+        h->qposAdr = jx >= 0 ? m->jnt_qposadr[jx] : -1;
+        h->dofAdr  = jx >= 0 ? m->jnt_dofadr[jx] : -1;
+        h->actX    = id(mjOBJ_ACTUATOR, "_vx");
+        h->actY    = id(mjOBJ_ACTUATOR, "_vy");
+        h->actYaw  = id(mjOBJ_ACTUATOR, "_vyaw");
+    }
+
+    int freeJoint = mj_name2id(m, mjOBJ_JOINT, "robot_freejoint");
+    stage->getRobotPose()->bodyId = freeJoint >= 0 ? m->jnt_bodyid[freeJoint] : -1;
+}
+
+
+
+/*
+ * Pre-step: script commands -> velocity servo targets. Local (move) commands
+ * are turned into world velocities with the prop's current yaw. Teleports
+ * write the joint positions directly and zero the prop's velocity.
+ */
+void SimulationManager::syncToMujocoProps(Stage* stage, mjModel* m, mjData* d) {
+    if (!stage || !m || !d) return;
+
+    for (const auto& h : stage->getHandles()) {
+        if (h->qposAdr < 0 || h->actX < 0) continue;
+        PropHandle::Command c = h->takeCommand();
+        double* q = d->qpos + h->qposAdr;   // x, y, z, yaw
+
+        if (c.teleport) {
+            q[0] = c.tp[0] - h->basePos[0];
+            q[1] = c.tp[1] - h->basePos[1];
+            q[2] = c.tp[2] - h->basePos[2];
+            q[3] = (c.tp[3] - h->baseYaw) * M_PI / 180.0;
+            for (int i = 0; i < 4; ++i) d->qvel[h->dofAdr + i] = 0;
+        }
+
+        double vx = c.vx, vy = c.vy;
+        if (c.local) {
+            double yaw = h->baseYaw * M_PI / 180.0 + q[3];
+            vx = c.vx * std::cos(yaw) - c.vy * std::sin(yaw);
+            vy = c.vx * std::sin(yaw) + c.vy * std::cos(yaw);
+        }
+        d->ctrl[h->actX] = vx;
+        d->ctrl[h->actY] = vy;
+        d->ctrl[h->actYaw] = c.yawRate * M_PI / 180.0;
+    }
+}
+
+
+
+// Post-step: publish prop state and the robot pose to the stage script.
+void SimulationManager::syncFromMujocoProps(Stage* stage, mjModel* m, mjData* d) {
+    if (!stage || !m || !d) return;
+
+    for (const auto& h : stage->getHandles()) {
+        if (h->bodyId < 0 || h->qposAdr < 0) continue;
+        const double* p = d->xpos + 3 * h->bodyId;
+        const double* v = d->qvel + h->dofAdr;
+        h->publish({p[0], p[1], p[2]}, {v[0], v[1], v[2]},
+                   h->baseYaw + d->qpos[h->qposAdr + 3] * 180.0 / M_PI);
+    }
+
+    RobotPose* robot = stage->getRobotPose();
+    if (robot->bodyId >= 0) {
+        const double* p = d->xpos + 3 * robot->bodyId;
+        const double* q = d->xquat + 4 * robot->bodyId;
+        Rotation r(q[0], q[1], q[2], q[3]);
+        robot->publish({p[0], p[1], p[2]}, {r.roll(), r.pitch(), r.yaw()});
     }
 }

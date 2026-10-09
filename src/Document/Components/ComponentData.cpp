@@ -374,6 +374,20 @@ static QList<Edge> parseJoints(const QJsonArray& jointsArr, QSet<QString>& joint
     return parsedJoints;
 }
 
+QString ComponentData::checkStackedJoints(const QList<Edge>& joints) {
+    auto pairKey = [](const Edge& e) {
+        return e.bodyA < e.bodyB ? e.bodyA + "|" + e.bodyB : e.bodyB + "|" + e.bodyA;
+    };
+    QMap<QString, int> perPair;
+    for (const Edge& e : joints) perPair[pairKey(e)]++;
+    for (const Edge& e : joints) {
+        if (perPair[pairKey(e)] > 1 && e.armature <= 0.0)
+            return QString("joint '%1': shares bodies '%2'/'%3' with another joint, so it needs armature > 0")
+                .arg(e.id, e.bodyA, e.bodyB);
+    }
+    return "";
+}
+
 static QJsonObject edgeToJson(const Edge& e) {
     QJsonObject obj;
     obj["id"] = e.id;
@@ -907,6 +921,8 @@ ComponentData ComponentData::fromJson(const QJsonObject& mainJson, const QString
                 return loadFailure(data.modelId, QString("joint '%1': body '%2' does not exist").arg(e.id, b));
         }
     }
+    QString stackErr = checkStackedJoints(data.joints);
+    if (!stackErr.isEmpty()) return loadFailure(data.modelId, stackErr);
     for (const TendonDef& t : data.tendons) {
         tendonIds.insert(t.id);
         for (const TendonTerm& term : t.terms) {

@@ -19,6 +19,7 @@
 #include <QTabWidget>
 #include <QEvent>
 #include <QWheelEvent>
+#include <QScrollBar>
 #include <QCoreApplication>
 #include <QAbstractSpinBox>
 #include <QAbstractSlider>
@@ -290,6 +291,11 @@ ComponentEditorWindow::ComponentEditorWindow(ComponentData source, QWidget* pare
 
 
 void ComponentEditorWindow::onSaveClicked() {
+    QString stackErr = ComponentData::checkStackedJoints(data.joints);
+    if (!stackErr.isEmpty()) {
+        Toast::showMessage(this, "Save failed -- " + stackErr);
+        return;
+    }
     bool ok = LibraryManager::getInstance().saveLocalComponent(data);
     if (ok) {
         Toast::showMessage(this, "Saved: " + data.modelId);
@@ -359,18 +365,16 @@ void ComponentEditorWindow::clearAndRebuild() {
 
 
 /*
- * Wheel events over these widgets never change their value -- they are
- * handed to the enclosing scroll area instead, so scrolling a long property
- * list can't silently edit whatever the cursor happens to pass over.
- *
- * (The earlier version only blocked the wheel while the widget was NOT
- * focused. That check could never be true: with Qt's default WheelFocus
- * policy, Qt gives the widget focus on the wheel event itself, before any
- * event filter runs -- so hasFocus() was always already true.)
+ * Same as InspectorPanel: an unfocused combo/spinbox/slider hands the wheel
+ * to its parent, so scrolling a long property list can't silently edit
+ * whatever the cursor happens to pass over. Once clicked (focused), the
+ * wheel edits it as usual. installScrollGuards sets StrongFocus, so a wheel
+ * tick alone never gives these widgets focus.
  */
 bool ComponentEditorWindow::eventFilter(QObject* obj, QEvent* event) {
     if (event->type() == QEvent::Wheel) {
-        if (QWidget* widget = qobject_cast<QWidget*>(obj)) {
+        QWidget* widget = qobject_cast<QWidget*>(obj);
+        if (widget && !widget->hasFocus()) {
             event->ignore();
             if (widget->parentWidget()) {
                 QCoreApplication::sendEvent(widget->parentWidget(), event);
@@ -392,7 +396,11 @@ void ComponentEditorWindow::installScrollGuards(QWidget* root) {
     };
     for (QComboBox* cb : root->findChildren<QComboBox*>()) guard(cb);
     for (QAbstractSpinBox* sb : root->findChildren<QAbstractSpinBox*>()) guard(sb); // spin + double spin
-    for (QAbstractSlider* sl : root->findChildren<QAbstractSlider*>()) guard(sl);
+    // Scroll bars are sliders too, but they ARE the scrolling: a scroll area
+    // forwards its wheel events to them, so guarding them blocks scrolling.
+    for (QAbstractSlider* sl : root->findChildren<QAbstractSlider*>()) {
+        if (!qobject_cast<QScrollBar*>(sl)) guard(sl);
+    }
 }
 
 
@@ -1015,16 +1023,25 @@ void ComponentEditorWindow::build_joints(QVBoxLayout* parent) {
         QFormLayout* advForm = new QFormLayout(advPanel);
         advPanel->setVisible(false);
 
-        QDoubleSpinBox* dampingSpin = new QDoubleSpinBox(advPanel);
-        dampingSpin->setValue(edge.damping);
+        // Servo-scale values (armature 0.0001, frictionloss 0.001) need more
+        // than QDoubleSpinBox's default 2 decimals, or they round to 0 on commit.
+        auto passiveSpin = [advPanel](double value) {
+            QDoubleSpinBox* spin = new QDoubleSpinBox(advPanel);
+            spin->setRange(0.0, 1000.0);
+            spin->setDecimals(6);
+            spin->setSingleStep(0.001);
+            spin->setValue(value);
+            return spin;
+        };
+
+        QDoubleSpinBox* dampingSpin = passiveSpin(edge.damping);
         advForm->addRow("Damping:", dampingSpin);
 
-        QDoubleSpinBox* armatureSpin = new QDoubleSpinBox(advPanel);
-        armatureSpin->setValue(edge.armature);
+        QDoubleSpinBox* armatureSpin = passiveSpin(edge.armature);
+        armatureSpin->setToolTip("Rotor inertia. Required (> 0) when several joints link the same two bodies.");
         advForm->addRow("Armature:", armatureSpin);
 
-        QDoubleSpinBox* frictionSpin = new QDoubleSpinBox(advPanel);
-        frictionSpin->setValue(edge.frictionloss);
+        QDoubleSpinBox* frictionSpin = passiveSpin(edge.frictionloss);
         advForm->addRow("Friction loss:", frictionSpin);
 
         QCheckBox* collisionCheck = new QCheckBox(advPanel);

@@ -61,6 +61,8 @@ Press **▶ PLAY** in the viewport.
 
 The overlay in the viewport shows FPS, sim time and contacts.
 
+The world around the robot (sky, floor, props, and a stage script that moves props) is set up in the **Stage** tab. See [stage.md](stage.md).
+
 ## 5. Watch the data
 
 The **Plot** panel, **I/O** tab:

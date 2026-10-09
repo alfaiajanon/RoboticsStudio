@@ -6,6 +6,7 @@
 #include "Utils/Spatial.h"
 // #include "Telemetry/PlotTarget.h"
 #include "Simulation/MicroController/MicroController.h"
+#include "Document/Stage.h"
 #include <qobject.h>
 
 
@@ -33,6 +34,8 @@ class Project {
         Rotation rootRotation;
 
         MicroController microcontroller;
+        MicroController stageController{"STAGE"};   // runs the stage script; sees props + robot pose only
+        Stage stage;
 
         int currentScriptIdx=0;
         QString currentScriptContent;
@@ -88,6 +91,9 @@ class Project {
         void setRootRotation(const Rotation& rot) { rootRotation = rot; }
         QMap<int, ComponentInstance*>& getComponentMap();
         MicroController* getMicroController() { return &microcontroller; }
+        MicroController* getStageController() { return &stageController; }
+        Stage* getStage() { return &stage; }
+        QString readStageScript() const;   // empty when the project has none
 
         void setRootComponent(ComponentInstance* comp);
         void resetRootComponent();

@@ -117,6 +117,15 @@ def validate(d):
         for side in ("body_a", "body_b"):
             if j.get(side) not in body_ids:
                 errs.add(f"joint '{j.get('id')}': {side} '{j.get(side)}' does not exist")
+    # Joints stacked on one body pair need armature > 0 (else MuJoCo's mass matrix is singular)
+    pair = lambda j: frozenset((j.get("body_a"), j.get("body_b")))
+    per_pair = {}
+    for j in joints:
+        per_pair[pair(j)] = per_pair.get(pair(j), 0) + 1
+    for j in joints:
+        if per_pair[pair(j)] > 1 and not j.get("armature", 0) > 0:
+            errs.add(f"joint '{j.get('id')}': shares bodies '{j.get('body_a')}'/'{j.get('body_b')}' "
+                     "with another joint, so it needs armature > 0")
     for c in d.get("connectors", []):
         if c.get("body") not in body_ids:
             errs.add(f"connector '{c.get('id')}': body '{c.get('body')}' does not exist")

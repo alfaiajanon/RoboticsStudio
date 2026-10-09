@@ -1,5 +1,8 @@
 #include "MujocoContext.h"
 
+#include <algorithm>
+#include <iterator>
+
 #include "Utils/Log.h" 
 
 
@@ -19,6 +22,7 @@ MujocoContext::MujocoContext() {
     mjv_defaultScene(&scn);
     mjr_defaultContext(&con);
     mjv_defaultCamera(&cam);
+    std::fill(std::begin(sceneFlags), std::end(sceneFlags), -1);
 
     opt.sitegroup[0] = 0;
     opt.sitegroup[1] = 0;
@@ -43,6 +47,7 @@ void MujocoContext::loadModel(const char* model_path) {
     }
     d = mj_makeData(m);
     mjv_makeScene(m, &scn, 2000);
+    applySceneFlags(&scn);
     Log::info("MuJoCo model loaded successfully.");
 }
 
@@ -85,7 +90,30 @@ bool MujocoContext::loadModelFromString(const std::string& xml_content) {
     d = mj_makeData(m);
     mj_forward(m, d);
     mjv_makeScene(m, &scn, 2000);
+    applySceneFlags(&scn);
     return true;
+}
+
+
+
+
+/*
+ * Sets a world render flag for every scene drawn from this model: this
+ * context's own scene now, and other renderers' scenes the next time they
+ * call applySceneFlags.
+ */
+void MujocoContext::setSceneFlag(mjtRndFlag flag, bool enabled) {
+    sceneFlags[flag] = enabled ? 1 : 0;
+    scn.flags[flag] = enabled ? 1 : 0;
+}
+
+
+
+
+void MujocoContext::applySceneFlags(mjvScene* scene) const {
+    for (int i = 0; i < mjNRNDFLAG; ++i) {
+        if (sceneFlags[i] >= 0) scene->flags[i] = static_cast<mjtByte>(sceneFlags[i]);
+    }
 }
 
 

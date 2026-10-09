@@ -112,6 +112,20 @@ void Project::setScript(int idx){
 
 
 
+QString Project::readStageScript() const {
+    const QString rel = stage.getData().script;
+    if (rel.isEmpty()) return {};
+    QFile file(directoryPath + "/" + rel);
+    if (!file.open(QFile::ReadOnly)) {
+        Log::error("Failed to open stage script: " + rel);
+        return {};
+    }
+    return QString::fromUtf8(file.readAll());
+}
+
+
+
+
 void Project::reloadScript(){
     QString fullpath=directoryPath + "/" + getScriptPath();
     QFile file(fullpath);
@@ -158,6 +172,9 @@ bool Project::loadProject(const QString& path) {
 
     plotting = projectData["plotting"].toObject();
 
+    stage.setProjectDirectory(directoryPath);
+    stage.setData(Stage::fromJson(projectData["stage"].toObject()));
+
     parseAssembly();
     buildHierarchy();
     applyDefaults();
@@ -175,6 +192,8 @@ void Project::unloadProject() {
     directoryPath = "";
     currentScriptContent = "";
     scriptPaths = QJsonArray();
+    stage.setProjectDirectory("");
+    stage.setData(Stage::Data());
 }
 
 
@@ -244,6 +263,8 @@ bool Project::saveProject() {
         {"current", currentScriptIdx},
         {"paths", scriptPaths}
     };
+
+    projectData["stage"] = Stage::toJson(stage.getData());
 
     if (plottingProvider) plotting = plottingProvider();
     projectData["plotting"] = plotting;
@@ -682,8 +703,8 @@ void Project::adoptSubtree(ComponentInstance* root) {
 
 
 /*
- * Compiles the entire project into a single valid MuJoCo XML string.
- * Injects procedural skybox, a solid color floor, and dynamically scaled coordinate axes.
+ * Compiles the entire project into a single valid MuJoCo XML string: the
+ * stage (sky, lights, floor, props, <visual>/<option>) around the robot tree.
  */
 
 static void writeTendonsXML(ComponentInstance* comp, QString& tendonsOut);
@@ -714,27 +735,10 @@ QString Project::generateMujocoXML(bool isSimulation) {
     QSet<QString> processedModels;
     QSet<int> visitedComps;
 
-    QString baseAssets = "";
-    QString baseWorldBody = "";
-
-    if (isSimulation) {
-        // SIMULATION MODE
-        baseAssets =
-            "    <texture type=\"skybox\" builtin=\"gradient\" rgb1=\"0.4 0.6 0.8\" rgb2=\"0 0 0\" width=\"512\" height=\"512\"/>\n"
-            "    <texture name=\"texplane\" type=\"2d\" builtin=\"checker\" rgb1=\"0.2 0.3 0.4\" rgb2=\"0.1 0.15 0.2\" width=\"512\" height=\"512\" mark=\"cross\" markrgb=\"0.8 0.8 0.8\"/>\n"
-            "    <material name=\"matplane\" reflectance=\"0.0\" texture=\"texplane\" texrepeat=\"10 10\" texuniform=\"true\"/>\n";
-
-        baseWorldBody =
-            "    <light directional=\"true\" diffuse=\"0.8 0.8 0.8\" specular=\"0.2 0.2 0.2\" pos=\"0 0 5\" dir=\"0 0 -1\"/>\n"
-            "    <geom name=\"floor\" type=\"plane\" pos=\"0 0 0\" size=\"0 0 1\" material=\"matplane\" condim=\"3\"/>\n";
-    } else {
-        // EDIT MODE
-        baseAssets =
-            "    <texture type=\"skybox\" builtin=\"gradient\" rgb1=\"0.07 0.08 0.10\" rgb2=\"0.06 0.065 0.07\" width=\"512\" height=\"512\"/>\n";
-
-        baseWorldBody =
-            "    <light directional=\"true\" diffuse=\"0.6 0.6 0.6\" specular=\"0.2 0.2 0.2\" pos=\"-0.5 -.5 .5\" dir=\"1 1 -1\"/>\n";
-    }
+    // The world around the robot (sky, lights, floor, props) comes from the stage.
+    QString baseAssets = stage.assetsXML();
+    QString baseWorldBody = stage.worldBodyXML(isSimulation);
+    actuators = stage.actuatorsXML(isSimulation);
 
     if (rootComponent) {
         worldbody = writeWorldBodyXML(rootComponent, visitedComps, isSimulation);
@@ -749,13 +753,14 @@ QString Project::generateMujocoXML(bool isSimulation) {
 
     // Cameras render into MuJoCo's offscreen buffer, which must fit the
     // largest one. MuJoCo's default (640x480) is kept as the floor.
-    QString visual;
+    QString visual = stage.visualXML();
     int camW = 0, camH = 0;
     maxCameraResolution(rootComponent, camW, camH);
     if (camW > 0 && camH > 0) {
-        visual = QString("  <visual>\n    <global offwidth=\"%1\" offheight=\"%2\"/>\n  </visual>\n\n")
+        visual += QString("    <global offwidth=\"%1\" offheight=\"%2\"/>\n")
                     .arg(std::max(camW, 640)).arg(std::max(camH, 480));
     }
+    visual = "  <visual>\n" + visual + "  </visual>\n\n" + stage.optionXML();
 
     QString xml = QString(
         "<mujoco model=\"%1\">\n"
@@ -786,6 +791,23 @@ QString Project::generateMujocoXML(bool isSimulation) {
 
 
 
+// Shifts the first <body pos="..."> of a component tree by the stage's robot spawn.
+static void offsetRootBody(QString& xml, const Vec3& offset) {
+    if (offset == Vec3{0, 0, 0}) return;
+    int tagEnd = xml.indexOf(">");
+    int start = xml.indexOf("pos=\"");
+    if (start < 0 || start > tagEnd) return;
+    start += 5;
+    int end = xml.indexOf('"', start);
+    QStringList parts = xml.mid(start, end - start).split(' ', Qt::SkipEmptyParts);
+    if (parts.size() != 3) return;
+    QString moved = QString("%1 %2 %3").arg(parts[0].toDouble() + offset[0])
+                                       .arg(parts[1].toDouble() + offset[1])
+                                       .arg(parts[2].toDouble() + offset[2]);
+    xml.replace(start, end - start, moved);
+}
+
+
 QString Project::writeWorldBodyXML(ComponentInstance* comp, QSet<int>& visitedComponents, bool isSimulation) {
     if (!comp || !comp->getBlueprint()) return "";
 
@@ -799,10 +821,13 @@ QString Project::writeWorldBodyXML(ComponentInstance* comp, QSet<int>& visitedCo
     // QString selfConnector = (comp->parentUid==0) ? QString() : comp->selfConnector; // should be redundant now
     QString xml = comp->getBlueprint()->generateTreeXML(comp->uid, comp->selfConnector, comp->transform);
 
-    if (comp->parentUid == 0 && isSimulation) {
-        int insertPos = xml.indexOf(">"); // Finds the end of the first <body ...> tag
-        if (insertPos != -1) {
-            xml.insert(insertPos + 1, "\n      <freejoint name=\"robot_freejoint\"/>");
+    if (comp->parentUid == 0) {
+        offsetRootBody(xml, stage.getData().robotSpawn);
+        if (isSimulation) {
+            int insertPos = xml.indexOf(">"); // Finds the end of the first <body ...> tag
+            if (insertPos != -1) {
+                xml.insert(insertPos + 1, "\n      <freejoint name=\"robot_freejoint\"/>");
+            }
         }
     }
 

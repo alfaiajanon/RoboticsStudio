@@ -1,7 +1,7 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "Robotics Studio Component Definition (RSDEF), schema 2",
-    "description": "Structure of an .rsdef file. JSON Schema cannot express cross-references, so these are checked elsewhere (ComponentData::fromJson and tools/validate_rsdef.py): ids unique within their kind (device ids across all device families; signal names across inputs and outputs), every target id resolves, joint and connector bodies exist, default_body is a body, tendon joints exist.",
+    "description": "Structure of an .rsdef file. JSON Schema cannot express cross-references, so these are checked elsewhere (ComponentData::fromJson and tools/validate_rsdef.py): ids unique within their kind (device ids across all device families; signal names across inputs and outputs), every target id resolves, joint and connector bodies exist, default_body is a body, tendon joints exist, joints sharing a body pair all have armature > 0.",
     "type": "object",
     "additionalProperties": false,
     "required": ["schema", "id", "meta", "kinematics", "connectors"],

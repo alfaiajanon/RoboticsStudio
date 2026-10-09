@@ -157,6 +157,11 @@ struct ComponentData {
     QJsonObject toJson() const;
     static ComponentData fromJson(const QJsonObject& obj, const QString& basePath);
 
+    // Joints stacked on the same body pair (e.g. servo_joint + backlash_joint)
+    // all need armature > 0, otherwise MuJoCo's mass matrix is singular.
+    // Returns the error for the first offending joint, or "" if all are fine.
+    static QString checkStackedJoints(const QList<Edge>& joints);
+
     // Shape and dimension of a signal: stated for "emulator" kind, otherwise
     // derived from the target (DeviceTypes). dim 0 = image / unresolved.
     int interfaceDim(const InterfaceDef& def) const;

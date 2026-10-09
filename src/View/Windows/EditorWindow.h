@@ -10,6 +10,7 @@
 #include "View/Panels/PlotPanel.h"
 #include "View/Panels/ComponentsPanel.h"
 #include "View/Panels/ScriptPanel.h"
+#include "View/Panels/StagePanel.h"
 #include "View/Panels/OutputPanel.h"
 #include "View/Viewport/MViewport.h"
 #include "View/Viewport/Camera.h"
@@ -56,6 +57,7 @@ class EditorWindow : public QMainWindow{
         OutputPanel* outputPanel;
         PlotPanel* plotPanel;
         ScriptPanel* scriptPanel;
+        StagePanel* stagePanel;
 
 
         EditorWindow(QWidget* parent = nullptr);

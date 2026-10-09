@@ -11,10 +11,11 @@ class ComponentInstance;
 
 class JSConsoleProxy : public QObject {
     Q_OBJECT
+    QString tag;
     public:
-        explicit JSConsoleProxy(QObject* parent = nullptr) : QObject(parent) {}
+        explicit JSConsoleProxy(const QString& tag, QObject* parent = nullptr) : QObject(parent), tag(tag) {}
         Q_INVOKABLE void log(const QString& msg) {
-            Log::info("[MCU]: "+msg); 
+            Log::info("[" + tag + "]: " + msg);
         }
 };
 
@@ -31,10 +32,13 @@ class MicroController : public QObject {
         void injectEmulators(ComponentInstance* comp);
 
     public:
-        MicroController(QObject* parent = nullptr);
+        // tag prefixes console.log output ("MCU" for the robot, "STAGE" for the stage script)
+        explicit MicroController(const QString& tag = "MCU", QObject* parent = nullptr);
         ~MicroController();
 
+        // root may be null (stage script: its globals come from setGlobal)
         void compile(const QString& script, ComponentInstance* root);
+        void setGlobal(const QString& name, QObject* obj);
         void run(); 
         void stop();
 

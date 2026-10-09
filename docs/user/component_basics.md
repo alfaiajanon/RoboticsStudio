@@ -95,7 +95,7 @@ What scripts, the Inspector and plots see. Each has a unique `name`.
 
 ## Common workarounds
 
-- **Gear backlash:** put a second, passive hinge (the "gap") between the output gear and the horn, with a tiny `range` (for example ±2°), low damping and `collision: false`. Add a `fixed` tendon summing drive joint + gap joint (coef 1 each) with a `tendonpos` sensor: that's the angle the horn really has.
+- **Gear backlash:** add a second, passive hinge (the "gap") on the same two bodies and axis as the drive joint (both `base -> horn`; don't add an extra body for it), with a tiny `range` (for example ±2°), low damping, `collision: false` and a small `armature` (both joints need one). Add a `fixed` tendon summing drive joint + gap joint (coef 1 each) with a `tendonpos` sensor: that's the angle the horn really has.
 - **Mesh collisions use the convex hull.** A U-bracket collides as if it were a solid block. Keep collision-relevant shapes convex, or split the part into several bodies or boxes.
 - **Part explodes or jitters on Play:** usually overlapping geoms between bodies of different parts, a too-light moving body, or a huge `kp` on a tiny mass. Lower `kp`, raise `armature`, or move the parts apart.
 - **Nothing happens when the script writes:** the signal name doesn't match the emulator's (see the table above), the input isn't target kind `joint` / `actuator`, or the joint has no actuator.

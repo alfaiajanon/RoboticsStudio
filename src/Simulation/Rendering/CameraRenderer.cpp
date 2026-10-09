@@ -103,6 +103,7 @@ bool CameraRenderer::submit(const mjModel* m, mjData* d, const CameraRequest& re
     mjv_defaultCamera(&cam);
     cam.type = mjCAMERA_FIXED;
     cam.fixedcamid = request.cameraId;
+    mujocoContext->applySceneFlags(&slot.scene);   // same world flags (fog, ...) as the viewport
     mjv_updateScene(m, d, &option, nullptr, &cam, mjCAT_ALL, &slot.scene);
 
     slot.request = request;

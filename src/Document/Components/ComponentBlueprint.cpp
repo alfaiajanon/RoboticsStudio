@@ -5,6 +5,7 @@
 #include <QJsonDocument>
 #include <QFileInfo>
 #include <QDir>
+#include <algorithm>
 #include "Utils/Log.h"
 
 
@@ -274,36 +275,40 @@ void ComponentBlueprint::traverseGraph(QString& outXML, const QString& currentNo
         }
     }
 
+    // Every joint between the parent and this body is emitted (e.g. a servo's
+    // servo_joint + backlash_joint stacked on the horn). MuJoCo chains a body's
+    // joints in order, so a reversed walk (body_a below body_b) emits them in
+    // reverse to keep the composition parent -> child.
     if (!parentNodeId.isEmpty()) {
-        QList<Edge> edges = kinematics.getEdgesForNode(currentNodeId);
+        QList<Edge> edges;
+        for (const Edge& e : kinematics.getEdgesForNode(currentNodeId))
+            if (e.bodyA == parentNodeId || e.bodyB == parentNodeId) edges << e;
+        if (!edges.isEmpty() && edges.first().bodyA == currentNodeId) std::reverse(edges.begin(), edges.end());
         for (const Edge& edge : edges) {
-            if (edge.bodyA == parentNodeId || edge.bodyB == parentNodeId) {
-                Transform jointRel = currentNode.localTransform.inverse() * edge.localTransform;
-                Position zAxis(0, 0, 1);
-                Position rotAxis = jointRel.rotation.rotate(zAxis);
+            Transform jointRel = currentNode.localTransform.inverse() * edge.localTransform;
+            Position zAxis(0, 0, 1);
+            Position rotAxis = jointRel.rotation.rotate(zAxis);
 
-                double rangeMin = edge.range.isEmpty() ? 0 : edge.range[0];
-                double rangeMax = edge.range.isEmpty() ? 0 : edge.range[1];
+            double rangeMin = edge.range.isEmpty() ? 0 : edge.range[0];
+            double rangeMax = edge.range.isEmpty() ? 0 : edge.range[1];
 
-                if (edge.bodyA == currentNodeId) {
-                    rotAxis = -rotAxis;
-                    double temp = rangeMin;
-                    rangeMin = -rangeMax;
-                    rangeMax = -temp;
-                }
-
-                outXML += indent + "<joint name=\"" + prefix + edge.id + "\" type=\"" + edge.type + "\" ";
-                outXML += QString("pos=\"%1 %2 %3\" ").arg(jointRel.position.x).arg(jointRel.position.y).arg(jointRel.position.z);
-                outXML += QString("axis=\"%1 %2 %3\" ").arg(rotAxis.x).arg(rotAxis.y).arg(rotAxis.z);
-                outXML += QString("range=\"%1 %2\" ").arg(rangeMin).arg(rangeMax);
-                outXML += QString("damping=\"%1\"").arg(edge.damping);
-
-                if (edge.armature > 0.0) outXML += QString(" armature=\"%1\"").arg(edge.armature);
-                if (edge.frictionloss > 0.0) outXML += QString(" frictionloss=\"%1\"").arg(edge.frictionloss);
-
-                outXML += "/>\n";
-                break;
+            if (edge.bodyA == currentNodeId) {
+                rotAxis = -rotAxis;
+                double temp = rangeMin;
+                rangeMin = -rangeMax;
+                rangeMax = -temp;
             }
+
+            outXML += indent + "<joint name=\"" + prefix + edge.id + "\" type=\"" + edge.type + "\" ";
+            outXML += QString("pos=\"%1 %2 %3\" ").arg(jointRel.position.x).arg(jointRel.position.y).arg(jointRel.position.z);
+            outXML += QString("axis=\"%1 %2 %3\" ").arg(rotAxis.x).arg(rotAxis.y).arg(rotAxis.z);
+            outXML += QString("range=\"%1 %2\" ").arg(rangeMin).arg(rangeMax);
+            outXML += QString("damping=\"%1\"").arg(edge.damping);
+
+            if (edge.armature > 0.0) outXML += QString(" armature=\"%1\"").arg(edge.armature);
+            if (edge.frictionloss > 0.0) outXML += QString(" frictionloss=\"%1\"").arg(edge.frictionloss);
+
+            outXML += "/>\n";
         }
     }
 
@@ -442,6 +447,20 @@ QString ComponentBlueprint::generateContactsXML(const int uid) const {
                             .arg(edge.bodyA)
                             .arg(edge.bodyB);
         }
+    }
+    QSet<QString> seen;
+    for (const Node& node : kinematics.getNodes()) {
+        if (!node.geoms.isEmpty()) continue;                 // only geom-less helper bodies
+        QStringList nbrs;
+        for (const Edge& e : kinematics.getEdgesForNode(node.id))
+            nbrs << (e.bodyA == node.id ? e.bodyB : e.bodyA);
+        for (int i = 0; i < nbrs.size(); ++i)
+            for (int j = i + 1; j < nbrs.size(); ++j) {
+                QString key = nbrs[i] < nbrs[j] ? nbrs[i] + "|" + nbrs[j] : nbrs[j] + "|" + nbrs[i];
+                if (seen.contains(key)) continue;            // never emit a pair twice
+                seen.insert(key);
+                exclude_xml += QString("<exclude body1=\"%1%2\" body2=\"%1%3\"/>\n").arg(prefix, nbrs[i], nbrs[j]);
+            }
     }
     return exclude_xml;
 }

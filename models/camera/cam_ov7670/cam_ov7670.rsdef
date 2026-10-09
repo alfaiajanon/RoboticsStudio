@@ -1,49 +1,276 @@
 {
-    "schema": 2,
-    "id": "camera_ov7670",
-    "meta": {
-        "name": "OV7670 Camera (QQVGA)",
-        "version": "1.0.0",
-        "author": "Anon"
-    },
-    "resources": {
-        "meshes": {},
-        "materials": {}
-    },
-    "specs": {
-        "voltage_max": 3.3,
-        "current_ma": 60,
-        "weight_kg": 0.008,
-        "sensor": "OmniVision OV7670, 0.3 MP"
-    },
-    "pins": [
+    "connectors": [
         {
-            "id": "vcc",
-            "voltage_range": [
-                3.0,
-                3.3
-            ],
-            "description": "Power input"
+            "body": "base",
+            "description": "",
+            "id": "bottom_left",
+            "transform": {
+                "pos": [
+                    -0.0145,
+                    0.015,
+                    2e-04
+                ],
+                "quat": [
+                    6.123233995736766e-17,
+                    0,
+                    0,
+                    1
+                ]
+            }
         },
         {
-            "id": "gnd",
-            "description": "Ground"
+            "body": "base",
+            "description": "",
+            "id": "bottom_right",
+            "transform": {
+                "pos": [
+                    0.0145,
+                    0.015,
+                    2e-04
+                ],
+                "quat": [
+                    6.123233995736766e-17,
+                    0,
+                    0,
+                    1
+                ]
+            }
         },
         {
-            "id": "scl",
-            "description": "SCCB/I2C clock (configuration)"
+            "body": "base",
+            "description": "Mount on the back of the board (lens faces away)",
+            "id": "general",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    90,
+                    180,
+                    270
+                ]
+            },
+            "transform": {
+                "pos": [
+                    0,
+                    0,
+                    2e-04
+                ],
+                "quat": [
+                    6.123233995736766e-17,
+                    0,
+                    0,
+                    1
+                ]
+            }
         },
         {
-            "id": "sda",
-            "description": "SCCB/I2C data (configuration)"
+            "body": "base",
+            "description": "",
+            "id": "pins",
+            "transform": {
+                "pos": [
+                    0,
+                    0.011,
+                    2e-04
+                ],
+                "quat": [
+                    6.123233995736766e-17,
+                    0,
+                    0,
+                    1
+                ]
+            }
+        },
+        {
+            "body": "base",
+            "description": "",
+            "id": "top_left",
+            "transform": {
+                "pos": [
+                    -0.0145,
+                    -0.015,
+                    2e-04
+                ],
+                "quat": [
+                    6.123233995736766e-17,
+                    0,
+                    0,
+                    1
+                ]
+            }
+        },
+        {
+            "body": "base",
+            "description": "",
+            "id": "top_right",
+            "transform": {
+                "pos": [
+                    0.0145,
+                    -0.015,
+                    2e-04
+                ],
+                "quat": [
+                    6.123233995736766e-17,
+                    0,
+                    0,
+                    1
+                ]
+            }
         }
     ],
+    "devices": {
+        "cameras": [
+            {
+                "fovy": 45,
+                "id": "cam",
+                "resolution": [
+                    160,
+                    120
+                ],
+                "target": {
+                    "id": "lens_tip",
+                    "kind": "site"
+                },
+                "type": "rgb"
+            }
+        ]
+    },
+    "emulator": {
+        "parameters": {
+            "bits_per_channel": 6,
+            "color_gain": [
+                1.05,
+                1,
+                0.9
+            ],
+            "drop_probability": 0.02,
+            "fps": 15,
+            "latency_ms": 60,
+            "noise_stddev": 6
+        },
+        "source": {
+        },
+        "type": "camera_emulator"
+    },
+    "id": "cam_ov7670",
+    "interface": {
+        "inputs": [
+        ],
+        "outputs": [
+            {
+                "name": "image",
+                "physical": true,
+                "target": {
+                    "id": "cam",
+                    "kind": "camera"
+                }
+            }
+        ]
+    },
     "kinematics": {
-        "default_body": "base",
         "bodies": [
             {
+                "geoms": [
+                    {
+                        "color": [
+                            0.3,
+                            0.5,
+                            0.8
+                        ],
+                        "id": "board",
+                        "mass": 0.006,
+                        "mesh": "ov7670_pcb",
+                        "pos": [
+                            0,
+                            0,
+                            0
+                        ],
+                        "quat": [
+                            0.7071067811865476,
+                            -0.7071067811865475,
+                            0,
+                            0
+                        ],
+                        "size": [
+                            0.017,
+                            0.017,
+                            8e-04
+                        ],
+                        "type": "mesh"
+                    },
+                    {
+                        "color": [
+                            0.2,
+                            0.2,
+                            0.2
+                        ],
+                        "id": "lens",
+                        "mass": 0.002,
+                        "mesh": "ov7670_cam",
+                        "pos": [
+                            0,
+                            0,
+                            0
+                        ],
+                        "quat": [
+                            0.7071067811865476,
+                            -0.7071067811865475,
+                            0,
+                            0
+                        ],
+                        "size": [
+                            0,
+                            0,
+                            0
+                        ],
+                        "type": "mesh"
+                    },
+                    {
+                        "color": [
+                            0,
+                            0.1,
+                            0.15
+                        ],
+                        "id": "glass",
+                        "mass": 0,
+                        "mesh": "ov7670_lens",
+                        "pos": [
+                            0,
+                            -0.0044,
+                            -0.0195
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "size": [
+                            0.005,
+                            1e-04
+                        ],
+                        "type": "cylinder"
+                    }
+                ],
                 "id": "base",
                 "overrideGeom": false,
+                "sites": [
+                    {
+                        "id": "lens_tip",
+                        "transform": {
+                            "pos": [
+                                0,
+                                -0.0044,
+                                -0.02
+                            ],
+                            "quat": [
+                                6.123233995736766e-17,
+                                0,
+                                0,
+                                1
+                            ]
+                        }
+                    }
+                ],
                 "transform": {
                     "pos": [
                         0,
@@ -56,170 +283,55 @@
                         0,
                         0
                     ]
-                },
-                "geoms": [
-                    {
-                        "id": "board",
-                        "type": "box",
-                        "size": [
-                            0.017,
-                            0.017,
-                            0.0008
-                        ],
-                        "pos": [
-                            0,
-                            0,
-                            0
-                        ],
-                        "quat": [
-                            1,
-                            0,
-                            0,
-                            0
-                        ],
-                        "mass": 0.006
-                    },
-                    {
-                        "id": "lens",
-                        "type": "cylinder",
-                        "size": [
-                            0.007,
-                            0.005
-                        ],
-                        "pos": [
-                            0,
-                            0,
-                            -0.0058
-                        ],
-                        "quat": [
-                            1,
-                            0,
-                            0,
-                            0
-                        ],
-                        "mass": 0.002
-                    }
-                ],
-                "sites": [
-                    {
-                        "id": "lens_tip",
-                        "transform": {
-                            "pos": [
-                                0,
-                                0,
-                                -0.0109
-                            ],
-                            "quat": [
-                                1,
-                                0,
-                                0,
-                                0
-                            ]
-                        }
-                    }
-                ]
-            }
-        ],
-        "joints": []
-    },
-    "connectors": [
-        {
-            "id": "back",
-            "body": "base",
-            "description": "Mount on the back of the board (lens faces away)",
-            "mechanics": {
-                "snap_angles": [
-                    0,
-                    90,
-                    180,
-                    270
-                ]
-            },
-            "transform": {
-                "pos": [
-                    0,
-                    0,
-                    0.0008
-                ],
-                "quat": [
-                    1,
-                    0,
-                    0,
-                    0
-                ]
-            }
-        },
-        {
-            "id": "bottom_edge",
-            "body": "base",
-            "description": "Bottom edge of the board: stands the camera upright, lens horizontal",
-            "mechanics": {
-                "snap_angles": [
-                    0,
-                    90,
-                    180,
-                    270
-                ]
-            },
-            "transform": {
-                "pos": [
-                    0,
-                    -0.017,
-                    0
-                ],
-                "quat": [
-                    0.7071068,
-                    0.7071068,
-                    0,
-                    0
-                ]
-            }
-        }
-    ],
-    "devices": {
-        "cameras": [
-            {
-                "id": "cam",
-                "type": "rgb",
-                "target": {
-                    "kind": "site",
-                    "id": "lens_tip"
-                },
-                "resolution": [
-                    160,
-                    120
-                ],
-                "fovy": 45
-            }
-        ]
-    },
-    "interface": {
-        "inputs": [],
-        "outputs": [
-            {
-                "name": "image",
-                "physical": true,
-                "target": {
-                    "kind": "camera",
-                    "id": "cam"
                 }
             }
+        ],
+        "default_body": "base",
+        "joints": [
         ]
     },
-    "emulator": {
-        "type": "camera_emulator",
-        "source": null,
-        "parameters": {
-            "fps": 15,
-            "latency_ms": 60,
-            "noise_stddev": 6,
-            "color_gain": [
-                1.05,
-                1.0,
-                0.9
-            ],
-            "bits_per_channel": 6,
-            "drop_probability": 0.02
+    "meta": {
+        "author": "Anon",
+        "icon_path": "",
+        "name": "OV7670 Camera (QQVGA)",
+        "version": "1.0.0"
+    },
+    "pins": [
+        {
+            "description": "Power input",
+            "id": "vcc",
+            "voltage_range": [
+                3,
+                3.299999952316284
+            ]
+        },
+        {
+            "description": "Ground",
+            "id": "gnd"
+        },
+        {
+            "description": "SCCB/I2C clock (configuration)",
+            "id": "scl"
+        },
+        {
+            "description": "SCCB/I2C data (configuration)",
+            "id": "sda"
         }
+    ],
+    "resources": {
+        "materials": {
+        },
+        "meshes": {
+            "ov7670_cam": "meshes/ov7670_cam.obj",
+            "ov7670_lens": "meshes/ov7670_lens.obj",
+            "ov7670_pcb": "meshes/ov7670_pcb.obj"
+        }
+    },
+    "schema": 2,
+    "specs": {
+        "current_ma": 60,
+        "sensor": "OmniVision OV7670, 0.3 MP",
+        "voltage_max": 3.3,
+        "weight_kg": 0.008
     }
 }

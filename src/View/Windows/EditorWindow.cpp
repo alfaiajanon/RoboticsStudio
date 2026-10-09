@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <limits>
 #include <cmath>
+#include <cstring>
 #include <qaction.h>
 #include <QDomDocument>
 #include <QUndoStack>
@@ -53,6 +54,7 @@ EditorWindow::EditorWindow(QWidget* parent) : QMainWindow(parent){
     viewport=nullptr;
     bottomTabs=nullptr;
     camera=nullptr;
+    stagePanel=nullptr;
 
     setupMenuBar();
     setupSplitting();
@@ -94,6 +96,9 @@ void EditorWindow::refresh() {
     }
     if(inspector){
         inspector->buildUI();
+    }
+    if(stagePanel){
+        stagePanel->refresh();
     }
     int temp = currentSelectedUid;
     currentSelectedUid = -1;
@@ -503,6 +508,12 @@ void EditorWindow::setupSplitting(){
     scriptPanel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Ignored);
     bottomTabs->addTab(scriptPanel, "Script");
 
+    // add StagePanel
+    stagePanel = new StagePanel();
+    stagePanel->setMinimumHeight(0);
+    stagePanel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Ignored);
+    bottomTabs->addTab(stagePanel, "Stage");
+
 
     topDownSplitter->addWidget(bottomTabs);
     topDownSplitter->setCollapsible(0, false);
@@ -593,6 +604,7 @@ void EditorWindow::setupMainViewport() {
 
             if (this->inspector) this->inspector->setInputState(false);
             if (this->componentsPanel) this->componentsPanel->setEnabled(false);
+            if (this->stagePanel) this->stagePanel->setEnabled(false);
 
         } else {
             sim->edit();
@@ -606,6 +618,7 @@ void EditorWindow::setupMainViewport() {
 
             if (this->inspector) this->inspector->setInputState(true);
             if (this->componentsPanel) this->componentsPanel->setEnabled(true);
+            if (this->stagePanel) this->stagePanel->setEnabled(true);
         }
     });
 
@@ -790,8 +803,11 @@ void EditorWindow::frameScene() {
 
     // 2. Iterate over all geometry to find the bounding box
     for (int i = 0; i < m->ngeom; i++) {
-        // Skip the infinite ground plane!
+        // Skip the infinite ground plane, and the rest of the stage (floor
+        // meshes, props): frame the robot, not the world around it.
         if (m->geom_type[i] == mjGEOM_PLANE) continue;
+        const char* geomName = mj_id2name(m, mjOBJ_GEOM, i);
+        if (geomName && (strncmp(geomName, "stage_", 6) == 0 || strncmp(geomName, "prop_", 5) == 0)) continue;
 
         float cx = d->geom_xpos[3*i + 0];
         float cy = d->geom_xpos[3*i + 1];

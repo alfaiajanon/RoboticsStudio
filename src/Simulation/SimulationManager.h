@@ -12,6 +12,8 @@
 
 class ComponentInstance;
 class Project;
+class Stage;
+class MicroController;
 class Emulator;
 class CameraRenderer;
 class DisplayTextures;
@@ -50,6 +52,7 @@ class SimulationManager : public QObject {
     QElapsedTimer fpsTimer;
     std::thread physicsThread;
     std::thread mcuThread;
+    std::thread stageThread;   // runs the stage script, same loop as the MCU
 
     std::chrono::steady_clock::time_point lastTickTime;
 
@@ -80,7 +83,8 @@ class SimulationManager : public QObject {
     DisplayTextures* displayTextures = nullptr;
 
     void physicsLoop();
-    void mcuLoop();
+    void mcuLoop(MicroController* mcu);
+    void startThreads();
 
     void buildSchedule(ComponentInstance* root);
     void clearSchedule();
@@ -120,6 +124,11 @@ class SimulationManager : public QObject {
         static void syncToMujocoJoint(ComponentInstance* root, mjModel* m, mjData* d);
         static void syncToMujocoActuator(ComponentInstance* root, mjModel* m, mjData* d);
         static void syncFromMujocoSensor(ComponentInstance* root, mjModel* m, mjData* d);
+
+        // Stage props + robot pose (stage script side), see Stage.h.
+        static void cacheStageIds(Stage* stage, mjModel* m);
+        static void syncToMujocoProps(Stage* stage, mjModel* m, mjData* d);
+        static void syncFromMujocoProps(Stage* stage, mjModel* m, mjData* d);
 
     signals:
         // void fpsUpdated(int currentFps);

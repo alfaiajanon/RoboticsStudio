@@ -33,9 +33,9 @@ void MicroController::injectEmulators(ComponentInstance* comp) {
 
 
 
-MicroController::MicroController(QObject* parent) : QObject(parent), stopRequested(false) {
+MicroController::MicroController(const QString& tag, QObject* parent) : QObject(parent), stopRequested(false) {
     // Setup Console
-    consoleProxy = new JSConsoleProxy(this);
+    consoleProxy = new JSConsoleProxy(tag, this);
     QJSEngine::setObjectOwnership(consoleProxy, QJSEngine::CppOwnership);
     QJSValue jsConsole = engine.newQObject(consoleProxy);
     engine.globalObject().setProperty("console", jsConsole);
@@ -57,6 +57,14 @@ MicroController::~MicroController() {
 
 
 
+
+
+
+
+void MicroController::setGlobal(const QString& name, QObject* obj) {
+    QJSEngine::setObjectOwnership(obj, QJSEngine::CppOwnership);
+    engine.globalObject().setProperty(name, engine.newQObject(obj));
+}
 
 
 

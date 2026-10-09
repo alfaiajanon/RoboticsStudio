@@ -228,7 +228,8 @@ void ScalarCanvasWindow::addTarget(QString sourceKey, const QString& label, cons
     colorBtn->setStyleSheet(QString("background-color: %1; border: 1px solid #555; border-radius: 2px;").arg(initialColor.name()));
 
     connect(colorBtn, &QPushButton::clicked, this, [this, newGraph, colorBtn]() {
-        QColor newCol = QColorDialog::getColor(newGraph->pen().color(), this, "Select Graph Color");
+        QColor newCol = QColorDialog::getColor(newGraph->pen().color(), this, "Select Graph Color",
+                                               QColorDialog::DontUseNativeDialog);
         if (newCol.isValid()) {
             newGraph->setPen(QPen(newCol, 2));
             colorBtn->setStyleSheet(QString("background-color: %1; border: 1px solid #555; border-radius: 2px;").arg(newCol.name()));
@@ -427,7 +428,8 @@ void VectorCanvasWindow::addTarget(QString sourceKey, const QString& label, cons
     connect(colorBtn, &QPushButton::clicked, this, [this, sourceKey, colorBtn]() {
         if (!activeGraphs.contains(sourceKey)) return;
 
-        QColor newCol = QColorDialog::getColor(activeGraphs[sourceKey].sepX->pen().color(), this, "Select Graph Color");
+        QColor newCol = QColorDialog::getColor(activeGraphs[sourceKey].sepX->pen().color(), this, "Select Graph Color",
+                                               QColorDialog::DontUseNativeDialog);
         if (newCol.isValid()) {
             VectorGraphs& g = activeGraphs[sourceKey];
             g.combinedX->setPen(QPen(newCol, 2, Qt::SolidLine));
