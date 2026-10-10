@@ -28,6 +28,8 @@ class MicroController : public QObject {
         
         bool isCompiled = false;
         std::atomic<bool> stopRequested; 
+        // While set, delay() holds and its remaining time stops counting down.
+        std::atomic<bool> paused{false};
     
         void injectEmulators(ComponentInstance* comp);
 
@@ -41,6 +43,7 @@ class MicroController : public QObject {
         void setGlobal(const QString& name, QObject* obj);
         void run(); 
         void stop();
+        void setPaused(bool p);
 
         // The native C++ sleep function exposed to JS
         Q_INVOKABLE void delay(int milliseconds); 

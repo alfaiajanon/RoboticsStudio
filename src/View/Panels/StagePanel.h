@@ -5,6 +5,7 @@
 #include <QWidget>
 #include "Document/Stage.h"
 
+class QComboBox;
 class QFormLayout;
 class QListWidget;
 class QLabel;
@@ -24,6 +25,9 @@ class StagePanel : public QWidget {
 
     public slots:
         void refresh();
+        // Registers a stage script (relative path) as one undo step; it becomes
+        // the active one if none is.
+        void addScript(const QString& rel);
 
     protected:
         bool eventFilter(QObject* obj, QEvent* event) override;
@@ -40,7 +44,7 @@ class StagePanel : public QWidget {
         QFormLayout* envForm = nullptr;
         QFormLayout* floorForm = nullptr;
         QFormLayout* propForm = nullptr;
-        QLabel* scriptLabel = nullptr;
+        QComboBox* scriptCombo = nullptr;
 
         void setupUI();
         QWidget* buildEnvironment();
@@ -68,5 +72,4 @@ class StagePanel : public QWidget {
         Stage::Prop* selectedProp(Stage::Data& d);
         void updateVisibility(const Stage::Data& d);
         QString importIntoProject(const QString& path);   // relative path inside the project, "" on failure
-        void editStageScript();
 };

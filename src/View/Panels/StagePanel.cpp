@@ -30,22 +30,6 @@
 
 
 
-static const char* STAGE_SCRIPT_TEMPLATE = R"(// Stage script: drives the controlled props, next to (not inside) the robot.
-// Globals:
-//   prop_<id>  one per prop whose motion is "controlled"
-//     setVelocity(vx, vy)        world frame, m/s
-//     move(forward, strafe)      prop frame, m/s
-//     setYawRate(degPerSec)
-//     stop()
-//     teleport(x, y, z, yawDeg)
-//     getPosition() -> {x, y, z}, getVelocity() -> {x, y, z}, getYaw() -> deg
-//   robot      read-only robot pose
-//     getPosition() -> {x, y, z}, getRotation() -> {roll, pitch, yaw} (deg)
-
-function loop() {
-    delay(20);
-}
-)";
 
 
 
@@ -89,31 +73,18 @@ QWidget* StagePanel::buildToolbar() {
     QHBoxLayout* layout = new QHBoxLayout(toolbar);
     layout->setContentsMargins(8, 4, 8, 4);
 
-    scriptLabel = new QLabel("Stage script: none");
-    scriptLabel->setStyleSheet("color: #cccccc;");
-
-    QPushButton* editBtn = new QPushButton("Edit Script");
-    QPushButton* chooseBtn = new QPushButton("Choose...");
-    QPushButton* clearBtn = new QPushButton("Clear");
-    editBtn->setToolTip("Open the stage script in the Script tab (creates stage.js if there is none)");
-
-    connect(editBtn, &QPushButton::clicked, this, &StagePanel::editStageScript);
-    connect(chooseBtn, &QPushButton::clicked, this, [this]() {
-        QString path = QFileDialog::getOpenFileName(this, "Choose Stage Script",
-            Application::getInstance()->getProject()->getProjectDirectory(), "JavaScript (*.js)");
-        if (path.isEmpty()) return;
-        QString rel = importIntoProject(path);
-        if (!rel.isEmpty()) commit([rel](Stage::Data& d) { d.script = rel; });
-    });
-    connect(clearBtn, &QPushButton::clicked, this, [this]() {
-        commit([](Stage::Data& d) { d.script.clear(); });
+    // Item 0 is "None"; item i+1 is scripts[i]. Disabled while the project
+    // has no stage scripts (create them from the Script view's + button).
+    scriptCombo = new QComboBox();
+    scriptCombo->setMinimumWidth(180);
+    scriptCombo->setToolTip("Stage script that runs on Play");
+    connect(scriptCombo, &QComboBox::currentIndexChanged, this, [this](int idx) {
+        int current = idx - 1;
+        commit([current](Stage::Data& d) { d.currentScript = current; });
     });
 
-    layout->addWidget(scriptLabel);
     layout->addStretch();
-    layout->addWidget(editBtn);
-    layout->addWidget(chooseBtn);
-    layout->addWidget(clearBtn);
+    layout->addWidget(scriptCombo);
     return toolbar;
 }
 
@@ -531,8 +502,29 @@ void StagePanel::refresh() {
     for (const auto& load : loaders) load(d);
     updateVisibility(d);
 
-    scriptLabel->setText("Stage script: " + (d.script.isEmpty() ? QString("none") : d.script));
+    {
+        QSignalBlocker block(scriptCombo);
+        scriptCombo->clear();
+        if (d.scripts.isEmpty()) {
+            scriptCombo->addItem("No stage scripts");
+            scriptCombo->setEnabled(false);
+        } else {
+            scriptCombo->addItem("None");
+            scriptCombo->addItems(d.scripts);
+            scriptCombo->setCurrentIndex(d.currentScript + 1);
+            scriptCombo->setEnabled(true);
+        }
+    }
     updating = false;
+}
+
+
+void StagePanel::addScript(const QString& rel) {
+    commit([rel](Stage::Data& d) {
+        if (d.scripts.contains(rel)) return;
+        d.scripts.append(rel);
+        if (d.currentScript < 0) d.currentScript = d.scripts.size() - 1;
+    });
 }
 
 
@@ -581,29 +573,4 @@ QString StagePanel::importIntoProject(const QString& path) {
     }
     Log::info("Stage: imported " + info.fileName() + " as " + target);
     return target;
-}
-
-
-void StagePanel::editStageScript() {
-    Application* app = Application::getInstance();
-    Project* project = app->getProject();
-    QString rel = project->getStage()->getData().script;
-    if (rel.isEmpty()) {
-        rel = "stage.js";
-        commit([rel](Stage::Data& d) { d.script = rel; });
-    }
-
-    QString path = project->getProjectDirectory() + "/" + rel;
-    if (!QFile::exists(path)) {
-        QFile file(path);
-        if (!file.open(QFile::WriteOnly | QFile::Text)) {
-            Log::error("Stage: could not create " + path);
-            return;
-        }
-        QTextStream(&file) << STAGE_SCRIPT_TEMPLATE;
-    }
-
-    EditorWindow* editor = app->getEditor();
-    editor->scriptPanel->loadScript(path);
-    editor->bottomTabs->setCurrentWidget(editor->scriptPanel);
 }

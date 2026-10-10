@@ -148,7 +148,19 @@ void SimulationManager::edit() {
 
 
 void SimulationManager::pause() {
+    if (currentState != SimulationState::PLAYING) return;
     currentState = SimulationState::PAUSED;
+    project->getMicroController()->setPaused(true);
+    project->getStageController()->setPaused(true);
+}
+
+
+
+void SimulationManager::resume() {
+    if (currentState != SimulationState::PAUSED) return;
+    project->getMicroController()->setPaused(false);
+    project->getStageController()->setPaused(false);
+    currentState = SimulationState::PLAYING;
 }
 
 

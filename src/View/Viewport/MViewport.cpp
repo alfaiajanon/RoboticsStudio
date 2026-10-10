@@ -55,6 +55,13 @@ void MViewport::renderLoop(){
 
     if (!simManager) return;
 
+    // Hidden behind another central page: skip the offscreen render, but keep
+    // the inspector's live values ticking.
+    if (!isVisible()) {
+        Application::getInstance()->getEditor()->inspector->updateLiveValues();
+        return;
+    }
+
     // The physics lock is taken inside render(), only while the scene is built.
     // mjr_render/readPixels touch just the scene and GL context, which are only
     // modified on this (UI) thread (model reloads), so they need no lock.

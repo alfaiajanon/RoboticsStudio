@@ -6,6 +6,7 @@
 #include <vector>
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QJsonObject>
 #include <QVariantMap>
 
@@ -151,7 +152,12 @@ class Stage {
             Environment env;
             Floor floor;
             QList<Prop> props;
-            QString script;                     // stage script, relative to the project dir
+            QStringList scripts;                // stage scripts, relative to the project dir
+            int currentScript = -1;             // index into scripts; -1 = no stage script
+
+            QString activeScript() const {
+                return (currentScript >= 0 && currentScript < scripts.size()) ? scripts[currentScript] : QString();
+            }
             Vec3 robotSpawn{0, 0, 0};
         };
 

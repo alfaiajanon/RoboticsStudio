@@ -32,6 +32,9 @@ CodeEditor::CodeEditor(QWidget *parent) : QPlainTextEdit(parent) {
 
     updateLineNumberAreaWidth(0);
     highlightCurrentLine();
+
+    // Lets the last lines scroll up past the floating HUD at the bottom-left
+    setCenterOnScroll(true);
 }
 
 int CodeEditor::lineNumberAreaWidth() {

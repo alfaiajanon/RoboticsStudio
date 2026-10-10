@@ -1,0 +1,184 @@
+{
+    "connectors": [
+        {
+            "body": "base",
+            "description": "",
+            "id": "arm_left_inside",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    180
+                ]
+            },
+            "transform": {
+                "pos": [
+                    0.0242,
+                    0.0309,
+                    -0.01
+                ],
+                "quat": [
+                    0.7071067811865476,
+                    0.7071067811865475,
+                    0,
+                    0
+                ]
+            }
+        },
+        {
+            "body": "base",
+            "description": "",
+            "id": "arm_right_inside",
+            "transform": {
+                "pos": [
+                    -0.0243,
+                    0.0309,
+                    -0.01
+                ],
+                "quat": [
+                    0.7071067811865476,
+                    0.7071067811865475,
+                    0,
+                    0
+                ]
+            }
+        },
+        {
+            "body": "base",
+            "description": "",
+            "id": "back_outside_1",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    90,
+                    180,
+                    270
+                ]
+            },
+            "transform": {
+                "pos": [
+                    1e-04,
+                    0.0121,
+                    0
+                ],
+                "quat": [
+                    1,
+                    0,
+                    0,
+                    0
+                ]
+            }
+        },
+        {
+            "body": "base",
+            "description": "",
+            "id": "back_outside_2",
+            "transform": {
+                "pos": [
+                    0.0099,
+                    0.0255,
+                    0
+                ],
+                "quat": [
+                    1,
+                    0,
+                    0,
+                    0
+                ]
+            }
+        },
+        {
+            "body": "base",
+            "description": "",
+            "id": "back_outside_3",
+            "transform": {
+                "pos": [
+                    -0.0097,
+                    0.0255,
+                    0
+                ],
+                "quat": [
+                    1,
+                    0,
+                    0,
+                    0
+                ]
+            }
+        }
+    ],
+    "emulator": {
+        "parameters": {
+        },
+        "source": {
+        },
+        "type": ""
+    },
+    "id": "multipurpose_bracket",
+    "interface": {
+        "inputs": [
+        ],
+        "outputs": [
+        ]
+    },
+    "kinematics": {
+        "bodies": [
+            {
+                "geoms": [
+                    {
+                        "id": "base_geom",
+                        "mass": 0.03,
+                        "mesh": "mesh_body",
+                        "pos": [
+                            0,
+                            0,
+                            0
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "type": "mesh"
+                    }
+                ],
+                "id": "base",
+                "overrideGeom": false,
+                "transform": {
+                    "pos": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "quat": [
+                        1,
+                        0,
+                        0,
+                        0
+                    ]
+                }
+            }
+        ],
+        "default_body": "base",
+        "joints": [
+        ]
+    },
+    "meta": {
+        "author": "Anon",
+        "icon_path": "multipurpose_bracket.png",
+        "name": "Multipurpose Bracket",
+        "version": "1.0.0"
+    },
+    "pins": [
+    ],
+    "resources": {
+        "materials": {
+            "mat_bracket": "textures/tex_tt_motor.png"
+        },
+        "meshes": {
+            "mesh_body": "meshes/body.obj"
+        }
+    },
+    "schema": 2,
+    "specs": {
+    }
+}

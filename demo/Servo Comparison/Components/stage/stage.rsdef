@@ -1,0 +1,118 @@
+{
+    "connectors": [
+        {
+            "body": "body_1",
+            "description": "",
+            "id": "connector_1",
+            "transform": {
+                "pos": [
+                    0.02,
+                    0.06,
+                    0
+                ],
+                "quat": [
+                    0.7071067811865476,
+                    -0.7071067811865475,
+                    0,
+                    0
+                ]
+            }
+        },
+        {
+            "body": "body_1",
+            "description": "",
+            "id": "connector_2",
+            "transform": {
+                "pos": [
+                    -0.02,
+                    0.06,
+                    0
+                ],
+                "quat": [
+                    0.7071067811865476,
+                    -0.7071067811865475,
+                    0,
+                    0
+                ]
+            }
+        }
+    ],
+    "emulator": {
+        "parameters": {
+        },
+        "source": {
+        },
+        "type": ""
+    },
+    "id": "stage",
+    "interface": {
+        "inputs": [
+        ],
+        "outputs": [
+        ]
+    },
+    "kinematics": {
+        "bodies": [
+            {
+                "geoms": [
+                    {
+                        "id": "geom_1",
+                        "mass": 1,
+                        "pos": [
+                            0,
+                            0,
+                            0
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "size": [
+                            0.04,
+                            0.06,
+                            0.025
+                        ],
+                        "type": "box"
+                    }
+                ],
+                "id": "body_1",
+                "overrideGeom": false,
+                "transform": {
+                    "pos": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "quat": [
+                        1,
+                        0,
+                        0,
+                        0
+                    ]
+                }
+            }
+        ],
+        "default_body": "body_1",
+        "joints": [
+        ]
+    },
+    "meta": {
+        "author": "",
+        "icon_path": "",
+        "name": "stage",
+        "version": ""
+    },
+    "pins": [
+    ],
+    "resources": {
+        "materials": {
+        },
+        "meshes": {
+        }
+    },
+    "schema": 2,
+    "specs": {
+    }
+}

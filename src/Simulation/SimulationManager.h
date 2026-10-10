@@ -102,7 +102,8 @@ class SimulationManager : public QObject {
 
         void play();
         void edit();
-        void pause();
+        void pause();    // freeze a running simulation (physics + scripts)
+        void resume();   // continue a paused one without recompiling
         void trackFps();
         void setTimeScale(float scale);
 

@@ -73,6 +73,8 @@ class Project {
         bool loadProject(const QString& path);
         void setProjectPath(const QString& path);
         QString getProjectPath(){return projectPath;}
+        // Writes the .rsproj only; the editor (EditorWindow::saveProject) owns
+        // the "unsaved changes" state and marks it clean on success.
         bool saveProject();
         void unloadProject();
         void refresh();
@@ -122,6 +124,7 @@ class Project {
         void setScript(int idx);
         void setScriptPaths(QJsonArray newarr){ scriptPaths = newarr; };
         QJsonArray getScriptPaths() const { return scriptPaths; }
+        int getCurrentScriptIdx() const { return currentScriptIdx; }
         QString getScriptPath() const {return scriptPaths[currentScriptIdx].toString(); }
         QString getScript() const { return currentScriptContent; }
 

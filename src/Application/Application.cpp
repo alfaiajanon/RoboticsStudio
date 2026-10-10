@@ -122,6 +122,7 @@ void Application::openProject(const QString& projectPath) {
     editor.frameScene();
     editor.refresh();
     editor.plotPanel->loadJson(currentProject.getPlotting());
+    editor.markProjectSaved();   // baseline for the unsaved-changes check (plot layout included)
     editor.show();
 
     Log::info("Project loaded: " + projectPath);
@@ -138,19 +139,7 @@ void Application::openProject(const QString& projectPath) {
 
 
 bool Application::closeProjectToLauncher() {
-    if (!undoStack.isClean()) {
-        QMessageBox::StandardButton choice = QMessageBox::question(
-            &editor, "Unsaved Changes",
-            "Save changes to the project before closing it?",
-            QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel,
-            QMessageBox::Save);
-        if (choice == QMessageBox::Cancel) return false;
-        if (choice == QMessageBox::Save && !currentProject.saveProject()) {
-            QMessageBox::warning(&editor, "Save Failed",
-                "Could not save the project. Use Save As... first, or choose Discard.");
-            return false;
-        }
-    }
+    if (!editor.confirmUnsavedChanges()) return false;
 
     if (simManager) simManager->pause();
     undoStack.clear();

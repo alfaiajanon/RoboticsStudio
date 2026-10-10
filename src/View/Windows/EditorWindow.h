@@ -4,6 +4,7 @@
 #include <QSplitter>
 #include <QWidget>
 #include <QMenu>
+#include <QJsonObject>
 
 #include "View/Panels/SceneTreePanel.h"
 #include "View/Panels/InspectorPanel.h"
@@ -14,6 +15,7 @@
 #include "View/Panels/OutputPanel.h"
 #include "View/Viewport/MViewport.h"
 #include "View/Viewport/Camera.h"
+#include "View/Widgets/HudStack.h"
 
 
 
@@ -37,7 +39,14 @@ class EditorWindow : public QMainWindow{
         QLabel* collisionCountLabel;
 
         QPushButton* playBtn;
+        QPushButton* pauseBtn;
         QMenu* editMenu = nullptr;
+        // Ctrl+S: saves the open script on the Script page, the project elsewhere.
+        QAction* saveAct = nullptr;
+
+        // The plot layout is not command-based, so "modified" compares the
+        // panel's current snapshot against the one taken at load/save.
+        QJsonObject savedPlotLayout;
 
         void setupMenuBar();
         void setupSplitting();
@@ -49,6 +58,7 @@ class EditorWindow : public QMainWindow{
     public:
         Camera *camera;
         MViewport *viewport;
+        HudStack *centerStack;
         QTabWidget *bottomTabs;
 
         SceneTreePanel* sceneTree;
@@ -73,6 +83,23 @@ class EditorWindow : public QMainWindow{
         // body) -- the EditorWindow itself is constructed before that.
         void setupUndoRedo();
         int getCurrentSelectedUid() const;
+
+        // Writes the project (+ launcher thumbnail) and marks it unmodified.
+        bool saveProject();
+        // Baseline for "unsaved changes": call after a project is loaded or saved.
+        void markProjectSaved();
+        // Undo stack not clean, or plot layout changed since load/save.
+        bool isProjectModified() const;
+        // One Save All / Discard / Cancel prompt for the project and the open
+        // script. False = cancelled (or a save failed): abort the close/switch.
+        bool confirmUnsavedChanges();
+        // Window title + its "*" marker.
+        void updateModifiedIndicator();
+
+    protected:
+        void closeEvent(QCloseEvent* event) override;
+
+    public:
 
     signals:
         void componentLibDragStart(const QString& modelId);

@@ -1,6 +1,6 @@
 # The stage
 
-The **Stage** tab (bottom panel, next to **Script**) edits the world around the robot: sky and lights, the floor, and free-standing props. A stage script can move some of those props. Every change is undoable and is saved under `"stage"` in the `.rsproj`. The tab is locked while the simulation plays.
+The **Stage** tab (bottom panel) edits the world around the robot: sky and lights, the floor, and free-standing props. A stage script can move some of those props. Every change is undoable and is saved under `"stage"` in the `.rsproj`. The tab is locked while the simulation plays.
 
 ## Environment
 
@@ -44,7 +44,7 @@ In edit mode, every prop is shown where it was authored. Physics only applies in
 
 ## The stage script
 
-The toolbar shows the stage script. **Edit Script** opens it in the Script tab, creating `stage.js` from a template if needed. **Choose...** picks another file, and **Clear** removes it.
+Create stage scripts in the Script view with **+** → *Stage script* (they're listed with a green **S**). The dropdown in the Stage toolbar picks which one runs on Play, or **None**. It's disabled until the project has a stage script. In the `.rsproj` they are saved as `"stage": {"script": {"current": 0, "paths": ["stage.js"]}}`, with `current` set to `-1` for none.
 
 It works like the robot script: a `loop()` function, `delay(ms)` and `console.log()`. It runs on its own thread, so a `delay()` in one script never stalls the other. Log lines are tagged `[STAGE]`.
 

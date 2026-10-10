@@ -72,6 +72,7 @@ void MicroController::setGlobal(const QString& name, QObject* obj) {
 void MicroController::compile(const QString& script, ComponentInstance* root) {
     isCompiled = false;
     stopRequested = false;
+    paused = false;
     engine.setInterrupted(false); // Clear any previous interrupts
 
     injectEmulators(root);
@@ -122,7 +123,14 @@ void MicroController::run() {
  */
 void MicroController::stop() {
     stopRequested = true;
+    paused = false;
     engine.setInterrupted(true);
+}
+
+
+
+void MicroController::setPaused(bool p) {
+    paused = p;
 }
 
 
@@ -162,7 +170,18 @@ void MicroController::delay(int milliseconds) {
 
     // Sleep in bulk for most of the wait -- fewer, larger sleeps means
     // fewer chances for OS scheduler granularity to add overshoot.
+    // Paused: hold here and push the deadline back by the paused time, so a
+    // delay() spanning a pause still waits its full duration of running time.
+    auto holdWhilePaused = [&]() {
+        while (paused && !stopRequested) {
+            auto t0 = std::chrono::steady_clock::now();
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            deadline += std::chrono::steady_clock::now() - t0;
+        }
+    };
+
     while (!stopRequested) {
+        holdWhilePaused();
         auto now = std::chrono::steady_clock::now();
         auto remaining = deadline - now;
         if (remaining <= std::chrono::milliseconds(2)) break; // hand off to fine-grained tail below
@@ -176,6 +195,7 @@ void MicroController::delay(int milliseconds) {
     // Final tight poll for the last ~1-2ms -- no sleep_for at all here,
     // so granularity can't add overshoot for the precision-critical tail.
     while (!stopRequested && std::chrono::steady_clock::now() < deadline) {
+        holdWhilePaused();
         std::this_thread::yield();
     }
 }

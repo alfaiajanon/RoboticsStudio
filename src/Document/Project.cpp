@@ -1,7 +1,6 @@
 #include "Project.h"
 #include "Utils/Global.h"
 #include "Utils/Log.h"
-#include "Application/Application.h"
 #include "Document/Components/ComponentBlueprint.h"
 #include "Document/Components/ComponentInstance.h"
 #include "Document/Components/LibraryManager.h"
@@ -89,6 +88,11 @@ void Project::clear() {
 
 
 void Project::setScript(int idx){
+    if (idx < 0 && scriptPaths.isEmpty()) {   // last script deleted: no active script
+        currentScriptIdx = -1;
+        currentScriptContent.clear();
+        return;
+    }
     if(idx < 0 || idx >= scriptPaths.size()) {
         Log::error("Invalid script index: " + QString::number(idx));
         return;
@@ -113,7 +117,7 @@ void Project::setScript(int idx){
 
 
 QString Project::readStageScript() const {
-    const QString rel = stage.getData().script;
+    const QString rel = stage.getData().activeScript();
     if (rel.isEmpty()) return {};
     QFile file(directoryPath + "/" + rel);
     if (!file.open(QFile::ReadOnly)) {
@@ -278,11 +282,6 @@ bool Project::saveProject() {
     QJsonDocument doc(projectData);
     file.write(doc.toJson(QJsonDocument::Indented));
     file.close();
-
-    // Document now matches disk -- mark the undo history clean.
-    if (Application::getInstance()) {
-        Application::getInstance()->getUndoStack()->setClean();
-    }
 
     Log::info("Project saved successfully to " + projectPath);
     return true;

@@ -798,7 +798,6 @@ void InspectorPanel::build_UID_0() {
 void InspectorPanel::build_globalSettings(Project* project) {
     QJsonObject projData = project->getProjectData();
     QJsonObject meta = projData["meta"].toObject();
-    QJsonObject scriptObj = projData["script"].toObject();
 
     QGroupBox* globalBox = new QGroupBox("Global Robot Settings", this);
     QFormLayout* globalLayout = new QFormLayout(globalBox);
@@ -821,8 +820,9 @@ void InspectorPanel::build_globalSettings(Project* project) {
     scriptLayout->addWidget(btnDelScript, 1, 1);
     globalLayout->addRow("Control Script:", scriptWidget);
 
-    int activeScriptIdx = scriptObj["current"].toInt();
-    QJsonArray allScriptsArr = scriptObj["paths"].toArray();
+    // Live document state: projectData["script"] is only refreshed on save.
+    int activeScriptIdx = project->getCurrentScriptIdx();
+    QJsonArray allScriptsArr = project->getScriptPaths();
 
     scriptCombo->blockSignals(true);
     for (const QJsonValue& val : allScriptsArr) {
@@ -864,52 +864,50 @@ void InspectorPanel::build_globalSettings(Project* project) {
         Application::getInstance()->getEditor()->scheduleRefresh();
     });
 
-    connect(scriptCombo, &QComboBox::currentTextChanged, this, [this, project](const QString& text) {
+    connect(scriptCombo, &QComboBox::currentTextChanged, this, [this, project, scriptCombo](const QString& text) {
         if (text.isEmpty()) return;
+        int index = project->getScriptPaths().toVariantList().indexOf(text);
+        if (index < 0 || index == project->getCurrentScriptIdx()) return;
 
-        QJsonObject pData = project->getProjectData();
-        QJsonObject sObj = pData["script"].toObject();
-        QJsonArray pathsArr = sObj["paths"].toArray();
-
-        int index = -1;
-        for (int i = 0; i < pathsArr.size(); ++i) {
-            if (pathsArr[i].toString() == text) { index = i; break; }
+        // Switching shows the script in the editor: don't drop its pending edits.
+        ScriptPanel* panel = Application::getInstance()->getEditor()->scriptPanel;
+        if (panel && !panel->confirmLeaveUnsaved()) {
+            QSignalBlocker block(scriptCombo);
+            scriptCombo->setCurrentIndex(project->getCurrentScriptIdx());
+            return;
         }
-        sObj["current"] = index;
-        pData["script"] = sObj;
-        project->setProjectData(pData);
 
-        project->setScript(index);
-        if (auto panel = Application::getInstance()->getEditor()->scriptPanel) {
-            panel->loadScript(project->getProjectDirectory() + "/" + text);
-        }
+        Commands::setMcuScripts(project->getScriptPaths(), index, "Set active script");
+        if (panel) panel->loadScript(project->getProjectDirectory() + "/" + text);
     });
 
-    connect(btnAddScript, &QPushButton::clicked, this, [this, project, scriptCombo]() {
+    connect(btnAddScript, &QPushButton::clicked, this, [this, project]() {
         bool ok;
         QString name = QInputDialog::getText(this, "New Script", "Script File Name (e.g. custom.js):", QLineEdit::Normal, "", &ok);
         if (!ok || name.isEmpty()) return;
 
         if (!name.endsWith(".js")) name += ".js";
 
+        QJsonArray newArr = project->getScriptPaths();
+        if (newArr.contains(name)) {
+            Toast::showMessage(this, name + " is already a project script.");
+            return;
+        }
+
+        // The file is created right away (undo keeps it); only the list entry is undoable.
         QFile file(project->getProjectDirectory() + "/" + name);
         if (!file.exists() && file.open(QIODevice::WriteOnly | QIODevice::Text)) {
             file.write("// New Script: " + name.toUtf8() + "\n\nfunction setup() {\n\n}\n\nfunction loop() {\n\n}\n");
             file.close();
         }
 
-        QJsonArray newArr = project->getScriptPaths();
         newArr.append(name);
-        project->setScriptPaths(newArr);
-        project->setScript(newArr.size() - 1);
-        project->saveProject();
-
-        scriptCombo->addItem(name);
+        // the editor refresh this triggers rebuilds the combo and script list
+        Commands::setMcuScripts(newArr, newArr.size() - 1, "Add script");
     });
 
     connect(btnDelScript, &QPushButton::clicked, this, [this, project, scriptCombo]() {
         QString toDelete = scriptCombo->currentText();
-        int comboIndex = scriptCombo->currentIndex();
         if (toDelete.isEmpty()) return;
 
         if (QMessageBox::question(this, "Delete Script", "Delete " + toDelete + " from disk?",
@@ -917,27 +915,34 @@ void InspectorPanel::build_globalSettings(Project* project) {
             return;
         }
 
-        QFile file(project->getProjectDirectory() + "/" + toDelete);
-        if (file.exists()) file.remove();
-
-        QJsonArray oldPaths = project->getScriptPaths();
-        QJsonArray newPaths;
-        for (const QJsonValue& val : oldPaths) {
-            if (val.toString() != toDelete) newPaths.append(val);
+        // Undo writes the file back, so keep its content.
+        const QString fullPath = project->getProjectDirectory() + "/" + toDelete;
+        QByteArray content;
+        {
+            QFile file(fullPath);
+            if (file.open(QIODevice::ReadOnly)) content = file.readAll();
         }
 
+        QJsonArray newPaths;
+        for (const QJsonValue& val : project->getScriptPaths()) {
+            if (val.toString() != toDelete) newPaths.append(val);
+        }
         int newActiveIndex = newPaths.isEmpty() ? -1 : 0;
-        project->setScriptPaths(newPaths);
-        project->setScript(newActiveIndex);
-        project->saveProject();
 
-        scriptCombo->removeItem(comboIndex);
+        Commands::setMcuScripts(newPaths, newActiveIndex, "Delete script",
+            [fullPath]() { QFile::remove(fullPath); },
+            [fullPath, content]() {
+                QFile file(fullPath);
+                if (file.open(QIODevice::WriteOnly)) file.write(content);
+            });
 
-        if (auto panel = Application::getInstance()->getEditor()->scriptPanel) {
-            if (newActiveIndex >= 0) {
-                QString newActiveName = newPaths[newActiveIndex].toString();
-                panel->loadScript(project->getProjectDirectory() + "/" + newActiveName);
-            }
+        // Only replace the editor's file if it was the deleted one.
+        ScriptPanel* panel = Application::getInstance()->getEditor()->scriptPanel;
+        if (panel && QDir::cleanPath(panel->currentPath()) == QDir::cleanPath(fullPath)) {
+            if (newActiveIndex >= 0)
+                panel->loadScript(project->getProjectDirectory() + "/" + newPaths[newActiveIndex].toString());
+            else
+                panel->unloadScript();
         }
     });
 }
@@ -1127,8 +1132,8 @@ void InspectorPanel::build_rootAttachment(Project* project) {
             Rotation oldRot = project->getRootRotation();
             Rotation newRot(spinRoll->value(), spinPitch->value(), spinYaw->value());
             pushCommand(
-                [project, newRot]() { project->setRootRotation(newRot); project->saveProject(); },
-                [project, oldRot]() { project->setRootRotation(oldRot); project->saveProject(); },
+                [project, newRot]() { project->setRootRotation(newRot); },
+                [project, oldRot]() { project->setRootRotation(oldRot); },
                 "Set rotation",
                 QString("rootRotation:%1").arg(axisKey)
             );

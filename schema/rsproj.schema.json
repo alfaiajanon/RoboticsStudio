@@ -217,7 +217,18 @@
                         }
                     }
                 },
-                "script": { "type": "string", "description": "Stage script, relative to the project." },
+                "script": {
+                    "type": "object",
+                    "description": "Stage scripts (relative to the project) and the active one; current -1 = none.",
+                    "required": ["current"],
+                    "properties": {
+                        "current": { "type": "integer" },
+                        "paths": {
+                            "type": "array",
+                            "items": { "type": "string" }
+                        }
+                    }
+                },
                 "robotSpawn": { "$ref": "#/definitions/vec3", "description": "Offset of the robot's base body." }
             }
         },

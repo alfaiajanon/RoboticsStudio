@@ -1,0 +1,137 @@
+{
+    "assembly": {
+        "components": [
+            {
+                "connection": {
+                    "parent_connector": "root",
+                    "parent_uid": 0,
+                    "self_connector": "",
+                    "snap_angle": 0
+                },
+                "model_id": "stage",
+                "name": "stage",
+                "parameters": {
+                },
+                "uid": 1
+            },
+            {
+                "connection": {
+                    "parent_connector": "connector_1",
+                    "parent_uid": 1,
+                    "self_connector": "base",
+                    "snap_angle": 90
+                },
+                "model_id": "servo_sg90",
+                "name": "Emulated Servo",
+                "parameters": {
+                    "servo_joint": 0
+                },
+                "uid": 2
+            },
+            {
+                "connection": {
+                    "parent_connector": "connector_2",
+                    "parent_uid": 1,
+                    "self_connector": "base",
+                    "snap_angle": 90
+                },
+                "model_id": "sg90",
+                "name": "Standard Servo",
+                "parameters": {
+                    "servo_joint": 0
+                },
+                "uid": 3
+            },
+            {
+                "connection": {
+                    "parent_connector": "horn",
+                    "parent_uid": 2,
+                    "self_connector": "connector_1",
+                    "snap_angle": 0
+                },
+                "model_id": "weight",
+                "name": "weight",
+                "parameters": {
+                },
+                "uid": 4
+            },
+            {
+                "connection": {
+                    "parent_connector": "horn",
+                    "parent_uid": 3,
+                    "self_connector": "connector_1",
+                    "snap_angle": 0
+                },
+                "model_id": "weight",
+                "name": "weight",
+                "parameters": {
+                },
+                "uid": 5
+            }
+        ],
+        "constraints": [
+        ],
+        "transform": {
+            "rotation": [
+                0,
+                0,
+                0
+            ]
+        }
+    },
+    "meta": {
+        "author": "",
+        "icon": "logo.png",
+        "name": "Servo Comparison",
+        "version": "1.0.0"
+    },
+    "plotting": {
+        "canvases": [
+            {
+                "enabled": true,
+                "name": "Emulated",
+                "targets": [
+                    {
+                        "color": "#34bef0",
+                        "signal": "target_angle",
+                        "uid": 2
+                    },
+                    {
+                        "color": "#bef034",
+                        "signal": "current_angle_real",
+                        "uid": 2
+                    }
+                ],
+                "type": "scalar"
+            },
+            {
+                "enabled": true,
+                "name": "Standard",
+                "targets": [
+                    {
+                        "color": "#34f069",
+                        "signal": "target_angle",
+                        "uid": 3
+                    },
+                    {
+                        "color": "#3440f0",
+                        "signal": "current_angle",
+                        "uid": 3
+                    }
+                ],
+                "type": "scalar"
+            }
+        ],
+        "motion": {
+            "targets": [
+            ]
+        }
+    },
+    "script": {
+        "current": 0,
+        "paths": [
+            "Servo Comparison.js"
+        ]
+    },
+    "version": "0.3.0-alpha"
+}

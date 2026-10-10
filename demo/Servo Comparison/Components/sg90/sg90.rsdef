@@ -1,0 +1,366 @@
+{
+    "connectors": [
+        {
+            "body": "base",
+            "description": "Flat bottom surface for gluing or taping",
+            "id": "base",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    90,
+                    180,
+                    270
+                ]
+            },
+            "transform": {
+                "pos": [
+                    0,
+                    0,
+                    -0.0105
+                ],
+                "quat": [
+                    3.749399456654644e-33,
+                    6.123233995736766e-17,
+                    1,
+                    6.123233995736766e-17
+                ]
+            }
+        },
+        {
+            "body": "horn",
+            "description": "horn for attaching arms",
+            "id": "horn",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    180
+                ]
+            },
+            "transform": {
+                "pos": [
+                    -0.005,
+                    0,
+                    0.0215
+                ],
+                "quat": [
+                    1,
+                    0,
+                    0,
+                    0
+                ]
+            }
+        },
+        {
+            "body": "base",
+            "description": "",
+            "id": "left_bottom",
+            "transform": {
+                "pos": [
+                    -0.014,
+                    0,
+                    0.0051
+                ],
+                "quat": [
+                    6.123233995736766e-17,
+                    0,
+                    1,
+                    0
+                ]
+            }
+        },
+        {
+            "body": "base",
+            "description": "Left mounting tab hole",
+            "id": "left_top",
+            "mechanics": {
+                "snap_angles": [
+                    0
+                ]
+            },
+            "transform": {
+                "pos": [
+                    -0.014,
+                    0,
+                    0.0077
+                ],
+                "quat": [
+                    6.123233995736766e-17,
+                    0,
+                    0,
+                    1
+                ]
+            }
+        },
+        {
+            "body": "base",
+            "description": "",
+            "id": "right_bottom",
+            "transform": {
+                "pos": [
+                    0.014,
+                    0,
+                    0.0051
+                ],
+                "quat": [
+                    6.123233995736766e-17,
+                    1,
+                    0,
+                    0
+                ]
+            }
+        },
+        {
+            "body": "base",
+            "description": "Right mounting tab hole",
+            "id": "right_top",
+            "transform": {
+                "pos": [
+                    0.014,
+                    0,
+                    0.0077
+                ],
+                "quat": [
+                    1,
+                    0,
+                    0,
+                    0
+                ]
+            }
+        }
+    ],
+    "devices": {
+        "actuators": [
+            {
+                "ctrlrange": [
+                    -90,
+                    90
+                ],
+                "forcerange": [
+                    -0.176,
+                    0.176
+                ],
+                "id": "servo_motor",
+                "kp": 2.5,
+                "kv": 0.03,
+                "target": {
+                    "id": "servo_joint",
+                    "kind": "joint"
+                },
+                "type": "position"
+            }
+        ],
+        "sensors": [
+            {
+                "id": "servo_pos",
+                "target": {
+                    "id": "servo_joint",
+                    "kind": "joint"
+                },
+                "type": "jointpos"
+            }
+        ]
+    },
+    "emulator": {
+        "parameters": {
+            "delay_ms": 0,
+            "noise_stddev": 0
+        },
+        "source": {},
+        "type": "servo_emulator"
+    },
+    "id": "sg90",
+    "interface": {
+        "inputs": [
+            {
+                "domain": {
+                    "parameters": {
+                        "max": 90,
+                        "min": -90
+                    },
+                    "type": "ranged"
+                },
+                "name": "target_angle",
+                "physical": true,
+                "target": {
+                    "id": "servo_joint",
+                    "kind": "joint"
+                },
+                "unit": "degrees"
+            }
+        ],
+        "outputs": [
+            {
+                "name": "current_angle",
+                "physical": false,
+                "target": {
+                    "id": "servo_pos",
+                    "kind": "sensor"
+                },
+                "unit": "degrees"
+            }
+        ]
+    },
+    "kinematics": {
+        "bodies": [
+            {
+                "geoms": [
+                    {
+                        "id": "base_geom",
+                        "mass": 0.008,
+                        "material": "servo_body_texture",
+                        "mesh": "servo_body",
+                        "pos": [
+                            0,
+                            0,
+                            0
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "size": [
+                            0.01,
+                            0.005,
+                            0.014
+                        ],
+                        "type": "mesh"
+                    }
+                ],
+                "id": "base",
+                "overrideGeom": false,
+                "transform": {
+                    "pos": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "quat": [
+                        1,
+                        0,
+                        0,
+                        0
+                    ]
+                }
+            },
+            {
+                "geoms": [
+                    {
+                        "color": [
+                            0.9,
+                            0.9,
+                            0.9
+                        ],
+                        "id": "horn_geom",
+                        "mass": 0.001,
+                        "mesh": "sg90_horn",
+                        "pos": [
+                            0,
+                            0,
+                            0
+                        ],
+                        "quat": [
+                            6.123233995736766e-17,
+                            1,
+                            0,
+                            0
+                        ],
+                        "size": [
+                            0.008,
+                            0.002,
+                            0.001
+                        ],
+                        "type": "mesh"
+                    }
+                ],
+                "id": "horn",
+                "overrideGeom": false,
+                "transform": {
+                    "pos": [
+                        -0.005,
+                        0,
+                        0.0205
+                    ],
+                    "quat": [
+                        1,
+                        0,
+                        0,
+                        0
+                    ]
+                }
+            }
+        ],
+        "default_body": "base",
+        "joints": [
+            {
+                "armature": 0.00035,
+                "body_a": "base",
+                "body_b": "horn",
+                "collision": true,
+                "damping": 0.017,
+                "frictionloss": 0.008,
+                "id": "servo_joint",
+                "range": [
+                    -90,
+                    90
+                ],
+                "transform": {
+                    "pos": [
+                        -0.005,
+                        0,
+                        0.02
+                    ],
+                    "quat": [
+                        1,
+                        0,
+                        0,
+                        0
+                    ]
+                },
+                "type": "hinge"
+            }
+        ]
+    },
+    "meta": {
+        "author": "Anon",
+        "icon_path": "sg90.png",
+        "name": "TowerPro SG90",
+        "version": "1.0.0"
+    },
+    "pins": [
+        {
+            "description": "Power input pin for servo motor",
+            "id": "vcc",
+            "voltage_range": [
+                4.800000190734863,
+                6
+            ]
+        },
+        {
+            "description": "PWM signal input pin for controlling servo position",
+            "id": "signal"
+        },
+        {
+            "description": "Ground pin for servo motor",
+            "id": "gnd"
+        }
+    ],
+    "resources": {
+        "materials": {
+            "servo_body_texture": "textures/servo_body_texture.png"
+        },
+        "meshes": {
+            "servo_body": "meshes/servo_body.obj",
+            "sg90_horn": "meshes/sg90_horn.obj"
+        }
+    },
+    "schema": 2,
+    "specs": {
+        "max_speed_rad": 10.47,
+        "max_torque_nm": 0.176,
+        "voltage_max": 6,
+        "voltage_min": 4.8,
+        "weight_kg": 0.009
+    }
+}

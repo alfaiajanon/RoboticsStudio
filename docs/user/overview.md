@@ -20,19 +20,21 @@ A project folder holds:
 
 ## 2. Assemble the robot
 
-The editor has a **3D viewport** (center), the **Components** library, the **Scene Tree**, the **Inspector**, the **Script** editor, the **Output** log and the **Plot** panel.
+The editor has a central area that switches between the **3D viewport** and the **Script** editor (the small vertical switch next to **▶ PLAY** at the bottom-left, or **Ctrl+1** / **Ctrl+2**), plus the **Components** library, the **Scene Tree**, the **Inspector**, the **Output** log and the **Plot** panel.
 
 1. Select the project in the **Scene Tree**. The Inspector shows a `root` slot with a **+**. Drag a part from the **Components** panel onto that **+**. This is your base part.
 2. Select a part. The Inspector lists its **connectors** (mounting points such as `horn`, `base`, `side_screw_left1`). Drag another part onto a connector's **+** to attach it.
 3. For each attachment you can pick which connector of the **new** part to use, and a **snap angle**: the rotation around the mounting axis.
 4. Joint controls in the Inspector pose the parts in edit mode (for example a servo angle). This is only for posing: the script drives the robot in play mode.
-5. Every edit can be undone (**Ctrl+Z**). **F** frames the scene. Save with **Ctrl+S**.
+5. Every edit can be undone (**Ctrl+Z**). **F** frames the scene. Save with **Ctrl+S**: on the Script page it saves the open script, elsewhere the project. Unsaved changes show as `*` in the title bar, and closing the project or the app asks before discarding them.
 
 Each part shows its id in the Scene Tree, for example `MG996R (1)`. In scripts that part is `comp_1`.
 
 ## 3. Write the script
 
 Scripts are JavaScript, written like an Arduino sketch: define `loop()`, and it runs over and over.
+
+The Script view lists every project script on the left: a blue **M** marks an MCU script (it drives the robot), a green **S** a stage script (it drives props, see [stage.md](stage.md)). The active script of each kind, the one that runs on Play, is shown in bold. **+** creates a new script of either kind. Pick the active MCU script in the Inspector (**Control Script**).
 
 ```javascript
 let servo = comp_1;     // part uid 1 from the Scene Tree
@@ -52,11 +54,12 @@ function loop() {
 
 ## 4. Run it
 
-Press **▶ PLAY** in the viewport.
+Press **▶ PLAY** at the bottom-left of the central area. Unsaved script edits are saved first, and the view switches to 3D.
 
 - The model is rebuilt for simulation. The base part gets a free joint and falls onto the floor, so place it so it can stand.
 - Physics runs on its own thread and the script on another, like a microcontroller wired to the robot.
 - Parts behave like cheap hardware: servos have deadband and noise, cameras drop frames and have latency, and so on.
+- **⏸ PAUSE** freezes physics and both scripts (a running `delay()` stops counting down); **▶ RESUME** continues.
 - **⬛ STOP** returns to edit mode, resets the physics and the emulators, and stops the script. Script errors appear in the Output panel and stop the script until the next Play.
 
 The overlay in the viewport shows FPS, sim time and contacts.

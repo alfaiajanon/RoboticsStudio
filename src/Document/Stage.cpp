@@ -207,7 +207,11 @@ Stage::Data Stage::fromJson(const QJsonObject& obj) {
         d.props.append(p);
     }
 
-    d.script     = obj["script"].toString();
+    // {"current", "paths"}, like the top-level MCU "script"
+    QJsonObject s = obj["script"].toObject();
+    for (const QJsonValue& v : s["paths"].toArray()) d.scripts.append(v.toString());
+    d.currentScript = s["current"].toInt(d.scripts.isEmpty() ? -1 : 0);
+    if (d.currentScript >= d.scripts.size()) d.currentScript = -1;
     d.robotSpawn = readVec(obj["robotSpawn"], d.robotSpawn);
 
     QString err = validate(d);
@@ -259,7 +263,9 @@ QJsonObject Stage::toJson(const Data& d) {
 
     return QJsonObject{
         {"environment", e}, {"floor", f}, {"props", props},
-        {"script", d.script}, {"robotSpawn", writeVec(d.robotSpawn)},
+        {"script", QJsonObject{{"current", d.currentScript},
+                               {"paths", QJsonArray::fromStringList(d.scripts)}}},
+        {"robotSpawn", writeVec(d.robotSpawn)},
     };
 }
 

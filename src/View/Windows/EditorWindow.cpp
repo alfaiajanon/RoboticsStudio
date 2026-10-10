@@ -18,6 +18,7 @@
 #include <QDomDocument>
 #include <QUndoStack>
 #include <QTimer>
+#include <QCloseEvent>
 #include <qjsondocument.h>
 #include <qlabel.h>
 
@@ -52,6 +53,7 @@ EditorWindow::EditorWindow(QWidget* parent) : QMainWindow(parent){
 
     topDownSplitter=nullptr;
     viewport=nullptr;
+    centerStack=nullptr;
     bottomTabs=nullptr;
     camera=nullptr;
     stagePanel=nullptr;
@@ -59,6 +61,18 @@ EditorWindow::EditorWindow(QWidget* parent) : QMainWindow(parent){
     setupMenuBar();
     setupSplitting();
     setupRightDocking();
+
+    connect(centerStack, &HudStack::currentPageChanged, this, [this](QWidget* page) {
+        saveAct->setText(page == scriptPanel ? "Save Script" : "Save Project");
+    });
+    connect(scriptPanel, &ScriptPanel::modificationChanged, this, &EditorWindow::updateModifiedIndicator);
+    // Plot edits emit nothing, so poll the cheap snapshot compare for the title
+    // marker; the close prompt itself always compares fresh.
+    QTimer* modifiedTimer = new QTimer(this);
+    connect(modifiedTimer, &QTimer::timeout, this, [this]() {
+        if (isVisible()) updateModifiedIndicator();
+    });
+    modifiedTimer->start(1000);
 }
 
 
@@ -100,6 +114,9 @@ void EditorWindow::refresh() {
     if(stagePanel){
         stagePanel->refresh();
     }
+    if(scriptPanel){
+        scriptPanel->refresh();
+    }
     int temp = currentSelectedUid;
     currentSelectedUid = -1;
     selectComponent(temp);
@@ -133,6 +150,112 @@ int EditorWindow::getCurrentSelectedUid() const {
 
 
 
+#pragma region Save / unsaved changes
+
+bool EditorWindow::saveProject() {
+    Project* proj = Application::getInstance()->getProject();
+
+    // --- Thumbnail Generation ---
+    if (viewport) {
+        QPixmap currentView = viewport->pixmap();
+        if (!currentView.isNull()) {
+            // Scale to a small, performant thumbnail for the Launcher card
+            QPixmap thumbnail = currentView.scaled(128, 128, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+
+            QFileInfo projInfo(proj->getProjectPath());
+            QString projDir = projInfo.absolutePath();
+            QString logoFileName = "logo.png";
+            QString logoAbsPath = QDir(projDir).absoluteFilePath(logoFileName);
+
+            if (thumbnail.save(logoAbsPath, "PNG")) {
+                // Update the project's JSON meta data to point to the new icon
+                QJsonObject pData = proj->getProjectData();
+                QJsonObject m = pData["meta"].toObject();
+                m["icon"] = logoFileName;
+                pData["meta"] = m;
+                proj->setProjectData(pData);
+            } else {
+            Log::warning("Failed to save project thumbnail to: " + logoAbsPath);
+            }
+        }
+    }
+    // -----------------------------
+
+    if (!proj->saveProject()) return false;
+    markProjectSaved();
+    return true;
+}
+
+
+void EditorWindow::markProjectSaved() {
+    Application::getInstance()->getUndoStack()->setClean();
+    savedPlotLayout = plotPanel ? plotPanel->toJson() : QJsonObject();
+    updateModifiedIndicator();
+}
+
+
+bool EditorWindow::isProjectModified() const {
+    Application* app = Application::getInstance();
+    if (!app) return false;
+    if (!app->getUndoStack()->isClean()) return true;
+    return plotPanel && plotPanel->toJson() != savedPlotLayout;
+}
+
+
+bool EditorWindow::confirmUnsavedChanges() {
+    const bool projectDirty = isProjectModified();
+    const bool scriptDirty = scriptPanel && scriptPanel->hasUnsavedChanges();
+    if (!projectDirty && !scriptDirty) return true;
+
+    QStringList dirty;
+    if (projectDirty) dirty << "the project";
+    if (scriptDirty) dirty << QFileInfo(scriptPanel->currentPath()).fileName();
+
+    QMessageBox::StandardButton choice = QMessageBox::question(
+        this, "Unsaved Changes",
+        "There are unsaved changes in " + dirty.join(" and ") + ". Save them first?",
+        QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel,
+        QMessageBox::Save);
+    if (choice == QMessageBox::Cancel) return false;
+    if (choice == QMessageBox::Discard) return true;
+
+    if (scriptDirty && !scriptPanel->saveScript()) {
+        QMessageBox::warning(this, "Save Failed",
+            "Could not save " + QFileInfo(scriptPanel->currentPath()).fileName() + ".");
+        return false;
+    }
+    if (projectDirty && !saveProject()) {
+        QMessageBox::warning(this, "Save Failed",
+            "Could not save the project. Use Save As... first, or choose Discard.");
+        return false;
+    }
+    return true;
+}
+
+
+void EditorWindow::updateModifiedIndicator() {
+    Application* app = Application::getInstance();
+    if (!app) return;
+    QString name = QFileInfo(app->getProject()->getProjectPath()).completeBaseName();
+    setWindowTitle(name.isEmpty() ? "Robotics Studio[*]" : name + "[*] - Robotics Studio");
+    setWindowModified(isProjectModified() || (scriptPanel && scriptPanel->hasUnsavedChanges()));
+}
+
+
+// Window X, Project > Exit and Ctrl+Q all land here.
+void EditorWindow::closeEvent(QCloseEvent* event) {
+    if (!confirmUnsavedChanges()) {
+        event->ignore();
+        return;
+    }
+    QMainWindow::closeEvent(event);
+}
+
+
+
+
+
+
 // Instantiates the top menu bar and populates it with standard application actions.
 // Categories are split into File, Edit, View, and Help, with standard OS keyboard shortcuts applied.
 #pragma region MenuBar
@@ -146,7 +269,7 @@ void EditorWindow::setupMenuBar() {
     QAction* openAct = projectMenu->addAction("Open Project...");
     openAct->setShortcut(QKeySequence::Open);
     projectMenu->addSeparator();
-    QAction* saveAct = projectMenu->addAction("Save");
+    saveAct = projectMenu->addAction("Save Project");
     saveAct->setShortcut(QKeySequence::Save);
     QAction* saveAsAct = projectMenu->addAction("Save As...");
     saveAsAct->setShortcut(QKeySequence::SaveAs);
@@ -172,6 +295,11 @@ void EditorWindow::setupMenuBar() {
     QMenu* viewMenu = topMenu->addMenu("View");
     QAction* frameSceneAct = viewMenu->addAction("Frame Scene");
     frameSceneAct->setShortcut(QKeySequence(Qt::Key_F));
+    viewMenu->addSeparator();
+    QAction* showViewportAct = viewMenu->addAction("3D View");
+    showViewportAct->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_1));
+    QAction* showScriptAct = viewMenu->addAction("Script");
+    showScriptAct->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_2));
 
     QMenu* debugMenu = topMenu->addMenu("Debug");
     QAction* dumpXMLAct = debugMenu->addAction("Dump Mujoco XML (Edit Mode)");
@@ -189,8 +317,15 @@ void EditorWindow::setupMenuBar() {
         Application::getInstance()->closeProjectToLauncher();
     });
     connect(frameSceneAct, &QAction::triggered, this, &EditorWindow::frameScene);
+    connect(showViewportAct, &QAction::triggered, this, [this]() {
+        if (centerStack) centerStack->setCurrentPage(viewport);
+    });
+    connect(showScriptAct, &QAction::triggered, this, [this]() {
+        if (centerStack) centerStack->setCurrentPage(scriptPanel);
+    });
 
     connect(newAct, &QAction::triggered, this, [this]() {
+        if (!confirmUnsavedChanges()) return;
         NewProjectDialog dialog(this);
         if (dialog.exec() == QDialog::Accepted) {
             QString newPath = dialog.getCreatedProjectPath();
@@ -200,6 +335,7 @@ void EditorWindow::setupMenuBar() {
     });
 
     connect(openAct, &QAction::triggered, this, [this]() {
+        if (!confirmUnsavedChanges()) return;
         QString path = QFileDialog::getOpenFileName(this, "Open Project", "", "Robotics Studio Project (*.rsproj);;All Files (*)");
         if (!path.isEmpty()) {
             Application::getInstance()->openProject(path);
@@ -207,36 +343,13 @@ void EditorWindow::setupMenuBar() {
     });
 
     connect(saveAct, &QAction::triggered, this, [this, saveAsAct]() {
-        Project* proj = Application::getInstance()->getProject();
-
-        // --- Thumbnail Generation ---
-        if (viewport) {
-            QPixmap currentView = viewport->pixmap();
-            if (!currentView.isNull()) {
-                // Scale to a small, performant thumbnail for the Launcher card
-                QPixmap thumbnail = currentView.scaled(128, 128, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
-
-                QFileInfo projInfo(proj->getProjectPath());
-                QString projDir = projInfo.absolutePath();
-                QString logoFileName = "logo.png";
-                QString logoAbsPath = QDir(projDir).absoluteFilePath(logoFileName);
-
-                if (thumbnail.save(logoAbsPath, "PNG")) {
-                    // Update the project's JSON meta data to point to the new icon
-                    QJsonObject pData = proj->getProjectData();
-                    QJsonObject m = pData["meta"].toObject();
-                    m["icon"] = logoFileName;
-                    pData["meta"] = m;
-                    proj->setProjectData(pData);
-                } else {
-                Log::warning("Failed to save project thumbnail to: " + logoAbsPath);
-                }
-            }
+        // On the Script page Ctrl+S saves the open script, like a code editor.
+        if (centerStack && centerStack->currentPage() == scriptPanel && !scriptPanel->currentPath().isEmpty()) {
+            scriptPanel->saveScript();   // toasts on its own
+            return;
         }
-        // -----------------------------
 
-        bool success = proj->saveProject();
-        if (success) {
+        if (saveProject()) {
             Toast::showMessage(this, "Project saved successfully!");
         } else {
             Toast::showMessage(this, "Failed to save project. Please choose a location.", 3000);
@@ -254,8 +367,8 @@ void EditorWindow::setupMenuBar() {
             }
 
             proj->setProjectPath(path);
-            proj->saveProject();
-            Toast::showMessage(this, "Project saved successfully!");
+            if (saveProject()) Toast::showMessage(this, "Project saved successfully!");
+            else Toast::showMessage(this, "Failed to save project.", 3000);
         }
     });
 
@@ -395,7 +508,7 @@ void EditorWindow::setupMenuBar() {
             "File Operations:\n"
             "  Ctrl+N: New Project\n"
             "  Ctrl+O: Open Project\n"
-            "  Ctrl+S: Save Project\n"
+            "  Ctrl+S: Save Script (on the Script page) / Save Project\n"
             "  Ctrl+Shift+S: Save Project As\n"
             "  Ctrl+Q: Exit Application\n\n"
             "Edit Operations:\n"
@@ -403,7 +516,9 @@ void EditorWindow::setupMenuBar() {
             "  Ctrl+Y: Redo\n"
             "  Ctrl+, : Preferences\n\n"
             "View Operations:\n"
-            "  F: Frame Scene\n\n"
+            "  F: Frame Scene\n"
+            "  Ctrl+1: 3D View\n"
+            "  Ctrl+2: Script\n\n"
             "Simulation Controls:\n"
             "  Space: Play/Pause Simulation (when viewport is focused)\n";
 
@@ -430,6 +545,8 @@ void EditorWindow::setupUndoRedo() {
     undoAct->setShortcut(QKeySequence::Undo);
     QAction* redoAct = undoStack->createRedoAction(this, tr("&Redo"));
     redoAct->setShortcut(QKeySequence::Redo);
+
+    connect(undoStack, &QUndoStack::cleanChanged, this, &EditorWindow::updateModifiedIndicator);
 
     QAction* firstItem = editMenu->actions().value(0);
     editMenu->insertAction(firstItem, undoAct);
@@ -473,13 +590,21 @@ void EditorWindow::setupUndoRedo() {
 
 /*
  * Configures the central vertical splitter.
- * Initializes the 3D viewport, camera controller, and bottom tab panels.
+ * Top: the HUD-switched page stack (3D viewport, script editor).
+ * Bottom: the collapsible tab panels.
  */
 void EditorWindow::setupSplitting(){
     this->topDownSplitter = new QSplitter(Qt::Vertical);
     setCentralWidget(topDownSplitter);
 
+    centerStack = new HudStack();
+    topDownSplitter->addWidget(centerStack);
+
     setupMainViewport();
+
+    // ScriptPanel lives in the central stack, not the bottom tabs
+    scriptPanel = new ScriptPanel();
+    centerStack->addPage(scriptPanel, "</>", "Script (Ctrl+2)");
 
     bottomTabs = new QTabWidget();
     bottomTabs->setMinimumHeight(bottomTabs->tabBar()->sizeHint().height());
@@ -501,12 +626,6 @@ void EditorWindow::setupSplitting(){
     connect(&LibraryManager::getInstance(), &LibraryManager::catalogLoaded,
             componentsPanel, &ComponentsPanel::loadCatalog);
     bottomTabs->addTab(componentsPanel, "Components");
-
-    // add ScriptPanel
-    scriptPanel = new ScriptPanel();
-    scriptPanel->setMinimumHeight(0);
-    scriptPanel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Ignored);
-    bottomTabs->addTab(scriptPanel, "Script");
 
     // add StagePanel
     stagePanel = new StagePanel();
@@ -576,20 +695,60 @@ void EditorWindow::setupMainViewport() {
     hudLayout->addWidget(container, 0, Qt::AlignTop | Qt::AlignLeft);
     hudLayout->addStretch();
 
-    playBtn = new QPushButton("▶ PLAY", viewport);
+    centerStack->addPage(viewport, "3D", "3D View (Ctrl+1)");
+
+    // Sim controls belong to the master HUD: visible on every central page.
+    // [PLAY] while editing, [PAUSE/RESUME][STOP] while running.
+    auto hudBtnStyle = [](const char* color) {
+        return QString("background-color: %1; color: white; padding: 8px 15px; border-radius: 4px; font-weight: bold; font-size: 14px;").arg(color);
+    };
+
+    QWidget* simControls = new QWidget();
+    QHBoxLayout* simControlsLayout = new QHBoxLayout(simControls);
+    simControlsLayout->setContentsMargins(0, 0, 0, 0);
+    simControlsLayout->setSpacing(6);
+
+    pauseBtn = new QPushButton("⏸ PAUSE");
+    pauseBtn->setCursor(Qt::PointingHandCursor);
+    pauseBtn->setFocusPolicy(Qt::NoFocus);
+    pauseBtn->setStyleSheet(hudBtnStyle("#E08600"));
+    pauseBtn->hide();
+    simControlsLayout->addWidget(pauseBtn);
+
+    playBtn = new QPushButton("▶ PLAY");
     playBtn->setCursor(Qt::PointingHandCursor);
-    playBtn->setStyleSheet("background-color: #2E7D32; color: white; padding: 8px 15px; border-radius: 4px; font-size: 14px;");
-    hudLayout->addWidget(playBtn, 0, Qt::AlignBottom | Qt::AlignLeft);
+    playBtn->setFocusPolicy(Qt::NoFocus);
+    playBtn->setStyleSheet(hudBtnStyle("#2E7D32"));
+    simControlsLayout->addWidget(playBtn);
+
+    centerStack->addHudControl(simControls);
+
+    connect(pauseBtn, &QPushButton::clicked, this, [this, hudBtnStyle]() {
+        SimulationManager* sim = Application::getInstance()->getSimulationManager();
+        if (sim->getState() == SimulationState::PLAYING) {
+            sim->pause();
+            pauseBtn->setText("▶ RESUME");
+            pauseBtn->setStyleSheet(hudBtnStyle("#2E7D32"));
+        } else if (sim->getState() == SimulationState::PAUSED) {
+            sim->resume();
+            pauseBtn->setText("⏸ PAUSE");
+            pauseBtn->setStyleSheet(hudBtnStyle("#E08600"));
+        }
+    });
 
     Project* project = Application::getInstance()->getProject();
     auto reloadSimulation = [this](Project* project, SimulationManager* simManager, bool isSimulation) {
         simManager->reloadModel(project->generateMujocoXML(isSimulation), project->getRootComponent());
     };
 
-    connect(playBtn, &QPushButton::clicked, this, [this, reloadSimulation]() {
+    connect(playBtn, &QPushButton::clicked, this, [this, reloadSimulation, hudBtnStyle]() {
         SimulationManager* sim = Application::getInstance()->getSimulationManager();
 
         if (sim->getState() == SimulationState::EDITING) {
+            // The run reads the script from disk: flush pending editor edits
+            if (scriptPanel->hasUnsavedChanges()) scriptPanel->saveScript();
+            centerStack->setCurrentPage(viewport);
+
             Project* project = Application::getInstance()->getProject();
             project->reloadScript();
             reloadSimulation(project, sim, true);
@@ -600,11 +759,15 @@ void EditorWindow::setupMainViewport() {
 
             sim->play();
             playBtn->setText("⬛ STOP");
-            playBtn->setStyleSheet("background-color: #C62828; color: white; padding: 8px 15px; border-radius: 4px; font-weight: bold; font-size: 14px;");
+            playBtn->setStyleSheet(hudBtnStyle("#C62828"));
+            pauseBtn->setText("⏸ PAUSE");
+            pauseBtn->setStyleSheet(hudBtnStyle("#E08600"));
+            pauseBtn->show();
 
             if (this->inspector) this->inspector->setInputState(false);
             if (this->componentsPanel) this->componentsPanel->setEnabled(false);
             if (this->stagePanel) this->stagePanel->setEnabled(false);
+            scriptPanel->setCreationEnabled(false);
 
         } else {
             sim->edit();
@@ -614,16 +777,16 @@ void EditorWindow::setupMainViewport() {
             frameScene();
 
             playBtn->setText("▶ PLAY");
-            playBtn->setStyleSheet("background-color: #2E7D32; color: white; padding: 8px 15px; border-radius: 4px; font-weight: bold; font-size: 14px;");
+            playBtn->setStyleSheet(hudBtnStyle("#2E7D32"));
+            pauseBtn->hide();
 
             if (this->inspector) this->inspector->setInputState(true);
             if (this->componentsPanel) this->componentsPanel->setEnabled(true);
             if (this->stagePanel) this->stagePanel->setEnabled(true);
+            scriptPanel->setCreationEnabled(true);
         }
     });
 
-
-    topDownSplitter->addWidget(viewport);
 }
 
 

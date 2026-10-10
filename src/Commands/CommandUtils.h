@@ -3,6 +3,7 @@
 #include <functional>
 #include <QString>
 #include <QUndoStack>
+#include <QJsonArray>
 
 #include "Application/Application.h"
 #include "Commands/GenericCommand.h"
@@ -42,6 +43,29 @@ inline void push(std::function<void()> doFn, std::function<void()> undoFn,
         mergeKey,
         requiresReload
     ));
+}
+
+/*
+ * Undoable edit of the project's MCU script list and active index. No MJCF
+ * change, so no simulation reload; the command still counts as structural so
+ * the editor refresh rebuilds the inspector combo and the script list.
+ * extraDo/extraUndo run before the list change (e.g. deleting/restoring the
+ * file on disk, which setScript() needs to exist when re-activating it).
+ */
+inline void setMcuScripts(const QJsonArray& paths, int current, const QString& text,
+                          std::function<void()> extraDo = {}, std::function<void()> extraUndo = {}) {
+    Project* project = Application::getInstance()->getProject();
+    const QJsonArray oldPaths = project->getScriptPaths();
+    const int oldCurrent = project->getCurrentScriptIdx();
+
+    auto apply = [project](const QJsonArray& p, int c) {
+        project->setScriptPaths(p);
+        project->setScript(c);
+    };
+    Application::getInstance()->getUndoStack()->push(new GenericCommand(
+        [apply, paths, current, extraDo]() { if (extraDo) extraDo(); apply(paths, current); },
+        [apply, oldPaths, oldCurrent, extraUndo]() { if (extraUndo) extraUndo(); apply(oldPaths, oldCurrent); },
+        text));
 }
 
 } // namespace Commands
