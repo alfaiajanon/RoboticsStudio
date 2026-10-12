@@ -81,6 +81,7 @@
         ]
     },
     "meta": {
+        "hint_class": "part",
         "author": "",
         "icon_path": "",
         "name": "Base",

@@ -5,6 +5,7 @@
 #include <QFrame>
 #include <QLineEdit>
 #include <QScrollBar>
+#include <QFontDatabase>
 
 OutputPanel::OutputPanel(QWidget* parent) : QWidget(parent) {
     QVBoxLayout* mainLayout = new QVBoxLayout(this);
@@ -17,9 +18,13 @@ OutputPanel::OutputPanel(QWidget* parent) : QWidget(parent) {
     textOutput->setLineWrapMode(QPlainTextEdit::NoWrap);
     textOutput->setMaximumBlockCount(maxHistory);
 
-    QFont font("Consolas");
-    font.setStyleHint(QFont::Monospace);
+    QFont font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
     textOutput->setFont(font);
+    // Log reads as part of the panel, not as an input field. The font is repeated
+    // here: the global dark.qss font would otherwise win over setFont.
+    textOutput->setFrameShape(QFrame::NoFrame);
+    textOutput->setStyleSheet(QString("QPlainTextEdit { font-family: \"%1\"; font-size: 10.5pt; background-color: #202124;"
+                                      " border: none; border-radius: 0px; padding: 6px 8px; }").arg(font.family()));
 
     mainLayout->addWidget(textOutput);
 
@@ -35,7 +40,7 @@ OutputPanel::OutputPanel(QWidget* parent) : QWidget(parent) {
     // 3. Setup Filter Bar (Bottom) wrapped in a QFrame for styling
     QFrame* filterFrame = new QFrame(this);
     // Darken the background slightly and add a subtle top border
-    filterFrame->setStyleSheet("QFrame { background-color: rgba(0, 0, 0, 0.15); border-top: 1px solid rgba(128, 128, 128, 0.2); } "
+    filterFrame->setStyleSheet("QFrame { background-color: #27282b; border-top: 1px solid #101113; } "
                                "QCheckBox { background-color: transparent; border: none; } ");
 
     QHBoxLayout* filterLayout = new QHBoxLayout(filterFrame);

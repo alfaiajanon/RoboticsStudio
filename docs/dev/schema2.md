@@ -45,7 +45,7 @@ Dotted arrows are references by `target {kind, id}`: signals point at devices (o
 |---|---|---|
 | `schema` | must be `2` | loader gate |
 | `id` | model id, top level (not in `meta`) | `.rsproj` references it |
-| `meta` | `name`, `version`, `author`, `icon_path` | library panel |
+| `meta` | `name`, `version`, `author`, `icon_path`, optional `hint_class` (`actuator`, `sensor`, `vision`, `display`, `mcu`, `weight`, `battery`, `part`; absent = generic) | library panel; `hint_class` picks the robot tree icon. The value list lives in `src/Document/Components/HintClass.h` |
 | `specs` | free-form object (`max_torque_nm`, `voltage_max`, `weight_kg`...) | informational; emulators may read it |
 | `pins` | `[{id, description, voltage_range?}]` | declared only; wiring comes later |
 | `resources` | `meshes{key: path}`, `materials{key: texture path}` | geoms refer to the keys; paths are relative to the `.rsdef`. Names are prefixed per model when MJCF is generated. |

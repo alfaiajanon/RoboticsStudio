@@ -9,7 +9,8 @@
 #include <QTimer>
 
 static constexpr int HUD_MARGIN = 15;
-static constexpr int SWITCH_BTN_SIZE = 34;   // every switch button is a uniform square
+static constexpr int SWITCH_BTN_SIZE = 40;   // every switch button is a uniform square
+static constexpr int SWITCH_ICON_SIZE = 20;
 static constexpr int SWITCH_PAD = 5;         // panel inset == gap between buttons
 
 
@@ -31,13 +32,10 @@ HudStack::HudStack(QWidget* parent) : QWidget(parent) {
     switchPanel->setObjectName("switchPanel");
     switchPanel->setAttribute(Qt::WA_StyledBackground);
     switchPanel->setStyleSheet(R"(
-        #switchPanel { background-color: rgba(30, 30, 30, 200); border-radius: 8px; }
-        QToolButton {
-            background: transparent; color: #aaaaaa; border: none; border-radius: 5px;
-            padding: 0px; font-size: 12px; font-weight: bold;
-        }
-        QToolButton:hover { background-color: rgba(255, 255, 255, 30); color: #ffffff; }
-        QToolButton:checked { background-color: #0e639c; color: #ffffff; }
+        #switchPanel { background-color: #27282b; border: 1px solid #101113; border-radius: 6px; }
+        QToolButton { background: transparent; border: none; border-radius: 4px; padding: 0px; }
+        QToolButton:hover { background-color: #313236; }
+        QToolButton:checked { background-color: #2a3546; }
     )");
 
     hudLayout = new QHBoxLayout(masterHud);
@@ -59,11 +57,12 @@ HudStack::HudStack(QWidget* parent) : QWidget(parent) {
 
 
 
-int HudStack::addPage(QWidget* page, const QString& label, const QString& tooltip) {
+int HudStack::addPage(QWidget* page, const QIcon& icon, const QString& tooltip) {
     int idx = stack->addWidget(page);
 
     QToolButton* btn = new QToolButton();
-    btn->setText(label);
+    btn->setIcon(icon);
+    btn->setIconSize(QSize(SWITCH_ICON_SIZE, SWITCH_ICON_SIZE));
     btn->setToolTip(tooltip);
     btn->setCheckable(true);
     btn->setFixedSize(SWITCH_BTN_SIZE, SWITCH_BTN_SIZE);

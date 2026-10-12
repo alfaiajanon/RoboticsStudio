@@ -2,6 +2,7 @@
     "schema": 2,
     "id": "servo_mg996r",
     "meta": {
+        "hint_class": "actuator",
         "name": "TowerPro MG996R",
         "version": "1.0.0",
         "author": "Anon",

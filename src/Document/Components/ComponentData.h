@@ -19,6 +19,7 @@ struct MetaDef {
     QString version;
     QString author;
     QString iconPath;
+    QString hintClass;   // one of HintClass::all(), empty = generic
 };
 
 struct PinDef {

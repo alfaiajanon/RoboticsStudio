@@ -2,6 +2,7 @@
     "schema": 2,
     "id": "servo_template",
     "meta": {
+        "hint_class": "actuator",
         "name": "TowerPro SG90",
         "version": "1.0.0"
     },

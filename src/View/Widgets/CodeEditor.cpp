@@ -3,6 +3,7 @@
 #include <QPainter>
 #include <QTextBlock>
 #include <QFontDatabase>
+#include "View/Theme.h"
 
 
 
@@ -14,17 +15,24 @@ CodeEditor::CodeEditor(QWidget *parent) : QPlainTextEdit(parent) {
 
     // Setup dark theme fonts
     QFont monoFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
-    monoFont.setPointSize(10);
+    monoFont.setPointSizeF(10.5);
     setFont(monoFont);
-    setTabStopDistance(fontMetrics().horizontalAdvance(' ') * 4);
-    
-    setStyleSheet(R"(
+
+    // The font is repeated here: the global dark.qss font-family would otherwise win over setFont
+    setStyleSheet(QString(R"(
         QPlainTextEdit {
-            background-color: #1e1e1e;
-            color: #d4d4d4;
+            font-family: "%1";
+            font-size: 10.5pt;
+            background-color: #202124;
+            color: #e6e7e9;
             border: none;
+            border-radius: 0px;
+            padding: 0px;
+            selection-background-color: #45474c;
         }
-    )");
+    )").arg(monoFont.family()));
+    ensurePolished();
+    setTabStopDistance(fontMetrics().horizontalAdvance(' ') * 4);
 
     connect(this, &CodeEditor::blockCountChanged, this, &CodeEditor::updateLineNumberAreaWidth);
     connect(this, &CodeEditor::updateRequest, this, &CodeEditor::updateLineNumberArea);
@@ -45,7 +53,7 @@ int CodeEditor::lineNumberAreaWidth() {
         ++digits;
     }
     // Calculate width: padding + (digits * width per digit)
-    int space = 15 + fontMetrics().horizontalAdvance(QLatin1Char('9')) * digits;
+    int space = 23 + fontMetrics().horizontalAdvance(QLatin1Char('9')) * digits;
     return space;
 }
 
@@ -74,8 +82,8 @@ void CodeEditor::highlightCurrentLine() {
     QList<QTextEdit::ExtraSelection> extraSelections;
     if (!isReadOnly()) {
         QTextEdit::ExtraSelection selection;
-        // Subtle highlight for the line the cursor is currently on
-        QColor lineColor = QColor("#282828"); 
+        // Subtle highlight for the line the cursor is currently on (surface + 4.5% text)
+        QColor lineColor = QColor("#28292c");
         selection.format.setBackground(lineColor);
         selection.format.setProperty(QTextFormat::FullWidthSelection, true);
         selection.cursor = textCursor();
@@ -87,8 +95,12 @@ void CodeEditor::highlightCurrentLine() {
 
 void CodeEditor::lineNumberAreaPaintEvent(QPaintEvent *event) {
     QPainter painter(lineNumberArea);
-    // Dark grey background for the gutter
-    painter.fillRect(event->rect(), QColor("#252526")); 
+    // Gutter: same surface as the text, separated by a 1px line
+    painter.fillRect(event->rect(), Theme::surface);
+    painter.setPen(Theme::border);
+    painter.drawLine(lineNumberArea->width() - 1, event->rect().top(),
+                     lineNumberArea->width() - 1, event->rect().bottom());
+    const int currentBlock = textCursor().blockNumber();
 
     QTextBlock block = firstVisibleBlock();
     int blockNumber = block.blockNumber();
@@ -98,8 +110,8 @@ void CodeEditor::lineNumberAreaPaintEvent(QPaintEvent *event) {
     while (block.isValid() && top <= event->rect().bottom()) {
         if (block.isVisible() && bottom >= event->rect().top()) {
             QString number = QString::number(blockNumber + 1);
-            painter.setPen(QColor("#858585")); // Light grey text for line numbers
-            painter.drawText(0, top, lineNumberArea->width() - 5, fontMetrics().height(),
+            painter.setPen(blockNumber == currentBlock ? Theme::textMuted : Theme::textFaint);
+            painter.drawText(0, top, lineNumberArea->width() - 8, fontMetrics().height(),
                              Qt::AlignRight | Qt::AlignVCenter, number);
         }
         block = block.next();
@@ -130,9 +142,9 @@ JSHighlighter::JSHighlighter(QTextDocument* parent)
     
     HighlightingRule rule;
 
-    // 1. Keywords (Blue)
-    keywordFormat.setForeground(QColor("#569cd6"));
-    keywordFormat.setFontWeight(QFont::Bold);
+    // 1. Keywords (accent)
+    keywordFormat.setForeground(Theme::accent);
+    keywordFormat.setFontWeight(QFont::DemiBold);
     const QString keywordPatterns[] = {
         QStringLiteral("\\bfunction\\b"), QStringLiteral("\\blet\\b"), 
         QStringLiteral("\\bvar\\b"), QStringLiteral("\\bconst\\b"),
@@ -148,26 +160,27 @@ JSHighlighter::JSHighlighter(QTextDocument* parent)
         highlightingRules.append(rule);
     }
 
-    // 2. Numbers (Light Green)
-    numberFormat.setForeground(QColor("#b5cea8"));
+    // 2. Numbers (warm amber, mixed toward text)
+    numberFormat.setForeground(QColor("#ddbb7c"));
     rule.pattern = QRegularExpression(QStringLiteral("\\b[0-9]+(\\.[0-9]+)?\\b"));
     rule.format = numberFormat;
     highlightingRules.append(rule);
 
-    // 3. Strings (Orange)
-    quotationFormat.setForeground(QColor("#ce9178"));
+    // 3. Strings (amber)
+    quotationFormat.setForeground(QColor("#dcb163"));
     rule.pattern = QRegularExpression(QStringLiteral("\".*?\"|'.*?'"));
     rule.format = quotationFormat;
     highlightingRules.append(rule);
 
-    // 4. Functions (Yellow)
-    functionFormat.setForeground(QColor("#dcdcaa"));
+    // 4. Functions (text tinted toward the accent)
+    functionFormat.setForeground(QColor("#bfd1e8"));
     rule.pattern = QRegularExpression(QStringLiteral("\\b[A-Za-z0-9_]+(?=\\()"));
     rule.format = functionFormat;
     highlightingRules.append(rule);
 
-    // 5. Single Line Comments (Green)
-    singleLineCommentFormat.setForeground(QColor("#6a9955"));
+    // 5. Single Line Comments (muted green, italic)
+    singleLineCommentFormat.setForeground(QColor("#669d7a"));
+    singleLineCommentFormat.setFontItalic(true);
     rule.pattern = QRegularExpression(QStringLiteral("//[^\n]*"));
     rule.format = singleLineCommentFormat;
     highlightingRules.append(rule);

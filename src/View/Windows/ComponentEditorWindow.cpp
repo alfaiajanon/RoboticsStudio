@@ -3,6 +3,7 @@
 #include "Document/Components/ComponentData.h"
 #include "View/Panels/ComponentEditor/KeyValueListWidget.h"
 #include "View/Widgets/Toast.h"
+#include "Document/Components/HintClass.h"
 #include "Document/Components/LibraryManager.h"
 #include "Utils/Spatial.h"
 #include "Simulation/ErrorSystem/EmulatorFactory.h"
@@ -237,6 +238,7 @@ ComponentEditorWindow::ComponentEditorWindow(ComponentData source, QWidget* pare
 
     tabWidget = new QTabWidget(splitter);
     tabWidget->setTabPosition(QTabWidget::West);
+    tabWidget->setProperty("sideTabs", true);   // pane seam on the left (dark.qss)
     tabWidget->setMinimumWidth(360);
 
     auto makeTabPage = [this](QVBoxLayout*& outLayout) -> QScrollArea* {
@@ -500,7 +502,7 @@ void ComponentEditorWindow::build_resource_list(QVBoxLayout* parent, const QStri
         rowLayout->addWidget(keyEdit, 1);
 
         QLabel* pathLabel = new QLabel(QFileInfo(target[key]).fileName(), row);
-        pathLabel->setStyleSheet("color: #AAA;");
+        pathLabel->setStyleSheet("color: #a6a8ae;");
         rowLayout->addWidget(pathLabel, 2);
 
         QPushButton* removeBtn = new QPushButton("✖", row);
@@ -2069,6 +2071,17 @@ void ComponentEditorWindow::build_data() {
     QLineEdit* authorEdit = new QLineEdit(data.meta.author, metaBox);
     metaForm->addRow("Author:", authorEdit);
     connect(authorEdit, &QLineEdit::editingFinished, this, [this, authorEdit]() { data.meta.author = authorEdit->text(); });
+
+    // Optional category; item data "" = generic (field omitted on save)
+    QComboBox* hintCombo = new QComboBox(metaBox);
+    hintCombo->addItem("(generic)", QString());
+    for (const QString& hint : HintClass::all()) hintCombo->addItem(hint, hint);
+    hintCombo->setCurrentIndex(qMax(0, hintCombo->findData(data.meta.hintClass)));
+    hintCombo->setToolTip("Category of the component; the robot tree shows an icon for it");
+    metaForm->addRow("Class:", hintCombo);
+    connect(hintCombo, &QComboBox::currentIndexChanged, this, [this, hintCombo]() {
+        data.meta.hintClass = hintCombo->currentData().toString();
+    });
 
     QWidget* iconRow = new QWidget(metaBox);
     QHBoxLayout* iconLayout = new QHBoxLayout(iconRow);

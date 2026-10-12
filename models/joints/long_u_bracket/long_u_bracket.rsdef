@@ -2,6 +2,7 @@
     "schema": 2,
     "id": "joints_long_u_bracket",
     "meta": {
+        "hint_class": "part",
         "author": "Anon",
         "icon_path": "long_u_bracket.png",
         "name": "Long U-Bracket",

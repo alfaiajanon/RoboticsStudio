@@ -2,6 +2,7 @@
 
 #include <QWidget>
 #include <QString>
+#include <QIcon>
 
 class QStackedWidget;
 class QButtonGroup;
@@ -22,7 +23,7 @@ class HudStack : public QWidget {
     public:
         explicit HudStack(QWidget* parent = nullptr);
 
-        int addPage(QWidget* page, const QString& label, const QString& tooltip);
+        int addPage(QWidget* page, const QIcon& icon, const QString& tooltip);
         void setCurrentPage(QWidget* page);
         QWidget* currentPage() const;
 

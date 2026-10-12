@@ -1,5 +1,6 @@
 #include "ComponentData.h"
 #include "Utils/Graph.h"
+#include "HintClass.h"
 #include <QDir>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -887,6 +888,13 @@ ComponentData ComponentData::fromJson(const QJsonObject& mainJson, const QString
     data.meta.iconPath = metaObj["icon_path"].toString().isEmpty()
                                 ? QString()
                                 : QDir(data.basePath).filePath(metaObj["icon_path"].toString());
+    if (metaObj.contains("hint_class")) {
+        data.meta.hintClass = metaObj["hint_class"].toString();
+        if (!HintClass::isValid(data.meta.hintClass)) {
+            return loadFailure(data.modelId, QString("meta.hint_class '%1' is not one of: %2")
+                                   .arg(data.meta.hintClass, HintClass::all().join(", ")));
+        }
+    }
 
     data.pins = parsePins(mainJson["pins"].toArray());
     data.specs = mainJson["specs"].toObject();
@@ -1043,6 +1051,7 @@ QJsonObject ComponentData::toJson() const {
     metaObj["icon_path"] = meta.iconPath.isEmpty()
                             ? QString()
                             : QDir(basePath).relativeFilePath(meta.iconPath);
+    if (!meta.hintClass.isEmpty()) metaObj["hint_class"] = meta.hintClass;
     root["meta"] = metaObj;
 
     root["specs"] = specs;

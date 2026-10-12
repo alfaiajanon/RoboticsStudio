@@ -31,6 +31,7 @@
 #include "Commands/CommandUtils.h"
 #include "View/Widgets/Toast.h"
 #include "View/Widgets/CodeEditor.h"
+#include "View/Widgets/PanelCorners.h"
 
 
 
@@ -122,21 +123,16 @@ void ScriptPanel::setupUI() {
 
     // Top Toolbar
     QWidget* toolbar = new QWidget(this);
-    toolbar->setStyleSheet("background-color: #2d2d2d; border-bottom: 1px solid #1e1e1e;");
+    toolbar->setObjectName("PanelToolbar");
     QHBoxLayout* toolbarLayout = new QHBoxLayout(toolbar);
     toolbarLayout->setContentsMargins(8, 4, 8, 4);
 
     statusLabel = new QLabel("No script loaded", toolbar);
-    statusLabel->setStyleSheet("color: #cccccc; font-style: italic;");
+    statusLabel->setStyleSheet("font-style: italic;");
 
     saveButton = new QPushButton("Save", toolbar);
     saveButton->setEnabled(false);
     saveButton->setFixedWidth(60);
-    saveButton->setStyleSheet(R"(
-        QPushButton { background-color: #0e639c; color: white; border-radius: 2px; padding: 4px; }
-        QPushButton:disabled { background-color: #4d4d4d; color: #888888; }
-        QPushButton:hover { background-color: #1177bb; }
-    )");
 
     connect(saveButton, &QPushButton::clicked, this, &ScriptPanel::onSaveClicked);
 
@@ -152,6 +148,9 @@ void ScriptPanel::setupUI() {
     mainLayout->addWidget(textEditor);
 
     splitter->addWidget(editorSide);
+    // script list and editor read as two panels on either side of the splitter gap
+    PanelCorners::install(splitter->widget(0));
+    PanelCorners::install(editorSide);
     splitter->setStretchFactor(0, 0);
     splitter->setStretchFactor(1, 1);
     splitter->setSizes({220, 9999});
@@ -167,22 +166,22 @@ QWidget* ScriptPanel::buildScriptList() {
     layout->setSpacing(0);
 
     QWidget* header = new QWidget(side);
-    header->setStyleSheet("background-color: #2d2d2d; border-bottom: 1px solid #1e1e1e;");
+    header->setObjectName("PanelToolbar");
     QHBoxLayout* headerLayout = new QHBoxLayout(header);
     headerLayout->setContentsMargins(8, 4, 4, 4);
 
     QLabel* title = new QLabel("Scripts", header);
-    title->setStyleSheet("color: #cccccc; font-weight: bold;");
+    title->setStyleSheet("color: #e6e7e9; font-weight: bold;");
 
     addButton = new QToolButton(header);
     addButton->setText("+");
     addButton->setToolTip("New script (MCU or stage)");
     addButton->setCursor(Qt::PointingHandCursor);
     addButton->setStyleSheet(R"(
-        QToolButton { background: transparent; color: #cccccc; border: none; border-radius: 3px;
+        QToolButton { background: transparent; color: #a6a8ae; border: none; border-radius: 3px;
                       font-size: 16px; font-weight: bold; min-width: 24px; min-height: 24px; }
-        QToolButton:hover { background-color: #3e3e3e; color: white; }
-        QToolButton:disabled { color: #666666; }
+        QToolButton:hover { background-color: #353639; color: #e6e7e9; }
+        QToolButton:disabled { color: #55575d; }
     )");
     connect(addButton, &QToolButton::clicked, this, &ScriptPanel::createScript);
 
@@ -193,7 +192,11 @@ QWidget* ScriptPanel::buildScriptList() {
     scriptList = new QListWidget(side);
     scriptList->setFrameShape(QFrame::NoFrame);
     scriptList->setIconSize(QSize(18, 18));
-    scriptList->setStyleSheet("QListWidget::item { padding: 4px 2px; }");
+    // Selected script: subtle row + accent bar on the left (not a full blue row)
+    scriptList->setStyleSheet(
+        "QListWidget::item { padding: 4px 2px; border-left: 3px solid transparent; }"
+        "QListWidget::item:hover { background-color: #232427; }"
+        "QListWidget::item:selected { background-color: #26272a; border-left: 3px solid #4a8fe7; color: #e6e7e9; }");
     connect(scriptList, &QListWidget::itemClicked, this, &ScriptPanel::onScriptItemClicked);
 
     layout->addWidget(header);

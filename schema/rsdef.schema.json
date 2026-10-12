@@ -24,7 +24,11 @@
                 "name": { "type": "string" },
                 "version": { "type": "string" },
                 "author": { "type": "string" },
-                "icon_path": { "type": "string" }
+                "icon_path": { "type": "string" },
+                "hint_class": {
+                    "enum": ["actuator", "sensor", "vision", "display", "mcu", "weight", "battery", "part"],
+                    "description": "Optional category; the robot tree shows an icon for it. Absent means generic. Keep in sync with src/Document/Components/HintClass.h"
+                }
             }
         },
         "resources": {

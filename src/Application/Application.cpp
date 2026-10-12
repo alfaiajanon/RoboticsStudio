@@ -9,6 +9,7 @@
 #include "Simulation/MujocoContext.h"
 #include "Simulation/SimulationManager.h"
 #include "View/Windows/EditorWindow.h"
+#include "View/WorkbenchStyle.h"
 #include "View/Panels/SceneTreePanel.h"
 
 
@@ -176,6 +177,8 @@ void Application::loadStyle(const QString& path) {
         return;
     }
     QString style = file.readAll();
+    // The proxy draws what the stylesheet cannot (dock separators); set it before the sheet
+    qApp->setStyle(new WorkbenchStyle());
     qApp->setStyleSheet(style);
 }
 

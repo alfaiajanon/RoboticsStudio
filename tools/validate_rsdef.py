@@ -26,6 +26,8 @@ DOMAINS = {"ranged": ["min", "max"], "unbounded": []}
 FAMILIES = ("actuators", "sensors", "cameras", "displays")
 INPUT_KINDS = ("joint", "display", "actuator", "emulator")
 OUTPUT_KINDS = ("sensor", "camera", "emulator")
+# mirrors src/Document/Components/HintClass.h
+HINT_CLASSES = ("actuator", "sensor", "vision", "display", "mcu", "weight", "battery", "part")
 OLD_SIGNAL_KEYS = ("pin_required", "data_type", "range", "target_joint", "target_site", "camera_name")
 
 
@@ -69,6 +71,8 @@ def validate(d):
         errs.add("'io' is not allowed (renamed to 'interface')")
     if "id" in d.get("meta", {}):
         errs.add("'id' must be top-level, not inside meta")
+    if "hint_class" in d.get("meta", {}) and d["meta"]["hint_class"] not in HINT_CLASSES:
+        errs.add(f"meta.hint_class '{d['meta']['hint_class']}' is not one of: {', '.join(HINT_CLASSES)}")
 
     k = d.get("kinematics", {})
     bodies, joints = k.get("bodies", []), k.get("joints", [])

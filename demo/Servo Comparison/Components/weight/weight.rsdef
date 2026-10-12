@@ -81,6 +81,7 @@
         ]
     },
     "meta": {
+        "hint_class": "weight",
         "author": "",
         "icon_path": "",
         "name": "weight",

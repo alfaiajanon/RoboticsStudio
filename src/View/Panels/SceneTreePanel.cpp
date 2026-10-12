@@ -7,6 +7,30 @@
 #include <QToolBox>
 #include "Utils/Log.h"
 #include "Application/Application.h"
+#include "Document/Components/ComponentBlueprint.h"
+#include "View/Theme.h"
+
+
+
+/*
+ * Tree icon for a component's meta.hint_class (see HintClass.h); "robot" is the
+ * project root. Unknown/empty -> generic. Icons are cached: the tree is rebuilt often.
+ */
+static QIcon iconForHint(const QString& hintClass) {
+    static QHash<QString, QIcon> cache;
+    auto it = cache.constFind(hintClass);
+    if (it != cache.constEnd()) return *it;
+
+    static const QHash<QString, QString> files = {
+        {"robot", "robot"}, {"actuator", "actuator"}, {"sensor", "sensor"}, {"vision", "vision"},
+        {"display", "display"}, {"mcu", "chip"}, {"weight", "weight"}, {"battery", "battery"},
+        {"part", "cube"},
+    };
+    // a touch fainter than other icons so names stay the focus
+    QIcon icon = Theme::icon(":/icons/" + files.value(hintClass, "generic") + ".svg", Theme::text, QColor(0x88, 0x8a, 0x90));
+    cache.insert(hintClass, icon);
+    return icon;
+}
 
 
 SceneTreePanel::SceneTreePanel(QWidget* parent) : QWidget(parent) {
@@ -21,7 +45,7 @@ SceneTreePanel::SceneTreePanel(QWidget* parent) : QWidget(parent) {
     breadcrumbScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     breadcrumbScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     breadcrumbScroll->setFrameShape(QFrame::NoFrame);
-    breadcrumbScroll->setStyleSheet("QScrollArea { background-color: transparent; border-bottom: 1px solid #333; }");
+    breadcrumbScroll->setStyleSheet("QScrollArea { background-color: transparent; border-bottom: 1px solid #101113; }");
     breadcrumbScroll->hide();
 
     breadcrumbContainer = new QWidget();
@@ -33,7 +57,9 @@ SceneTreePanel::SceneTreePanel(QWidget* parent) : QWidget(parent) {
 
     // --- Trees Setup ---
     treeWidget = new QTreeWidget();
-    treeWidget->setAlternatingRowColors(true);
+    treeWidget->setObjectName("RobotTree");
+    treeWidget->setIndentation(16);
+    treeWidget->setIconSize(QSize(16, 16));
     treeWidget->header()->setVisible(false);
     treeWidget->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     // UI Polish: StretchLastSection(true) forces the row background to span the full widget width
@@ -42,7 +68,9 @@ SceneTreePanel::SceneTreePanel(QWidget* parent) : QWidget(parent) {
     treeWidget->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
     unattachedTreeWidget = new QTreeWidget();
-    unattachedTreeWidget->setAlternatingRowColors(true);
+    unattachedTreeWidget->setObjectName("RobotTree");
+    unattachedTreeWidget->setIndentation(16);
+    unattachedTreeWidget->setIconSize(QSize(16, 16));
     unattachedTreeWidget->header()->setVisible(false);
     unattachedTreeWidget->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     unattachedTreeWidget->header()->setStretchLastSection(true);
@@ -146,7 +174,7 @@ void SceneTreePanel::updateBreadcrumbs(Project* project) {
 
         if (!isLast) {
             QLabel* arrow = new QLabel(">");
-            arrow->setStyleSheet("color: gray;");
+            arrow->setStyleSheet("color: #73757b;");
             breadcrumbLayout->addWidget(arrow);
         }
     };
@@ -200,6 +228,7 @@ void SceneTreePanel::buildFromProject(Project* project) {
     QTreeWidgetItem* virtualRootItem = new QTreeWidgetItem();
     virtualRootItem->setText(0, project->getProjectData()["meta"].toObject()["name"].toString("Robot Origin"));
     virtualRootItem->setData(0, Qt::UserRole, 0);
+    virtualRootItem->setIcon(0, iconForHint("robot"));
     QFont boldFont = virtualRootItem->font(0);
     boldFont.setBold(true);
     virtualRootItem->setFont(0, boldFont);
@@ -209,6 +238,8 @@ void SceneTreePanel::buildFromProject(Project* project) {
         QTreeWidgetItem* item = new QTreeWidgetItem();
         item->setText(0, comp->name);
         item->setData(0, Qt::UserRole, comp->uid);
+        ComponentBlueprint* bp = comp->getBlueprint();
+        item->setIcon(0, iconForHint(bp ? bp->meta.hintClass : QString()));
         itemMap.insert(comp->uid, item);
     }
 

@@ -30,7 +30,7 @@ DraggableComponentWidget::DraggableComponentWidget(const QString& modelId, const
     QLabel* iconLabel = new QLabel(this);
     iconLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
     iconLabel->setFixedSize(64, 64);
-    iconLabel->setStyleSheet("background-color: #3a3a3a; border-radius: 4px;");
+    iconLabel->setStyleSheet("background-color: #27282b; border-radius: 3px;");
     iconLabel->setAlignment(Qt::AlignCenter);
 
     QPixmap pixmap(iconPath);
@@ -146,7 +146,7 @@ QString DraggableComponentWidget::getModelName() const {
 
 void DraggableComponentWidget::setSelected(bool selected) {
     setStyleSheet(selected
-        ? "DraggableComponentWidget { border: 1px solid #4285F4; border-radius: 4px; }"
+        ? "DraggableComponentWidget { border: 1px solid #6a6c73; border-radius: 3px; }"
         : "");
 }
 

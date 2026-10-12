@@ -36,6 +36,9 @@ void LauncherWindow::showEvent(QShowEvent *event) {
 void LauncherWindow::setupUI() {
     QWidget* centralWidget = new QWidget(this);
     setCentralWidget(centralWidget);
+    // Panel color outside, the project list is a darker well, each project a panel-colored card
+    centralWidget->setObjectName("LauncherRoot");
+    centralWidget->setStyleSheet("#LauncherRoot, #LauncherRoot > QWidget { background-color: #202124; }");
     QHBoxLayout* mainLayout = new QHBoxLayout(centralWidget);
 
     // === LEFT PANEL (Controls) ===
@@ -91,22 +94,22 @@ void LauncherWindow::setupUI() {
 
     // UI Polish: Make the Qt Item transparent and apply styles strictly to the internal QFrame
     m_recentList->setStyleSheet(
-        "QListWidget { background-color: #1a1a1a; border: 1px solid #333333; border-radius: 8px; padding: 10px; outline: none; }"
+        "QListWidget { background-color: #1a1b1d; border: 1px solid #101113; border-radius: 4px; padding: 10px; outline: none; }"
         "QListWidget::item { background: transparent; border: none; margin-bottom: 4px; padding: 0px; }"
         "QListWidget::item:hover { background: transparent; }"
         "QListWidget::item:selected { background: transparent; }"
 
         "QFrame#ProjectCard {"
-        "    background-color: transparent;"
-        "    border: 1px solid #2a2a2a;"
-        "    border-radius: 6px;"
+        "    background-color: #202124;"
+        "    border: 1px solid #101113;"
+        "    border-radius: 4px;"
         "}"
         "QFrame#ProjectCard:hover {"
-        "    background-color: #2a2d31;"
+        "    background-color: #252629;"
         "}"
         "QFrame#ProjectCard[selected=\"true\"] {"
-        "    background-color: #2a2d31;"
-        "    border: 1px solid #0e639c;"
+        "    background-color: #2d2e31;"
+        "    border: 1px solid #55575d;"
         "}"
     );
 
@@ -209,7 +212,7 @@ void LauncherWindow::refreshProjectList() {
 
         if (!iconLoaded) {
             iconLabel->setText("⊘");
-            iconLabel->setStyleSheet("font-size: 24px; color: #555555; background: #2d2d2d; border-radius: 6px; border: none;");
+            iconLabel->setStyleSheet("font-size: 24px; color: #55575d; background: #27282b; border-radius: 3px; border: none;");
         }
         cardLayout->addWidget(iconLabel);
 
@@ -217,10 +220,10 @@ void LauncherWindow::refreshProjectList() {
         textLayout->setSpacing(2);
 
         QLabel* nameLabel = new QLabel(QString("<b>%1</b>").arg(robotName));
-        nameLabel->setStyleSheet("font-size: 15px; color: #ffffff; border: none; background: transparent;");
+        nameLabel->setStyleSheet("font-size: 16px; color: #e6e7e9; border: none; background: transparent;");
 
         QLabel* pathLabel = new QLabel(path);
-        pathLabel->setStyleSheet("color: #888888; font-size: 11px; border: none; background: transparent;");
+        pathLabel->setStyleSheet("color: #73757b; font-size: 13px; border: none; background: transparent;");
 
         textLayout->addWidget(nameLabel);
         textLayout->addWidget(pathLabel);

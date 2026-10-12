@@ -4,6 +4,7 @@
 #include "Document/Components/ComponentInstance.h"
 #include "Telemetry/Storage/TimeSeriesBuffer.h"
 #include "Utils/Log.h"
+#include "View/Theme.h"
 
 #include <QDialog>
 #include <limits>
@@ -65,10 +66,10 @@ static QIcon makeTargetIcon(bool isInput, bool physical) {
 }
 
 static void applyDarkThemeToPlot(QCustomPlot* plot, const QString& yLabel) {
-    QColor bgColor("#1e1e1e");
-    QColor textColor("#dcdcdc");
-    QColor gridColor("#3a3a3a");
-    QColor axisColor("#7a7a7a");
+    QColor bgColor = Theme::surface;
+    QColor textColor = Theme::textMuted;
+    QColor gridColor = Theme::border;
+    QColor axisColor = Theme::borderStrong;
 
     plot->setBackground(QBrush(bgColor));
 
@@ -179,14 +180,14 @@ ScalarCanvasWindow::ScalarCanvasWindow(const QString& title, QWidget* parent)
 
     QFrame* sidePanel = new QFrame(this);
     sidePanel->setFixedWidth(200);
-    sidePanel->setStyleSheet("QFrame { background-color: #252526; border-left: 1px solid #333; }");
+    sidePanel->setStyleSheet("QFrame { background-color: #27282b; border-left: 1px solid #101113; }");
     controlsLayout = new QVBoxLayout(sidePanel);
     controlsLayout->setAlignment(Qt::AlignTop);
     controlsLayout->setContentsMargins(8, 8, 8, 8);
     controlsLayout->setSpacing(6);
 
     QLabel* legendLabel = new QLabel("<b>Sources</b>", sidePanel);
-    legendLabel->setStyleSheet("color: #dcdcdc; border: none;");
+    legendLabel->setStyleSheet("color: #e6e7e9; border: none;");
     controlsLayout->addWidget(legendLabel);
 
     rootLayout->addWidget(sidePanel, 0);
@@ -220,7 +221,7 @@ void ScalarCanvasWindow::addTarget(QString sourceKey, const QString& label, cons
     rowLayout->setContentsMargins(0, 0, 0, 0);
 
     QLabel* nameLabel = new QLabel(label);
-    nameLabel->setStyleSheet("color: #dcdcdc; border: none;");
+    nameLabel->setStyleSheet("color: #e6e7e9; border: none;");
 
     QPushButton* colorBtn = new QPushButton();
     colorBtn->setFixedSize(20, 20);
@@ -364,14 +365,14 @@ VectorCanvasWindow::VectorCanvasWindow(const QString& title, QWidget* parent)
 
     QFrame* sidePanel = new QFrame(this);
     sidePanel->setFixedWidth(200);
-    sidePanel->setStyleSheet("QFrame { background-color: #252526; border-left: 1px solid #333; }");
+    sidePanel->setStyleSheet("QFrame { background-color: #27282b; border-left: 1px solid #101113; }");
     controlsLayout = new QVBoxLayout(sidePanel);
     controlsLayout->setAlignment(Qt::AlignTop);
     controlsLayout->setContentsMargins(8, 8, 8, 8);
     controlsLayout->setSpacing(6);
 
     QLabel* legendLabel = new QLabel("<b>Sources</b>", sidePanel);
-    legendLabel->setStyleSheet("color: #dcdcdc; border: none;");
+    legendLabel->setStyleSheet("color: #e6e7e9; border: none;");
     controlsLayout->addWidget(legendLabel);
 
     rootLayout->addWidget(sidePanel, 0);
@@ -418,7 +419,7 @@ void VectorCanvasWindow::addTarget(QString sourceKey, const QString& label, cons
     rowLayout->setContentsMargins(0, 0, 0, 0);
 
     QLabel* nameLabel = new QLabel(label);
-    nameLabel->setStyleSheet("color: #dcdcdc; border: none;");
+    nameLabel->setStyleSheet("color: #e6e7e9; border: none;");
 
     QPushButton* colorBtn = new QPushButton();
     colorBtn->setFixedSize(20, 20);
@@ -547,9 +548,9 @@ ImageView::ImageView(QWidget* parent) : QWidget(parent) {
 void ImageView::paintEvent(QPaintEvent* event) {
     Q_UNUSED(event);
     QPainter p(this);
-    p.fillRect(rect(), QColor("#111111"));
+    p.fillRect(rect(), Theme::input);
     if (image.isNull()) {
-        p.setPen(QColor("#7a7a7a"));
+        p.setPen(Theme::textFaint);
         p.drawText(rect(), Qt::AlignCenter, "No frame yet");
         return;
     }
@@ -561,7 +562,7 @@ void ImageView::paintEvent(QPaintEvent* event) {
 
 ImageCanvasWindow::ImageCanvasWindow(const QString& title, QWidget* parent)
     : CanvasWindow(DataType::IMAGE, title, parent) {
-    setStyleSheet("background-color: #1e1e1e;");
+    setStyleSheet("background-color: #202124;");
     tilesLayout = new QHBoxLayout(this);
     tilesLayout->setContentsMargins(8, 8, 8, 8);
     tilesLayout->setSpacing(8);
@@ -586,10 +587,10 @@ void ImageCanvasWindow::addTarget(QString sourceKey, const QString& label, const
     layout->setSpacing(4);
 
     QLabel* title = new QLabel(label, tile.container);
-    title->setStyleSheet("color: #dcdcdc; font-weight: bold;");
+    title->setStyleSheet("color: #e6e7e9; font-weight: bold;");
     tile.view = new ImageView(tile.container);
     tile.info = new QLabel("waiting for frames", tile.container);
-    tile.info->setStyleSheet("color: #9a9a9a;");
+    tile.info->setStyleSheet("color: #a6a8ae;");
 
     layout->addWidget(title);
     layout->addWidget(tile.view, 1);
@@ -648,7 +649,7 @@ CanvasDockItem::CanvasDockItem(DataType type, const QString& name, QWidget* pare
     outerLayout->setContentsMargins(0, 0, 0, 0);
 
     QFrame* mainFrame = new QFrame(this);
-    mainFrame->setStyleSheet("QFrame { background-color: rgba(128, 128, 128, 0.05); border: 1px solid rgba(128, 128, 128, 0.2); border-radius: 4px; }");
+    mainFrame->setStyleSheet("QFrame { background-color: transparent; border: 1px solid #101113; border-radius: 3px; }");
 
     QVBoxLayout* mainLayout = new QVBoxLayout(mainFrame);
     mainLayout->setContentsMargins(8, 8, 8, 8);
@@ -657,9 +658,10 @@ CanvasDockItem::CanvasDockItem(DataType type, const QString& name, QWidget* pare
 
     QHBoxLayout* headerLayout = new QHBoxLayout();
     QLabel* iconLabel = new QLabel();
-    if (type == DataType::SCALAR) iconLabel->setText("📈");
-    else if (type == DataType::VECTOR) iconLabel->setText("📐");
-    else if (type == DataType::IMAGE) iconLabel->setText("📷");
+    const qreal dpr = iconLabel->devicePixelRatioF();
+    if (type == DataType::SCALAR) iconLabel->setPixmap(Theme::pixmap(":/icons/chart.svg", 18, QColor("#4a8fe7"), dpr));
+    else if (type == DataType::VECTOR) iconLabel->setPixmap(Theme::pixmap(":/icons/vector.svg", 18, QColor("#6cb7c9"), dpr));
+    else if (type == DataType::IMAGE) iconLabel->setPixmap(Theme::pixmap(":/icons/vision.svg", 18, QColor("#d9a441"), dpr));
     iconLabel->setStyleSheet("border: none; font-size: 18px;");
 
     QLabel* nameLabel = new QLabel("<b>" + name + "</b>");

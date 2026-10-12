@@ -28,10 +28,10 @@ Toast::Toast(QWidget* parent, const QString& message, int durationMs)
     label = new QLabel(message, this);
     label->setStyleSheet(R"(
         QLabel {
-            background-color: #1c1c1d;
-            color: #dcdcdc;
-            border: 1px solid #073859;
-            border-radius: 4px;
+            background-color: #2a2b2e;
+            color: #e6e7e9;
+            border: 1px solid #3b3d41;
+            border-radius: 3px;
             padding: 8px 16px;
             font-weight: bold;
         }

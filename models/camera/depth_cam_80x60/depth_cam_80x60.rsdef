@@ -2,6 +2,7 @@
     "schema": 2,
     "id": "camera_depth_80x60",
     "meta": {
+        "hint_class": "vision",
         "name": "Cheap Depth Camera (80x60)",
         "version": "1.0.0",
         "author": "Anon"

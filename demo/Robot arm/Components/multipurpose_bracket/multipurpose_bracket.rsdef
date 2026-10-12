@@ -163,6 +163,7 @@
         ]
     },
     "meta": {
+        "hint_class": "part",
         "author": "Anon",
         "icon_path": "multipurpose_bracket.png",
         "name": "Multipurpose Bracket",

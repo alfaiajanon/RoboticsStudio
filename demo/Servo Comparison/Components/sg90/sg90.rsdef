@@ -323,6 +323,7 @@
         ]
     },
     "meta": {
+        "hint_class": "actuator",
         "author": "Anon",
         "icon_path": "sg90.png",
         "name": "TowerPro SG90",

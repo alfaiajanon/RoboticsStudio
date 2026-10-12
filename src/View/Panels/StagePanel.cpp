@@ -69,7 +69,7 @@ void StagePanel::setupUI() {
 
 QWidget* StagePanel::buildToolbar() {
     QWidget* toolbar = new QWidget();
-    toolbar->setStyleSheet("background-color: #2d2d2d; border-bottom: 1px solid #1e1e1e;");
+    toolbar->setObjectName("PanelToolbar");
     QHBoxLayout* layout = new QHBoxLayout(toolbar);
     layout->setContentsMargins(8, 4, 8, 4);
 

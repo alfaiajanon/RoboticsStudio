@@ -10,11 +10,16 @@
 #include "Telemetry/TelemetryRegistry.h"
 
 PlotPanel::PlotPanel(QWidget* parent) : QWidget(parent) {
+    // QWidget subclasses only paint their stylesheet background when asked; without it
+    // the empty space below the side tabs shows the darker dock behind the panel
+    setAttribute(Qt::WA_StyledBackground, true);
+
     QVBoxLayout* panelLayout = new QVBoxLayout(this);
     panelLayout->setContentsMargins(0, 0, 0, 0);
 
     tabWidget = new QTabWidget(this);
     tabWidget->setTabPosition(QTabWidget::West);
+    tabWidget->setProperty("sideTabs", true);   // pane seam on the left (dark.qss)
     panelLayout->addWidget(tabWidget);
 
     // Tab 1: I/O Plots (channel-based canvases)

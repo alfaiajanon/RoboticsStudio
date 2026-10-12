@@ -23,6 +23,8 @@
 #include <qlabel.h>
 
 #include "Application/Application.h"
+#include "View/Widgets/PanelCorners.h"
+#include "View/Theme.h"
 #include "Commands/GenericCommand.h"
 #include "Document/Components/ComponentBlueprint.h"
 #include "Document/Components/ComponentData.h"
@@ -50,6 +52,9 @@ EditorWindow::EditorWindow(QWidget* parent) : QMainWindow(parent){
     this->setWindowTitle("Robotics Studio");
     this->resize(1600, 950);
     this->setWindowState(Qt::WindowMaximized);
+    // Same 3px gap around the outer panels as between them (menu bar included;
+    // it has the window color, so only the panels show the inset)
+    this->setContentsMargins(3, 3, 3, 3);
 
     topDownSplitter=nullptr;
     viewport=nullptr;
@@ -90,7 +95,7 @@ void EditorWindow::setupSimConn(){
         if (status.fps < 30) {
             fpsLabel->setStyleSheet("color: #ff5555;");
         } else {
-            fpsLabel->setStyleSheet("color: #cccccc;");
+            fpsLabel->setStyleSheet("color: #e6e7e9;");
         }
         simTimeLabel->setText(QString("Sim Time: %1").arg(status.simTime));
         collisionCountLabel->setText(QString("Contacts: %1").arg(status.activeContacts));
@@ -604,7 +609,7 @@ void EditorWindow::setupSplitting(){
 
     // ScriptPanel lives in the central stack, not the bottom tabs
     scriptPanel = new ScriptPanel();
-    centerStack->addPage(scriptPanel, "</>", "Script (Ctrl+2)");
+    centerStack->addPage(scriptPanel, Theme::icon(":/icons/code.svg", Theme::accentLight), "Script (Ctrl+2)");
 
     bottomTabs = new QTabWidget();
     bottomTabs->setMinimumHeight(bottomTabs->tabBar()->sizeHint().height());
@@ -615,7 +620,7 @@ void EditorWindow::setupSplitting(){
     outputPanel = new OutputPanel();
     outputPanel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Ignored);
     outputPanel->setMinimumHeight(0);
-    bottomTabs->addTab(outputPanel, "Output");
+    bottomTabs->addTab(outputPanel, Theme::icon(":/icons/terminal.svg"), "Output");
     connect(LogDispatcher::getInstance(), &LogDispatcher::messageLogged,
             outputPanel, &OutputPanel::appendMessage);
 
@@ -625,16 +630,18 @@ void EditorWindow::setupSplitting(){
     componentsPanel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Ignored);
     connect(&LibraryManager::getInstance(), &LibraryManager::catalogLoaded,
             componentsPanel, &ComponentsPanel::loadCatalog);
-    bottomTabs->addTab(componentsPanel, "Components");
+    bottomTabs->addTab(componentsPanel, Theme::icon(":/icons/chip.svg"), "Components");
 
     // add StagePanel
     stagePanel = new StagePanel();
     stagePanel->setMinimumHeight(0);
     stagePanel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Ignored);
-    bottomTabs->addTab(stagePanel, "Stage");
+    bottomTabs->addTab(stagePanel, Theme::icon(":/icons/stage.svg"), "Stage");
 
 
     topDownSplitter->addWidget(bottomTabs);
+    PanelCorners::install(centerStack);
+    PanelCorners::install(bottomTabs);
     topDownSplitter->setCollapsible(0, false);
     topDownSplitter->setCollapsible(1, false);
 
@@ -680,10 +687,18 @@ void EditorWindow::setupMainViewport() {
     QVBoxLayout* hudLayout = new QVBoxLayout(viewport);
     hudLayout->setContentsMargins(15, 15, 15, 15);
 
+    // One panel for all stats: the style is scoped to the container, otherwise
+    // it cascades and every label paints its own box
     QWidget* container = new QWidget(viewport);
-    container->setStyleSheet("background-color: rgba(30, 30, 30, 150); padding: 5px; border-radius: 4px;");
+    container->setObjectName("statusHud");
+    container->setAttribute(Qt::WA_StyledBackground);
+    container->setStyleSheet(R"(
+        #statusHud { background-color: rgba(39, 40, 43, 220); border: 1px solid #101113; border-radius: 6px; }
+        #statusHud QLabel { background: transparent; border: none; padding: 0px; }
+    )");
     QVBoxLayout* containerLayout = new QVBoxLayout(container);
-    containerLayout->setContentsMargins(0, 0, 0, 0);
+    containerLayout->setContentsMargins(10, 6, 10, 6);
+    containerLayout->setSpacing(2);
 
     fpsLabel = new QLabel("FPS: --", viewport);
     simTimeLabel = new QLabel("Sim Time: --", viewport);
@@ -695,12 +710,52 @@ void EditorWindow::setupMainViewport() {
     hudLayout->addWidget(container, 0, Qt::AlignTop | Qt::AlignLeft);
     hudLayout->addStretch();
 
-    centerStack->addPage(viewport, "3D", "3D View (Ctrl+1)");
+    centerStack->addPage(viewport, Theme::icon(":/icons/cube.svg", Theme::accentLight), "3D View (Ctrl+1)");
 
     // Sim controls belong to the master HUD: visible on every central page.
     // [PLAY] while editing, [PAUSE/RESUME][STOP] while running.
-    auto hudBtnStyle = [](const char* color) {
-        return QString("background-color: %1; color: white; padding: 8px 15px; border-radius: 4px; font-weight: bold; font-size: 14px;").arg(color);
+    // Neutral HUD-panel buttons; only the icon carries a (muted) state color.
+    // The icon is a single fixed tint so it keeps its color on hover.
+    static const QColor playColor {0x5c, 0xb8, 0x7a};
+    static const QColor pauseColor{0xd9, 0xa4, 0x41};
+    static const QColor stopColor {0xe0, 0x6c, 0x6c};
+    // QPushButton offers no icon-text gap or per-part alignment, so the icon and
+    // text are labels in the button's own layout (transparent to the mouse).
+    auto setHudBtn = [this](QPushButton* btn, const QString& text, const char* iconPath, const QColor& color) {
+        btn->findChild<QLabel*>("hudBtnIcon")->setPixmap(Theme::pixmap(iconPath, 14, color, devicePixelRatioF()));
+        btn->findChild<QLabel*>("hudBtnText")->setText(text);
+    };
+    auto makeHudBtn = [](const QString& name) {
+        QPushButton* btn = new QPushButton();
+        btn->setObjectName(name);
+        btn->setCursor(Qt::PointingHandCursor);
+        btn->setFocusPolicy(Qt::NoFocus);
+        btn->setStyleSheet(QString(R"(
+            #%1 { background-color: rgba(39, 40, 43, 230); border: 1px solid #101113; border-radius: 6px; padding: 0px; }
+            #%1:hover { background-color: rgba(49, 50, 54, 240); }
+            #%1:pressed { background-color: rgba(31, 32, 35, 240); }
+            #%1 QLabel { background: transparent; border: none; padding: 0px; color: #e6e7e9; font-weight: 600; }
+        )").arg(name));
+
+        // QPushButton's own sizeHint ignores the layout: the layout sizes the
+        // button instead (and re-sizes it when the text changes)
+        QHBoxLayout* layout = new QHBoxLayout(btn);
+        layout->setSizeConstraint(QLayout::SetFixedSize);
+        layout->setContentsMargins(12, 8, 15, 8);
+        layout->setSpacing(9);
+
+        QLabel* icon = new QLabel(btn);
+        icon->setObjectName("hudBtnIcon");
+        icon->setFixedSize(16, 16);
+        icon->setAlignment(Qt::AlignCenter);
+        QLabel* label = new QLabel(btn);
+        label->setObjectName("hudBtnText");
+        label->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
+        for (QLabel* l : {icon, label}) l->setAttribute(Qt::WA_TransparentForMouseEvents);
+
+        layout->addWidget(icon, 0, Qt::AlignVCenter);
+        layout->addWidget(label, 0, Qt::AlignVCenter);
+        return btn;
     };
 
     QWidget* simControls = new QWidget();
@@ -708,31 +763,25 @@ void EditorWindow::setupMainViewport() {
     simControlsLayout->setContentsMargins(0, 0, 0, 0);
     simControlsLayout->setSpacing(6);
 
-    pauseBtn = new QPushButton("⏸ PAUSE");
-    pauseBtn->setCursor(Qt::PointingHandCursor);
-    pauseBtn->setFocusPolicy(Qt::NoFocus);
-    pauseBtn->setStyleSheet(hudBtnStyle("#E08600"));
+    pauseBtn = makeHudBtn("pauseSimBtn");
+    setHudBtn(pauseBtn, "Pause", ":/icons/pause.svg", pauseColor);
     pauseBtn->hide();
     simControlsLayout->addWidget(pauseBtn);
 
-    playBtn = new QPushButton("▶ PLAY");
-    playBtn->setCursor(Qt::PointingHandCursor);
-    playBtn->setFocusPolicy(Qt::NoFocus);
-    playBtn->setStyleSheet(hudBtnStyle("#2E7D32"));
+    playBtn = makeHudBtn("playSimBtn");
+    setHudBtn(playBtn, "Play", ":/icons/play.svg", playColor);
     simControlsLayout->addWidget(playBtn);
 
     centerStack->addHudControl(simControls);
 
-    connect(pauseBtn, &QPushButton::clicked, this, [this, hudBtnStyle]() {
+    connect(pauseBtn, &QPushButton::clicked, this, [this, setHudBtn]() {
         SimulationManager* sim = Application::getInstance()->getSimulationManager();
         if (sim->getState() == SimulationState::PLAYING) {
             sim->pause();
-            pauseBtn->setText("▶ RESUME");
-            pauseBtn->setStyleSheet(hudBtnStyle("#2E7D32"));
+            setHudBtn(pauseBtn, "Resume", ":/icons/play.svg", playColor);
         } else if (sim->getState() == SimulationState::PAUSED) {
             sim->resume();
-            pauseBtn->setText("⏸ PAUSE");
-            pauseBtn->setStyleSheet(hudBtnStyle("#E08600"));
+            setHudBtn(pauseBtn, "Pause", ":/icons/pause.svg", pauseColor);
         }
     });
 
@@ -741,7 +790,7 @@ void EditorWindow::setupMainViewport() {
         simManager->reloadModel(project->generateMujocoXML(isSimulation), project->getRootComponent());
     };
 
-    connect(playBtn, &QPushButton::clicked, this, [this, reloadSimulation, hudBtnStyle]() {
+    connect(playBtn, &QPushButton::clicked, this, [this, reloadSimulation, setHudBtn]() {
         SimulationManager* sim = Application::getInstance()->getSimulationManager();
 
         if (sim->getState() == SimulationState::EDITING) {
@@ -758,10 +807,8 @@ void EditorWindow::setupMainViewport() {
             }
 
             sim->play();
-            playBtn->setText("⬛ STOP");
-            playBtn->setStyleSheet(hudBtnStyle("#C62828"));
-            pauseBtn->setText("⏸ PAUSE");
-            pauseBtn->setStyleSheet(hudBtnStyle("#E08600"));
+            setHudBtn(playBtn, "Stop", ":/icons/stop.svg", stopColor);
+            setHudBtn(pauseBtn, "Pause", ":/icons/pause.svg", pauseColor);
             pauseBtn->show();
 
             if (this->inspector) this->inspector->setInputState(false);
@@ -776,8 +823,7 @@ void EditorWindow::setupMainViewport() {
 
             frameScene();
 
-            playBtn->setText("▶ PLAY");
-            playBtn->setStyleSheet(hudBtnStyle("#2E7D32"));
+            setHudBtn(playBtn, "Play", ":/icons/play.svg", playColor);
             pauseBtn->hide();
 
             if (this->inspector) this->inspector->setInputState(true);
@@ -865,6 +911,10 @@ void EditorWindow::setupRightDocking(){
     plotPanel = new PlotPanel();
     graphDock->setWidget(plotPanel);
     addDockWidget(Qt::BottomDockWidgetArea, graphDock);
+
+    PanelCorners::install(sceneDock);
+    PanelCorners::install(inspectorDock);
+    PanelCorners::install(graphDock);
 
     sceneDock->setFeatures(QDockWidget::DockWidgetMovable);
     inspectorDock->setFeatures(QDockWidget::DockWidgetMovable);

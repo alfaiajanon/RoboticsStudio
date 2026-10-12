@@ -128,7 +128,7 @@ void InspectorPanel::showEmptyState() {
     clearLayout(mainLayout);
     QLabel* emptyLabel = new QLabel("No Component Selected", this);
     emptyLabel->setAlignment(Qt::AlignCenter);
-    emptyLabel->setStyleSheet("color: gray; font-style: italic;");
+    emptyLabel->setStyleSheet("color: #73757b; font-style: italic;");
     mainLayout->addWidget(emptyLabel);
 }
 
@@ -741,7 +741,7 @@ void InspectorPanel::build_connectors(ComponentInstance* comp) {
 
             if (mainWindow) {
                 connect(mainWindow, &EditorWindow::componentLibDragStart, dropBtn, [dropBtn](const QString&) {
-                    dropBtn->setStyleSheet("border: 1px solid #5fa4ff;");
+                    dropBtn->setStyleSheet("border: 1px solid #4a8fe7;");
                 });
                 connect(mainWindow, &EditorWindow::componentLibDragEnd, dropBtn, [dropBtn]() {
                     dropBtn->setStyleSheet("");
@@ -1091,7 +1091,7 @@ void InspectorPanel::build_rootAttachment(Project* project) {
         EditorWindow* mainWindow = qobject_cast<EditorWindow*>(this->window());
         if (mainWindow) {
             connect(mainWindow, &EditorWindow::componentLibDragStart, dropBtn, [dropBtn](const QString&) {
-                dropBtn->setStyleSheet("border: 1px solid #5fa4ff;");
+                dropBtn->setStyleSheet("border: 1px solid #4a8fe7;");
             });
             connect(mainWindow, &EditorWindow::componentLibDragEnd, dropBtn, [dropBtn]() {
                 dropBtn->setStyleSheet("");

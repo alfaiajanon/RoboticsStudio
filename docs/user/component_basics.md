@@ -9,6 +9,23 @@ Every part is one `.rsdef` file (JSON), built in the **Component Editor** or by 
 - **Geoms and sites** are placed in their **body's frame**.
 - The first body is `default_body`: the part's origin when it is the robot's base.
 
+## Meta
+
+`meta` holds the part's `name`, `version`, `author` and `icon_path` (the image in the Components panel). The optional `hint_class` says what kind of part it is, and the robot tree shows a matching icon:
+
+| `hint_class` | For |
+|---|---|
+| `actuator` | servos, DC motors, steppers |
+| `sensor` | IMUs, encoders and other sensors |
+| `vision` | cameras |
+| `display` | screens |
+| `mcu` | microcontrollers and boards |
+| `weight` | dummy masses |
+| `battery` | batteries |
+| `part` | structural parts: brackets, plates, wheels |
+
+Leave it out for a generic icon. Any other value is a load error. In the Component Editor it is the **Class** field.
+
 ## The building blocks
 
 | Block | What it is | Notes |

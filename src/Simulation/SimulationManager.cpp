@@ -312,6 +312,19 @@ void SimulationManager::physicsLoop() {
 
             syncFromMujocoSensor(root, mj->getModel(), mj->getData());
             displayTextures->collect();   // emulator resets blank the screens
+
+
+            status.simTime=0;
+            status.activeContacts=mj->getData()->ncon;
+            int invasiveCount = 0;
+            const double PENETRATION_THRESHOLD = -0.002;
+            mjData* d = mj->getData();
+            for (int i = 0; i < d->ncon; ++i) {
+                if (d->contact[i].dist < PENETRATION_THRESHOLD) {
+                    invasiveCount++;
+                }
+            }
+            status.invasiveCollisions = invasiveCount;
         }
 
         trackFps();

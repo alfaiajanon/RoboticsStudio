@@ -2,5 +2,34 @@
     <qresource prefix="/">
         <file>styles/dark.qss</file>
         <file>templates/servo.rsdef</file>
+        <file>icons/check.svg</file>
+        <file>icons/minus.svg</file>
+        <file>icons/chevron-down.svg</file>
+        <file>icons/chevron-up.svg</file>
+        <file>icons/chevron-left.svg</file>
+        <file>icons/chevron-right.svg</file>
+        <file>icons/grip-v.svg</file>
+        <file>icons/grip-h.svg</file>
+        <file>icons/cube.svg</file>
+        <file>icons/code.svg</file>
+        <file>icons/terminal.svg</file>
+        <file>icons/chip.svg</file>
+        <file>icons/stage.svg</file>
+        <file>icons/actuator.svg</file>
+        <file>icons/sensor.svg</file>
+        <file>icons/vision.svg</file>
+        <file>icons/display.svg</file>
+        <file>icons/weight.svg</file>
+        <file>icons/battery.svg</file>
+        <file>icons/generic.svg</file>
+        <file>icons/robot.svg</file>
+        <file>icons/vline.svg</file>
+        <file>icons/chart.svg</file>
+        <file>icons/vector.svg</file>
+        <file>icons/tree-right.svg</file>
+        <file>icons/tree-down.svg</file>
+        <file>icons/play.svg</file>
+        <file>icons/pause.svg</file>
+        <file>icons/stop.svg</file>
     </qresource>
 </RCC>

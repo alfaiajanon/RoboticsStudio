@@ -2,6 +2,7 @@
     "schema": 2,
     "id": "display_tft_160x128",
     "meta": {
+        "hint_class": "display",
         "name": "RGB TFT Display (160x128)",
         "version": "1.0.0",
         "author": "Anon"
