@@ -2,6 +2,7 @@
     "schema": 2,
     "id": "wheel_D_65_25",
     "meta": {
+        "hint_class": "part",
         "name": "Wheel D_65_25",
         "version": "1.0.0",
         "author": "Anon",

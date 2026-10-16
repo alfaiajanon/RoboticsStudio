@@ -76,6 +76,34 @@
                 "tire"
             ],
             "name": "Wheels"
+        },
+        {
+            "id": "camera",
+            "items": [
+                "camera/cam_ov7670/cam_ov7670.rsdef",
+                "camera/depth_cam_80x60/depth_cam_80x60.rsdef"
+            ],
+            "keys": [
+                "sensor",
+                "camera",
+                "vision",
+                "depth",
+                "ov7670"
+            ],
+            "name": "Cameras"
+        },
+        {
+            "id": "display",
+            "items": [
+                "display/display_tft_160x128/display_tft_160x128.rsdef"
+            ],
+            "keys": [
+                "display",
+                "screen",
+                "tft",
+                "lcd"
+            ],
+            "name": "Displays"
         }
     ],
     "version": "1.0.0"

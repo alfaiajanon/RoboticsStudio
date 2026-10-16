@@ -2,6 +2,7 @@
     "schema": 2,
     "id": "motor_dc_gear_60rpm",
     "meta": {
+        "hint_class": "actuator",
         "name": "12V 60RPM DC Gear BO Motor (Dual Shaft)",
         "version": "1.0.0",
         "author": "Anon",

@@ -2,6 +2,7 @@
     "schema": 2,
     "id": "stepper_nema17",
     "meta": {
+        "hint_class": "actuator",
         "name": "NEMA 17 Stepper Motor",
         "version": "1.0.0",
         "author": "Anon",

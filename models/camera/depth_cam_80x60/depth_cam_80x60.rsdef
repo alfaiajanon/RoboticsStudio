@@ -1,0 +1,226 @@
+{
+    "schema": 2,
+    "id": "camera_depth_80x60",
+    "meta": {
+        "hint_class": "vision",
+        "name": "Cheap Depth Camera (80x60)",
+        "version": "1.0.0",
+        "author": "Anon"
+    },
+    "resources": {
+        "meshes": {},
+        "materials": {}
+    },
+    "specs": {
+        "voltage_max": 3.3,
+        "current_ma": 120,
+        "weight_kg": 0.008,
+        "range_m": [
+            0.05,
+            4.0
+        ]
+    },
+    "pins": [
+        {
+            "id": "vcc",
+            "voltage_range": [
+                3.0,
+                3.3
+            ],
+            "description": "Power input"
+        },
+        {
+            "id": "gnd",
+            "description": "Ground"
+        },
+        {
+            "id": "scl",
+            "description": "SCCB/I2C clock (configuration)"
+        },
+        {
+            "id": "sda",
+            "description": "SCCB/I2C data (configuration)"
+        }
+    ],
+    "kinematics": {
+        "default_body": "base",
+        "bodies": [
+            {
+                "id": "base",
+                "overrideGeom": false,
+                "transform": {
+                    "pos": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "quat": [
+                        1,
+                        0,
+                        0,
+                        0
+                    ]
+                },
+                "geoms": [
+                    {
+                        "id": "board",
+                        "type": "box",
+                        "size": [
+                            0.017,
+                            0.017,
+                            0.0008
+                        ],
+                        "pos": [
+                            0,
+                            0,
+                            0
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "mass": 0.006
+                    },
+                    {
+                        "id": "lens",
+                        "type": "cylinder",
+                        "size": [
+                            0.007,
+                            0.005
+                        ],
+                        "pos": [
+                            0,
+                            0,
+                            -0.0058
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "mass": 0.002
+                    }
+                ],
+                "sites": [
+                    {
+                        "id": "lens_tip",
+                        "transform": {
+                            "pos": [
+                                0,
+                                0,
+                                -0.0109
+                            ],
+                            "quat": [
+                                1,
+                                0,
+                                0,
+                                0
+                            ]
+                        }
+                    }
+                ]
+            }
+        ],
+        "joints": []
+    },
+    "connectors": [
+        {
+            "id": "back",
+            "body": "base",
+            "description": "Mount on the back of the board (lens faces away)",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    90,
+                    180,
+                    270
+                ]
+            },
+            "transform": {
+                "pos": [
+                    0,
+                    0,
+                    0.0008
+                ],
+                "quat": [
+                    1,
+                    0,
+                    0,
+                    0
+                ]
+            }
+        },
+        {
+            "id": "bottom_edge",
+            "body": "base",
+            "description": "Bottom edge of the board: stands the camera upright, lens horizontal",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    90,
+                    180,
+                    270
+                ]
+            },
+            "transform": {
+                "pos": [
+                    0,
+                    -0.017,
+                    0
+                ],
+                "quat": [
+                    0.7071068,
+                    0.7071068,
+                    0,
+                    0
+                ]
+            }
+        }
+    ],
+    "devices": {
+        "cameras": [
+            {
+                "id": "cam",
+                "type": "depth",
+                "target": {
+                    "kind": "site",
+                    "id": "lens_tip"
+                },
+                "resolution": [
+                    80,
+                    60
+                ],
+                "fovy": 45
+            }
+        ]
+    },
+    "interface": {
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "depth",
+                "unit": "m",
+                "physical": true,
+                "target": {
+                    "kind": "camera",
+                    "id": "cam"
+                }
+            }
+        ]
+    },
+    "emulator": {
+        "type": "camera_emulator",
+        "source": null,
+        "parameters": {
+            "fps": 10,
+            "latency_ms": 80,
+            "depth_noise_stddev": 0.01,
+            "depth_min": 0.05,
+            "depth_max": 4.0,
+            "drop_probability": 0.01
+        }
+    }
+}

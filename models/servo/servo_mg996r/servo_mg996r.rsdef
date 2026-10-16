@@ -2,6 +2,7 @@
     "schema": 2,
     "id": "servo_mg996r",
     "meta": {
+        "hint_class": "actuator",
         "name": "TowerPro MG996R",
         "version": "1.0.0",
         "author": "Anon",
@@ -19,7 +20,7 @@
         "voltage_max": 7.2,
         "voltage_min": 4.8,
         "max_torque_nm": 1.08,
-        "max_speed_rad": 6.16,
+        "max_speed_rad": 7.48,
         "weight_kg": 0.055
     },
     "pins": [
@@ -127,10 +128,53 @@
                     -90,
                     90
                 ],
-                "damping": 0.05,
-                "armature": 0.01,
-                "frictionloss": 0.05,
+                "damping": 0.14,
+                "armature": 0.004,
+                "frictionloss": 0.06,
                 "collision": false
+            },
+            {
+                "id": "backlash_joint",
+                "body_a": "base",
+                "body_b": "horn",
+                "type": "hinge",
+                "transform": {
+                    "pos": [
+                        0,
+                        0,
+                        0.0176
+                    ],
+                    "quat": [
+                        1,
+                        0,
+                        0,
+                        0
+                    ]
+                },
+                "range": [
+                    -1.5,
+                    1.5
+                ],
+                "damping": 0,
+                "armature": 0.0001,
+                "frictionloss": 0.001,
+                "collision": false
+            }
+        ],
+        "tendons": [
+            {
+                "id": "output_tendon",
+                "type": "fixed",
+                "terms": [
+                    {
+                        "joint": "servo_joint",
+                        "coef": 1
+                    },
+                    {
+                        "joint": "backlash_joint",
+                        "coef": 1
+                    }
+                ]
             }
         ]
     },
@@ -296,8 +340,8 @@
                     -1.08,
                     1.08
                 ],
-                "kp": 25.0,
-                "kv": 2.5
+                "kp": 20,
+                "kv": 0.3
             }
         ],
         "sensors": [
@@ -307,6 +351,14 @@
                 "target": {
                     "kind": "joint",
                     "id": "servo_joint"
+                }
+            },
+            {
+                "id": "sensor_real_pos",
+                "type": "tendonpos",
+                "target": {
+                    "kind": "tendon",
+                    "id": "output_tendon"
                 }
             }
         ]
@@ -339,6 +391,15 @@
                     "kind": "sensor",
                     "id": "servo_pos"
                 }
+            },
+            {
+                "name": "current_angle_real",
+                "unit": "degrees",
+                "physical": true,
+                "target": {
+                    "kind": "sensor",
+                    "id": "sensor_real_pos"
+                }
             }
         ]
     },
@@ -346,9 +407,8 @@
         "type": "servo_emulator",
         "source": null,
         "parameters": {
-            "noise_stddev": 0.5,
-            "delay_ms": 0,
-            "deadband_threshold": 2
+            "noise_stddev": 0.2,
+            "deadband_threshold": 1
         }
     }
 }

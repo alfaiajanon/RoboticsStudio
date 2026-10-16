@@ -2,6 +2,7 @@
     "schema": 2,
     "id": "sensor_mpu6050",
     "meta": {
+        "hint_class": "sensor",
         "name": "MPU-6050 IMU Sensor",
         "version": "1.0.0",
         "author": "Anon",
@@ -216,8 +217,7 @@
         "type": "imu_emulator",
         "source": null,
         "parameters": {
-            "noise_stddev": 1.0,
-            "delay_ms": 50
+            "noise_stddev": 1.0
         }
     }
 }
