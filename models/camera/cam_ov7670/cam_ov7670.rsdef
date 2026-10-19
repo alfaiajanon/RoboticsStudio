@@ -135,6 +135,14 @@
         ]
     },
     "emulator": {
+        "parameter_sources": {
+            "bits_per_channel": "datasheet: OmniVision OV7670, RGB565 output (5/6/5 bits per channel); 6 approximates it",
+            "color_gain": "estimate: the warm cast of cheap OV7670 modules without white balance tuning; to be measured",
+            "drop_probability": "estimate: occasional lost frames on long jumper wires; to be measured",
+            "fps": "estimate: QQVGA on an ESP32/MCU host is typically 10-25 fps (sensor max 30 fps VGA, OV7670 datasheet)",
+            "latency_ms": "estimate: one frame of capture plus readout/transfer at 15 fps; to be measured",
+            "noise_stddev": "estimate: visible sensor noise of a 0.3 MP sensor indoors (0-255 scale); to be measured"
+        },
         "parameters": {
             "bits_per_channel": 6,
             "color_gain": [
@@ -301,6 +309,7 @@
         {
             "description": "Power input",
             "id": "vcc",
+            "type": "power",
             "voltage_range": [
                 3,
                 3.299999952316284
@@ -308,15 +317,88 @@
         },
         {
             "description": "Ground",
-            "id": "gnd"
+            "id": "gnd",
+            "type": "ground"
         },
         {
             "description": "SCCB/I2C clock (configuration)",
-            "id": "scl"
+            "id": "scl",
+            "type": "i2c_scl"
         },
         {
             "description": "SCCB/I2C data (configuration)",
-            "id": "sda"
+            "id": "sda",
+            "type": "i2c_sda"
+        },
+        {
+            "description": "Master clock input from the MCU",
+            "id": "xclk",
+            "type": "digital"
+        },
+        {
+            "description": "Pixel clock output",
+            "id": "pclk",
+            "type": "digital"
+        },
+        {
+            "description": "Vertical sync output",
+            "id": "vsync",
+            "type": "digital"
+        },
+        {
+            "description": "Horizontal reference output",
+            "id": "href",
+            "type": "digital"
+        },
+        {
+            "description": "Pixel data bit 0",
+            "id": "d0",
+            "type": "digital"
+        },
+        {
+            "description": "Pixel data bit 1",
+            "id": "d1",
+            "type": "digital"
+        },
+        {
+            "description": "Pixel data bit 2",
+            "id": "d2",
+            "type": "digital"
+        },
+        {
+            "description": "Pixel data bit 3",
+            "id": "d3",
+            "type": "digital"
+        },
+        {
+            "description": "Pixel data bit 4",
+            "id": "d4",
+            "type": "digital"
+        },
+        {
+            "description": "Pixel data bit 5",
+            "id": "d5",
+            "type": "digital"
+        },
+        {
+            "description": "Pixel data bit 6",
+            "id": "d6",
+            "type": "digital"
+        },
+        {
+            "description": "Pixel data bit 7",
+            "id": "d7",
+            "type": "digital"
+        },
+        {
+            "description": "Reset (active low)",
+            "id": "reset",
+            "type": "digital"
+        },
+        {
+            "description": "Power down (active high)",
+            "id": "pwdn",
+            "type": "digital"
         }
     ],
     "resources": {
@@ -328,7 +410,7 @@
             "ov7670_pcb": "meshes/ov7670_pcb.obj"
         }
     },
-    "schema": 2,
+    "schema": 3,
     "specs": {
         "current_ma": 60,
         "sensor": "OmniVision OV7670, 0.3 MP",

@@ -1,0 +1,620 @@
+{
+    "schema": 3,
+    "id": "esp32_cam",
+    "meta": {
+        "name": "ESP32-CAM (AI-Thinker, OV2640)",
+        "version": "1.0.0",
+        "author": "Anon",
+        "icon_path": "",
+        "hint_class": "mcu"
+    },
+    "specs": {
+        "mcu": "ESP32-S (dual core, 240 MHz)",
+        "camera": "OmniVision OV2640, 2 MP",
+        "psram_mb": 4,
+        "logic_voltage": 3.3,
+        "current_ma": 180,
+        "weight_kg": 0.01,
+        "size_mm": [
+            27,
+            40.5
+        ],
+        "camera_fovy_deg": "45 (estimate: the stock OV2640 lens is about 66 deg diagonal, ~43-45 deg vertical at 4:3)"
+    },
+    "pins": [
+        {
+            "id": "5v",
+            "type": "power_out",
+            "voltage_range": [
+                5,
+                5
+            ],
+            "description": "5 V rail (the board is fed here, e.g. by its USB programmer)"
+        },
+        {
+            "id": "gnd",
+            "type": "ground",
+            "description": "Ground"
+        },
+        {
+            "id": "io12",
+            "type": "gpio",
+            "number": 12,
+            "caps": [
+                "digital",
+                "pwm",
+                "interrupt",
+                "analog",
+                "spi_miso"
+            ],
+            "description": "GPIO12: strapping pin (must be LOW at boot), HSPI MISO, SD card",
+            "voltage_range": [
+                0,
+                3.3
+            ]
+        },
+        {
+            "id": "io13",
+            "type": "gpio",
+            "number": 13,
+            "caps": [
+                "digital",
+                "pwm",
+                "interrupt",
+                "analog",
+                "spi_mosi"
+            ],
+            "description": "GPIO13: HSPI MOSI, SD card",
+            "voltage_range": [
+                0,
+                3.3
+            ]
+        },
+        {
+            "id": "io15",
+            "type": "gpio",
+            "number": 15,
+            "caps": [
+                "digital",
+                "pwm",
+                "interrupt",
+                "analog",
+                "i2c_scl"
+            ],
+            "description": "GPIO15: I2C SCL as wired here (Wire.begin(14, 15)), SD card",
+            "voltage_range": [
+                0,
+                3.3
+            ]
+        },
+        {
+            "id": "io14",
+            "type": "gpio",
+            "number": 14,
+            "caps": [
+                "digital",
+                "pwm",
+                "interrupt",
+                "analog",
+                "spi_sck",
+                "i2c_sda"
+            ],
+            "description": "GPIO14: HSPI SCK, I2C SDA as wired here (Wire.begin(14, 15)), SD card",
+            "voltage_range": [
+                0,
+                3.3
+            ]
+        },
+        {
+            "id": "io2",
+            "type": "gpio",
+            "number": 2,
+            "caps": [
+                "digital",
+                "pwm",
+                "interrupt",
+                "analog"
+            ],
+            "description": "GPIO2: strapping pin, SD card",
+            "voltage_range": [
+                0,
+                3.3
+            ]
+        },
+        {
+            "id": "io4",
+            "type": "gpio",
+            "number": 4,
+            "caps": [
+                "digital",
+                "pwm",
+                "interrupt",
+                "analog"
+            ],
+            "description": "GPIO4: the white flash LED, SD card",
+            "voltage_range": [
+                0,
+                3.3
+            ]
+        },
+        {
+            "id": "3v3",
+            "type": "power_out",
+            "voltage_range": [
+                3.3,
+                3.3
+            ],
+            "description": "3.3 V regulator output"
+        },
+        {
+            "id": "io16",
+            "type": "gpio",
+            "number": 16,
+            "caps": [
+                "digital",
+                "interrupt"
+            ],
+            "description": "GPIO16: also the PSRAM chip select on this board; avoid",
+            "voltage_range": [
+                0,
+                3.3
+            ]
+        },
+        {
+            "id": "gnd2",
+            "type": "ground",
+            "description": "Ground"
+        },
+        {
+            "id": "io3",
+            "type": "gpio",
+            "number": 3,
+            "caps": [
+                "digital",
+                "uart_rx"
+            ],
+            "description": "GPIO3: Serial RX (U0R, the programmer)",
+            "voltage_range": [
+                0,
+                3.3
+            ]
+        },
+        {
+            "id": "io1",
+            "type": "gpio",
+            "number": 1,
+            "caps": [
+                "digital",
+                "uart_tx"
+            ],
+            "description": "GPIO1: Serial TX (U0T, the programmer)",
+            "voltage_range": [
+                0,
+                3.3
+            ]
+        },
+        {
+            "id": "gnd3",
+            "type": "ground",
+            "description": "Ground"
+        },
+        {
+            "id": "pwdn",
+            "type": "digital",
+            "number": 32,
+            "internal": true,
+            "description": "Camera power down (on the board)"
+        },
+        {
+            "id": "xclk",
+            "type": "digital",
+            "number": 0,
+            "internal": true,
+            "description": "Camera master clock (GPIO0, also on the header: boot strap) (on the board)"
+        },
+        {
+            "id": "sda",
+            "type": "i2c_sda",
+            "number": 26,
+            "internal": true,
+            "description": "Camera SCCB data (on the board)"
+        },
+        {
+            "id": "scl",
+            "type": "i2c_scl",
+            "number": 27,
+            "internal": true,
+            "description": "Camera SCCB clock (on the board)"
+        },
+        {
+            "id": "d7",
+            "type": "digital",
+            "number": 35,
+            "internal": true,
+            "description": "Camera data Y9 (on the board)"
+        },
+        {
+            "id": "d6",
+            "type": "digital",
+            "number": 34,
+            "internal": true,
+            "description": "Camera data Y8 (on the board)"
+        },
+        {
+            "id": "d5",
+            "type": "digital",
+            "number": 39,
+            "internal": true,
+            "description": "Camera data Y7 (on the board)"
+        },
+        {
+            "id": "d4",
+            "type": "digital",
+            "number": 36,
+            "internal": true,
+            "description": "Camera data Y6 (on the board)"
+        },
+        {
+            "id": "d3",
+            "type": "digital",
+            "number": 21,
+            "internal": true,
+            "description": "Camera data Y5 (on the board)"
+        },
+        {
+            "id": "d2",
+            "type": "digital",
+            "number": 19,
+            "internal": true,
+            "description": "Camera data Y4 (on the board)"
+        },
+        {
+            "id": "d1",
+            "type": "digital",
+            "number": 18,
+            "internal": true,
+            "description": "Camera data Y3 (on the board)"
+        },
+        {
+            "id": "d0",
+            "type": "digital",
+            "number": 5,
+            "internal": true,
+            "description": "Camera data Y2 (on the board)"
+        },
+        {
+            "id": "vsync",
+            "type": "digital",
+            "number": 25,
+            "internal": true,
+            "description": "Camera VSYNC (on the board)"
+        },
+        {
+            "id": "href",
+            "type": "digital",
+            "number": 23,
+            "internal": true,
+            "description": "Camera HREF (on the board)"
+        },
+        {
+            "id": "pclk",
+            "type": "digital",
+            "number": 22,
+            "internal": true,
+            "description": "Camera pixel clock (on the board)"
+        }
+    ],
+    "board": {
+        "fqbn": "esp32:esp32:esp32cam",
+        "header_folder": "esp32cam",
+        "logic_voltage": 3.3,
+        "adc": {
+            "bits": 12,
+            "vref": 3.3
+        },
+        "analog_write": {
+            "hz": 1000
+        },
+        "i2c": {
+            "sda": "io14",
+            "scl": "io15",
+            "default_hz": 100000
+        },
+        "spi": {
+            "sck": "io14",
+            "mosi": "io13",
+            "miso": "io12",
+            "max_hz": 40000000
+        },
+        "sources": {
+            "logic_voltage": "datasheet: ESP32 series, 3.3 V I/O",
+            "adc": "arduino-esp32 core: analogRead() 12-bit by default (0..4095); full scale with 11 dB attenuation ~3.1 V, 3.3 V used (estimate)",
+            "analog_write": "arduino-esp32 core 3.x: analogWrite() uses LEDC at 1 kHz, 8-bit",
+            "i2c": "Wire library default 100 kHz; on this board the camera takes the default pins (21/22), so I2C parts go on 14/15 (common practice)",
+            "spi": "datasheet: ESP32 Technical Reference Manual, SPI through the GPIO matrix up to 40 MHz"
+        }
+    },
+    "resources": {
+        "meshes": {},
+        "materials": {}
+    },
+    "kinematics": {
+        "default_body": "base",
+        "bodies": [
+            {
+                "id": "base",
+                "overrideGeom": false,
+                "transform": {
+                    "pos": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "quat": [
+                        1,
+                        0,
+                        0,
+                        0
+                    ]
+                },
+                "geoms": [
+                    {
+                        "id": "pcb",
+                        "type": "box",
+                        "size": [
+                            0.0135,
+                            0.0203,
+                            0.0008
+                        ],
+                        "pos": [
+                            0,
+                            0.008,
+                            -0.001
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.05,
+                            0.25,
+                            0.45
+                        ],
+                        "mass": 0.005
+                    },
+                    {
+                        "id": "module",
+                        "type": "box",
+                        "size": [
+                            0.009,
+                            0.009,
+                            0.0016
+                        ],
+                        "pos": [
+                            0,
+                            0.017,
+                            -0.0034
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.7,
+                            0.7,
+                            0.72
+                        ],
+                        "mass": 0.002
+                    },
+                    {
+                        "id": "camera_holder",
+                        "type": "box",
+                        "size": [
+                            0.0045,
+                            0.0045,
+                            0.003
+                        ],
+                        "pos": [
+                            0,
+                            -0.0044,
+                            -0.0048
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.12,
+                            0.12,
+                            0.12
+                        ],
+                        "mass": 0.001
+                    },
+                    {
+                        "id": "lens",
+                        "type": "cylinder",
+                        "size": [
+                            0.004,
+                            0.0061
+                        ],
+                        "pos": [
+                            0,
+                            -0.0044,
+                            -0.0139
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.12,
+                            0.12,
+                            0.12
+                        ],
+                        "mass": 0.0015
+                    },
+                    {
+                        "id": "glass",
+                        "type": "cylinder",
+                        "size": [
+                            0.003,
+                            0.0001
+                        ],
+                        "pos": [
+                            0,
+                            -0.0044,
+                            -0.0199
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.0,
+                            0.1,
+                            0.15
+                        ],
+                        "mass": 0
+                    },
+                    {
+                        "id": "flash_led",
+                        "type": "box",
+                        "size": [
+                            0.0015,
+                            0.0015,
+                            0.0006
+                        ],
+                        "pos": [
+                            0.0085,
+                            -0.004,
+                            -0.0024
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            1.0,
+                            0.95,
+                            0.8
+                        ],
+                        "mass": 0.0001
+                    }
+                ],
+                "sites": [
+                    {
+                        "id": "lens_tip",
+                        "transform": {
+                            "pos": [
+                                0,
+                                -0.0044,
+                                -0.02
+                            ],
+                            "quat": [
+                                6.123233995736766e-17,
+                                0,
+                                0,
+                                1
+                            ]
+                        }
+                    }
+                ]
+            }
+        ],
+        "joints": []
+    },
+    "connectors": [
+        {
+            "id": "general",
+            "body": "base",
+            "description": "Mount on the back of the board (lens faces away), where an OV7670 would mount",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    90,
+                    180,
+                    270
+                ]
+            },
+            "transform": {
+                "pos": [
+                    0,
+                    0,
+                    0.0002
+                ],
+                "quat": [
+                    6.123233995736766e-17,
+                    0,
+                    0,
+                    1
+                ]
+            }
+        }
+    ],
+    "devices": {
+        "cameras": [
+            {
+                "id": "cam",
+                "type": "rgb",
+                "fovy": 45,
+                "resolution": [
+                    160,
+                    120
+                ],
+                "target": {
+                    "kind": "site",
+                    "id": "lens_tip"
+                }
+            }
+        ]
+    },
+    "interface": {
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "image",
+                "physical": true,
+                "target": {
+                    "kind": "camera",
+                    "id": "cam"
+                }
+            }
+        ]
+    },
+    "emulator": {
+        "type": "camera_emulator",
+        "source": {},
+        "parameters": {
+            "bits_per_channel": 6,
+            "color_gain": [
+                1.0,
+                1.0,
+                0.95
+            ],
+            "drop_probability": 0.01,
+            "fps": 15,
+            "latency_ms": 60,
+            "noise_stddev": 5
+        },
+        "parameter_sources": {
+            "bits_per_channel": "datasheet: OmniVision OV2640, RGB565 output (5/6/5 bits); 6 approximates it",
+            "color_gain": "estimate: OV2640 auto white balance leaves a slight cast; to be measured",
+            "drop_probability": "estimate: occasional lost frames (on-board flex cable, fewer than jumper wires); to be measured",
+            "fps": "estimate: QQVGA RGB565 on an ESP32-CAM with one frame buffer, 15-25 fps reported",
+            "latency_ms": "estimate: one frame of capture plus readout at 15 fps; to be measured",
+            "noise_stddev": "estimate: visible noise of a 2 MP 1/4\" sensor indoors (0-255 scale); to be measured"
+        }
+    }
+}

@@ -1,6 +1,23 @@
 {
     "Categories": [
         {
+            "id": "board",
+            "items": [
+                "board/arduino_uno/arduino_uno.rsdef",
+                "board/esp32_cam/esp32_cam.rsdef"
+            ],
+            "keys": [
+                "board",
+                "mcu",
+                "arduino",
+                "uno",
+                "esp32",
+                "esp32-cam",
+                "controller"
+            ],
+            "name": "Boards"
+        },
+        {
             "id": "dc_motor",
             "items": [
                 "motor/dc_gear_60rpm/dc_gear_60rpm.rsdef"

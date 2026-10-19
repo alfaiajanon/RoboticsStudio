@@ -1,5 +1,5 @@
 {
-    "schema": 2,
+    "schema": 3,
     "id": "wheel_D_65_25",
     "meta": {
         "hint_class": "part",
@@ -86,7 +86,7 @@
                 "pos": [
                     0,
                     0,
-                    0
+                    0.0075
                 ],
                 "quat": [
                     0,
