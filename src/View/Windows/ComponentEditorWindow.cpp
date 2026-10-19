@@ -1893,6 +1893,11 @@ void ComponentEditorWindow::build_interface_list(QVBoxLayout* parent, const QStr
         physicalCheck->setChecked(def.physical);
         form->addRow("Physical:", physicalCheck);
 
+        QCheckBox* internalCheck = new QCheckBox(row);
+        internalCheck->setChecked(def.internal);
+        internalCheck->setToolTip("The part's internal state (e.g. motor drive): listed apart from its inputs and outputs");
+        form->addRow("Internal:", internalCheck);
+
         QComboBox* kindCombo = new QComboBox(row);
         kindCombo->addItems(kinds);
         if (kindCombo->findText(def.target.kind) < 0) kindCombo->addItem(def.target.kind);
@@ -1930,11 +1935,12 @@ void ComponentEditorWindow::build_interface_list(QVBoxLayout* parent, const QStr
         form->addRow("Labels:", labelsEdit);
 
         QString ioKey = key;
-        auto commit = [this, &target, ioKey, unitEdit, domainCombo, minSpin, maxSpin, physicalCheck, idCombo, channelCombo, dimSpin, labelsEdit]() {
+        auto commit = [this, &target, ioKey, unitEdit, domainCombo, minSpin, maxSpin, physicalCheck, internalCheck, idCombo, channelCombo, dimSpin, labelsEdit]() {
             if (!target.contains(ioKey)) return;
             InterfaceDef d = target[ioKey];
             d.unit = unitEdit->text();
             d.physical = physicalCheck->isChecked();
+            d.internal = internalCheck->isChecked();
 
             d.domain.type = domainCombo->currentText();
             d.domain.parameters.clear();
@@ -1962,6 +1968,7 @@ void ComponentEditorWindow::build_interface_list(QVBoxLayout* parent, const QStr
         connect(minSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, commit);
         connect(maxSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, commit);
         connect(physicalCheck, &QCheckBox::toggled, this, commit);
+        connect(internalCheck, &QCheckBox::toggled, this, commit);
         connect(idCombo, &QComboBox::currentTextChanged, this, commit);
         connect(channelCombo, &QComboBox::currentTextChanged, this, commit);
         connect(dimSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, commit);
@@ -2037,6 +2044,26 @@ void ComponentEditorWindow::build_emulator() {
     form->addRow(paramsWidget);
     connect(paramsWidget, &KeyValueListWidget::changed, this, [this, paramsWidget]() {
         data.emulatorDef.parameters = jsonToVariantMap(paramsWidget->value());
+    });
+
+    QLabel* sourcesLabel = new QLabel("Parameter sources (parameter -> datasheet link, measurement, or \"estimate: ...\"):", box);
+    sourcesLabel->setWordWrap(true);
+    form->addRow(sourcesLabel);
+
+    QJsonObject sourcesObj;
+    for (auto it = data.emulatorDef.parameterSources.constBegin(); it != data.emulatorDef.parameterSources.constEnd(); ++it) {
+        sourcesObj[it.key()] = it.value();
+    }
+    KeyValueListWidget* sourcesWidget = new KeyValueListWidget(box);
+    sourcesWidget->setValue(sourcesObj);
+    form->addRow(sourcesWidget);
+    connect(sourcesWidget, &KeyValueListWidget::changed, this, [this, sourcesWidget]() {
+        data.emulatorDef.parameterSources.clear();
+        const QJsonObject obj = sourcesWidget->value();
+        for (auto it = obj.constBegin(); it != obj.constEnd(); ++it) {
+            QString text = it.value().isString() ? it.value().toString() : it.value().toVariant().toString();
+            if (!text.trimmed().isEmpty()) data.emulatorDef.parameterSources[it.key()] = text;
+        }
     });
 
     leftLayout->addWidget(box);
@@ -2127,6 +2154,34 @@ void ComponentEditorWindow::build_data() {
         QLineEdit* descEdit = new QLineEdit(pin.description, row);
         form->addRow("Description:", descEdit);
 
+        QComboBox* typeCombo = new QComboBox(row);
+        typeCombo->addItem("(untyped)", QString());
+        for (const QString& t : PinDef::types()) typeCombo->addItem(t, t);
+        typeCombo->setCurrentIndex(std::max(0, typeCombo->findData(pin.type)));
+        typeCombo->setToolTip("Part pins: every type except power/ground gets a pin on the board (robot_pins.h). "
+                              "gpio and power_out are board pins (parts with a board block)");
+        form->addRow("Type:", typeCombo);
+
+        // Board pins only (the board block itself is edited in the .rsdef).
+        QSpinBox* numberSpin = nullptr;
+        QLineEdit* capsEdit = nullptr;
+        QCheckBox* internalCheck = nullptr;
+        if (data.board.present) {
+            numberSpin = new QSpinBox(row);
+            numberSpin->setRange(-1, 999);
+            numberSpin->setSpecialValueText("(none)");
+            numberSpin->setValue(pin.number);
+            numberSpin->setToolTip("The number a sketch uses for this pin (Uno A0 = 14)");
+            form->addRow("Number:", numberSpin);
+            capsEdit = new QLineEdit(pin.caps.join(", "), row);
+            capsEdit->setPlaceholderText(PinDef::capabilities().join(", "));
+            capsEdit->setToolTip("gpio pins: what the pin can do, comma separated");
+            form->addRow("Caps:", capsEdit);
+            internalCheck = new QCheckBox("Hard-wired on the board (not wireable)", row);
+            internalCheck->setChecked(pin.internal);
+            form->addRow("Internal:", internalCheck);
+        }
+
         QLineEdit* voltageEdit = new QLineEdit(
             (pin.voltageRange.first != 0.0f || pin.voltageRange.second != 0.0f)
                 ? QString("%1, %2").arg(pin.voltageRange.first).arg(pin.voltageRange.second)
@@ -2134,11 +2189,19 @@ void ComponentEditorWindow::build_data() {
         voltageEdit->setPlaceholderText("min, max volts -- blank if unspecified");
         form->addRow("Voltage range:", voltageEdit);
 
-        auto commit = [this, pinIdx, idEdit, descEdit, voltageEdit]() {
+        auto commit = [this, pinIdx, idEdit, descEdit, typeCombo, voltageEdit, numberSpin, capsEdit, internalCheck]() {
             if (pinIdx >= data.pins.size()) return;
             PinDef& p = data.pins[pinIdx];
             p.id = idEdit->text().trimmed();
             p.description = descEdit->text();
+            p.type = typeCombo->currentData().toString();
+            if (numberSpin) p.number = numberSpin->value();
+            if (capsEdit) {
+                p.caps.clear();
+                for (const QString& c : capsEdit->text().split(',', Qt::SkipEmptyParts))
+                    if (PinDef::capabilities().contains(c.trimmed())) p.caps.append(c.trimmed());
+            }
+            if (internalCheck) p.internal = internalCheck->isChecked();
             QList<double> range = stringToDoubleList(voltageEdit->text());
             p.voltageRange = (range.size() == 2)
                 ? qMakePair(static_cast<float>(range[0]), static_cast<float>(range[1]))
@@ -2146,7 +2209,11 @@ void ComponentEditorWindow::build_data() {
         };
         connect(idEdit, &QLineEdit::editingFinished, this, commit);
         connect(descEdit, &QLineEdit::editingFinished, this, commit);
+        connect(typeCombo, &QComboBox::currentIndexChanged, this, commit);
         connect(voltageEdit, &QLineEdit::editingFinished, this, commit);
+        if (numberSpin) connect(numberSpin, &QSpinBox::valueChanged, this, commit);
+        if (capsEdit) connect(capsEdit, &QLineEdit::editingFinished, this, commit);
+        if (internalCheck) connect(internalCheck, &QCheckBox::toggled, this, commit);
 
         QPushButton* removeBtn = new QPushButton("Remove Pin", row);
         form->addRow(removeBtn);

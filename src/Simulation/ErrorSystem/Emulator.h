@@ -6,6 +6,8 @@
 
 class ComponentInstance;
 class CameraRenderer;
+class PinBus;
+class DeviceBus;
 
 
 
@@ -18,14 +20,18 @@ class CameraRenderer;
  *   Throttled   : update() once per period, also after the sensor sync, on
  *                 the first tick whose sim time reaches the deadline. For
  *                 cheap low-rate devices (display refresh, ultrasonic, GPS).
- *   Async       : sample() once per period, from INSIDE the step loop at the
- *                 exact step that reaches the deadline, under physicsMutex.
- *                 sample() must only grab what it needs and hand the heavy
- *                 work to a worker -- it may never block. update() still runs
- *                 every tick, to publish what the worker finished.
+ *   Async       : sample() once per period, right after the step that
+ *                 reaches the deadline, under physicsMutex. sample() must only
+ *                 grab what it needs and hand the heavy work to a worker -- it
+ *                 may never block. Before each step (outside physicsMutex)
+ *                 awaitDue() waits for the worker results due by the end of
+ *                 that step, so delivery depends on sim time only, never on
+ *                 how fast the host renders. update() still runs every tick,
+ *                 to publish what the worker finished.
  *
- * The physics thread is the only clock: an emulator never paces or waits on
- * it, and a worker that falls behind drops frames instead of slowing physics.
+ * "Tick" is one mj_step: synchronous emulators run after every step.
+ * Sim time is the only clock: a slow worker slows the simulation down (lower
+ * real-time factor) instead of changing what the firmware sees.
  */
 enum class Cadence { Synchronous, Throttled, Async };
 
@@ -45,13 +51,26 @@ struct SampleContext {
 
 
 
-// Inheriting from QObject to allow subclasses to expose methods to JS
+// A part's device model. A QObject for ownership and Qt's type system; the
+// firmware reaches the part through its pins and the board's buses, not
+// through methods on this object.
 class Emulator : public QObject {
     Q_OBJECT
 
     protected:
         ComponentInstance* component;
         double simTime = 0.0;   // sim time of the current update(); set by SimulationManager
+        // The run's pins (set before init()): a part reads the pins it
+        // receives on, the controller writes them.
+        PinBus* pins = nullptr;
+        // The board's I2C/SPI buses (set before init()): bus parts register here.
+        DeviceBus* buses = nullptr;
+        // The live model/data during update() (physics thread, physicsMutex
+        // held); read-only. For models that need the mechanism's state, e.g.
+        // the effective inertia a stepper drives.
+        const mjModel* physicsModel = nullptr;
+        const mjData* physicsData = nullptr;
+        quint64 instanceSeed = 0;   // set before init(); see seed()
 
     public:
         explicit Emulator(ComponentInstance* comp, QObject* parent = nullptr)
@@ -65,6 +84,17 @@ class Emulator : public QObject {
         // Read when the simulation starts (after init()).
         virtual Schedule schedule() const { return {}; }
         virtual void sample(const SampleContext&) {}
+        // Async only. Physics thread, outside physicsMutex: wait for worker
+        // results that become visible by sim time `until`.
+        virtual void awaitDue(double until) { (void)until; }
 
         void setSimTime(double t) { simTime = t; }
+        void setPins(PinBus* p) { pins = p; }
+        void setBuses(DeviceBus* b) { buses = b; }
+        void setPhysics(const mjModel* m, const mjData* d) { physicsModel = m; physicsData = d; }
+        void setSeed(quint64 s) { instanceSeed = s; }
+
+        // Reproducible per-instance seed (from the project seed and the uid);
+        // seed every random generator from it in init(), never from random_device.
+        quint64 seed() const { return instanceSeed; }
 };

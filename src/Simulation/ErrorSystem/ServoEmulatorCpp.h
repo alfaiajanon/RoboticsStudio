@@ -1,79 +1,153 @@
 #pragma once
 
 #include "Emulator.h"
+#include "Steps.h"
+#include "Simulation/Controller/PinBus.h"
+#include "EmulatorIO.h"
 #include "Document/Components/ComponentInstance.h"
 #include "Document/Components/ComponentBlueprint.h"
+#include <algorithm>
 #include <cmath>
-#include <deque>
-#include <random>
 
 /*
- * SG90/MG996R-style hobby servo emulator. All error is modeled on the
- * INPUT signal path (logicalTarget -> effectiveTarget) -- current_angle is
- * a non-physical output (physical=false, no real feedback pin exists on
- * real hardware) and is intentionally left untouched.
+ * Analog hobby servo (SG90, MG996R). The servo's own controller is modelled,
+ * in the order the signal takes through the real part:
  *
- * Signal path, in causal order: deadband (digital threshold logic) ->
- * noise (ADC sampling) -> effectiveTarget.
+ *   signal pin       the pulse width on the part's `signal` pin (PinBus),
+ *                    written by the firmware (Servo library)
+ *                    below; ideal timer for now (quantization comes with boards)
+ *   FrameLatch       one pulse per frame_period_ms, per-unit phase. No pulse
+ *                    yet: the servo is limp.
+ *   UnitVariation    pulse -> target angle with this unit's centre and scale
+ *   MeasurementNoise the pot on the OUTPUT shaft (after the gearbox backlash,
+ *                    so backlash is inside the loop and causes hunting)
+ *   Deadband         on the position error: no drive inside the band, so the
+ *                    horn sits anywhere in it and sags under load
+ *   duty             error / proportional_band, saturated
+ *   DcMotor          torque-speed line at the supply voltage -> motor actuator
  *
- * update() runs once per physics tick, after syncFromMujocoSensor and
- * before pushTelemetry (see SimulationManager::physicsLoop), so
- * effectiveTarget reaches MuJoCo on the NEXT tick (one-tick input latency).
+ * The comparator of an analog servo is continuous, so this runs after every
+ * mj_step; the torque reaches MuJoCo on the next step.
+ *
+ * Signals (names fixed, see docs/user/create_servo.md):
+ *   in  motor_torque        N·m, drives the motor actuator (written here)
+ *   in  target_angle        latched target, degrees (written here, plots and
+ *                           edit-mode posing only)
+ *   out current_angle_real  output shaft angle (tendon) -> the pot; parts
+ *                           without backlash use current_angle
+ *   out gear_velocity       gear-side speed, deg/s -> back-EMF
+ *   out pot_reading, drive  emulator-owned, for plots
+ *
+ * A real hobby servo has no feedback wire, so the firmware cannot read any of
+ * these; plots can.
  *
  * Parameters (component .rsdef -> emulator.parameters), read once in init():
- *   deadband_threshold  (degrees, default 0 = disabled)
- *   noise_stddev         (degrees, default 0 = disabled)
+ *   pulse_min_us, pulse_max_us, travel_deg   nominal pulse <-> angle mapping
+ *   frame_period_ms                          pulse frame (default 20)
+ *   deadband_us                              full dead band width
+ *   proportional_band_deg                    error giving full drive
+ *   stall_torque_nm, no_load_speed_dps, rated_voltage, supply_voltage
+ *   pot_noise_deg                            pot reading noise (stddev)
+ *   center_spread_us, gain_spread            unit-to-unit spread (stddev)
  */
 class ServoEmulatorCpp : public Emulator {
     Q_OBJECT
 
     private:
-        double logicalTarget = 0.0;    // last value JS wrote via write()
-        double heldTarget = 0.0;  // what's actually sent to MuJoCo
+        // Nominal mapping, shared by the MCU side (write) and the servo.
+        double pulseMin = 1000.0, pulseMax = 2000.0, travelDeg = 180.0;
+        double usPerDeg() const { return (pulseMax - pulseMin) / travelDeg; }
+        double pulseCenter() const { return 0.5 * (pulseMin + pulseMax); }
 
-        double deadbandThreshold = 0.0;
-        double noiseStdDev = 0.0;
+        double proportionalBand = 5.0;
+        double supplyVoltage = 5.0;
+        double rangeMin = -90.0, rangeMax = 90.0;   // target clamp: the joint's range
 
-        std::mt19937 rng{std::random_device{}()};
-        std::normal_distribution<double> noise{0.0, 1.0};
+        Steps::Rng rng;
+        Steps::FrameLatch latch;
+        Steps::UnitVariation unit;
+        Steps::Deadband deadband;
+        Steps::MeasurementNoise potNoise;
+        Steps::DcMotor motor;
+
+        int signalPin = -1;   // PinBus handle of the `signal` pin
+
+        // Where the pot sits: the output shaft after the backlash gap, or the
+        // gear joint itself for a part modelled without backlash.
+        double outputAngle() const {
+            return EmulatorIO::hasOutput(component, "current_angle_real") ? EmulatorIO::readOutput(component, "current_angle_real")
+                                                                          : EmulatorIO::readOutput(component, "current_angle");
+        }
 
     public:
         using Emulator::Emulator;
 
         void init() override {
-            if (component && component->getBlueprint()) {
-                const auto& params = component->getBlueprint()->emulatorDef.parameters;
-                deadbandThreshold = params.value("deadband_threshold", 0.0).toDouble();
-                noiseStdDev = params.value("noise_stddev", 0.0).toDouble();
+            using EmulatorIO::param;
+            ComponentBlueprint* bp = component ? component->getBlueprint() : nullptr;
+            QMap<QString, QVariant> p = bp ? bp->emulatorDef.parameters : QMap<QString, QVariant>{};
+
+            pulseMin = param(p, "pulse_min_us", 1000.0);
+            pulseMax = param(p, "pulse_max_us", 2000.0);
+            travelDeg = std::max(1.0, param(p, "travel_deg", 180.0));
+            proportionalBand = std::max(0.1, param(p, "proportional_band_deg", 5.0));
+            supplyVoltage = param(p, "supply_voltage", 5.0);
+
+            deadband.halfWidth = 0.5 * param(p, "deadband_us", 0.0) / usPerDeg();
+            potNoise.stddev = param(p, "pot_noise_deg", 0.0);
+            motor.stallTorque = param(p, "stall_torque_nm", 0.0);
+            motor.noLoadSpeed = param(p, "no_load_speed_dps", 0.0) * M_PI / 180.0;
+            motor.ratedVoltage = param(p, "rated_voltage", 5.0);
+            latch.period = std::max(1e-3, param(p, "frame_period_ms", 20.0) / 1000.0);
+
+            rangeMin = -0.5 * travelDeg;
+            rangeMax = 0.5 * travelDeg;
+            if (bp) {
+                for (const InterfaceDef& def : bp->interfaceInputs) {
+                    if (def.name != "target_angle" || def.target.kind != "joint") continue;
+                    for (const Edge& j : bp->joints) {
+                        if (j.id == def.target.id && j.range.size() == 2) { rangeMin = j.range[0]; rangeMax = j.range[1]; }
+                    }
+                }
             }
+
+            rng.seed(seed());
+            unit.draw(rng, param(p, "center_spread_us", 0.0), param(p, "gain_spread", 0.0));
+            std::uniform_real_distribution<double> phase(0.0, latch.period);
+            latch.reset(phase(rng));
+
+            signalPin = pins ? pins->ensurePin(component->uid, "signal", "pwm") : -1;
         }
 
         void update() override {
-            // 1. Deadband: only move the held (clean) setpoint if the delayed command changed enough to matter.
-            if (std::abs(logicalTarget - heldTarget) > deadbandThreshold) {
-                heldTarget = logicalTarget;
+            double pulseUs = 0.0;
+            const bool pulsePresent = pins && pins->pulse(signalPin, &pulseUs);
+            latch.tick(simTime, pulsePresent, pulseUs);
+
+            double target = 0.0, pot = 0.0, duty = 0.0, torque = 0.0;
+            if (latch.hasValue) {
+                // This unit's reading of the pulse.
+                target = (latch.value - (pulseCenter() + unit.offset)) / (usPerDeg() * unit.gain);
+                target = std::clamp(target, rangeMin, rangeMax);
+
+                pot = potNoise.measure(outputAngle(), rng);
+                double error = target - pot;
+                if (!deadband.inside(error)) duty = std::clamp(error / proportionalBand, -1.0, 1.0);
+
+                double omega = EmulatorIO::readOutput(component, "gear_velocity") * M_PI / 180.0;
+                torque = motor.torque(duty, supplyVoltage, omega);
             }
 
-            // 2. Noise: fresh sample every tick, added on top of the held setpoint
-            double effectiveTarget = heldTarget + noise(rng) * noiseStdDev;
-
-            BasicIOValue targetData = component->getActuatorValue("target_angle");
-            targetData.data[0]= effectiveTarget;
-            component->setActuatorValue("target_angle", targetData);
+            EmulatorIO::writeScalar(component, "motor_torque", torque, true);
+            EmulatorIO::writeScalar(component, "target_angle", target, true);
+            EmulatorIO::writeScalar(component, "pot_reading", pot, false);
+            EmulatorIO::writeScalar(component, "drive", duty, false);
         }
 
+        // The pins are rebuilt (undriven) at every Play.
         void reset() override {
-            logicalTarget = 0.0;
-            heldTarget = 0.0;
-        }
-
-        // API exposed to JS
-        Q_INVOKABLE void write(double angle) {
-            logicalTarget = angle;
-        }
-
-        Q_INVOKABLE double read() {
-            BasicIOValue data = component->getSensorValue("current_angle");
-            return data.dim==1 ? data.data[0] : 0.0;
+            latch.reset(0.0);
+            EmulatorIO::writeScalar(component, "motor_torque", 0.0, true);
+            EmulatorIO::writeScalar(component, "drive", 0.0, false);
         }
 };

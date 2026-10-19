@@ -21,7 +21,7 @@ CameraRenderer::CameraRenderer(MujocoContext* ctx, std::mutex* physicsMutex, Dis
     for (int i = 0; i < mjNGROUP; ++i) option.sitegroup[i] = 0;
 
     mjr_defaultContext(&gpu);
-    for (SceneSlot& slot : sceneSlots) mjv_defaultScene(&slot.scene);
+    for (int i = 0; i < kInitialSlots; ++i) mjv_defaultScene(&sceneSlots.emplace_back().scene);
 
     if (!GlfwRuntime::acquire()) return;
     acquiredGlfw = true;
@@ -75,20 +75,14 @@ bool CameraRenderer::submit(const mjModel* m, mjData* d, const CameraRequest& re
         std::lock_guard<std::mutex> lock(queueMutex);
         gen = generation;
 
-        // Latest wins: take back this camera's job if it's still waiting.
-        for (auto it = queue.begin(); it != queue.end(); ++it) {
-            if (sceneSlots[*it].request.sink == request.sink && sceneSlots[*it].request.cameraId == request.cameraId) {
-                index = *it;
-                queue.erase(it);
-                break;
-            }
+        for (int i = 0; i < int(sceneSlots.size()); ++i) {
+            if (sceneSlots[i].state == SlotState::Free) { index = i; break; }
         }
         if (index < 0) {
-            for (int i = 0; i < kSlotCount; ++i) {
-                if (sceneSlots[i].state == SlotState::Free) { index = i; break; }
-            }
+            if (int(sceneSlots.size()) >= kMaxSlots) return false;
+            index = int(sceneSlots.size());
+            mjv_defaultScene(&sceneSlots.emplace_back().scene);
         }
-        if (index < 0) return false;
         sceneSlots[index].state = SlotState::Queued;   // not in the queue yet: invisible to the worker
     }
 
@@ -122,14 +116,24 @@ bool CameraRenderer::submit(const mjModel* m, mjData* d, const CameraRequest& re
 
 /*
  * physicsMutex held, old model still alive. Queued jobs are dropped (their
- * scenes reference the old model); a job the worker is rendering finishes but
- * isn't delivered. Slots and the GPU context rebuild lazily.
+ * scenes reference the old model) and reported lost; a job the worker is
+ * rendering finishes but isn't delivered. Slots and the GPU context rebuild
+ * lazily.
  */
 void CameraRenderer::invalidate() {
-    std::lock_guard<std::mutex> lock(queueMutex);
-    ++generation;
-    for (int index : queue) sceneSlots[index].state = SlotState::Free;
-    queue.clear();
+    std::vector<std::shared_ptr<CameraFrameSink>> lost;
+    {
+        std::lock_guard<std::mutex> lock(queueMutex);
+        ++generation;
+        for (int index : queue) {
+            SceneSlot& slot = sceneSlots[index];
+            if (slot.request.sink) lost.push_back(std::move(slot.request.sink));
+            slot.request = CameraRequest{};
+            slot.state = SlotState::Free;
+        }
+        queue.clear();
+    }
+    for (const auto& sink : lost) sink->onCameraFrameLost();
 }
 
 
@@ -139,17 +143,17 @@ void CameraRenderer::workerLoop() {
 
     RenderedFrame frame;
     while (true) {
-        int index;
+        SceneSlot* slotPtr;
         {
             std::unique_lock<std::mutex> lock(queueMutex);
             queueCv.wait(lock, [this] { return stopRequested || !queue.empty(); });
             if (stopRequested) break;
-            index = queue.front();
+            slotPtr = &sceneSlots[queue.front()];
             queue.pop_front();
-            sceneSlots[index].state = SlotState::Rendering;
+            slotPtr->state = SlotState::Rendering;
         }
 
-        SceneSlot& slot = sceneSlots[index];
+        SceneSlot& slot = *slotPtr;
         bool rendered = false;
         if (ensureGpuContext(slot.jobGeneration)) {
             renderSlot(slot, frame);
@@ -165,8 +169,10 @@ void CameraRenderer::workerLoop() {
             slot.request = CameraRequest{};
             slot.state = SlotState::Free;
         }
-        // Delivered outside the lock; a frame of a replaced model is dropped.
-        if (rendered && current && sink) sink->onCameraFrame(frame);
+        // Delivered outside the lock; a frame of a replaced model is lost.
+        if (!sink) continue;
+        if (rendered && current) sink->onCameraFrame(frame);
+        else sink->onCameraFrameLost();
     }
 
     if (gpuReady) mjr_freeContext(&gpu);

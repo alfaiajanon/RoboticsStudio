@@ -93,6 +93,10 @@ class ComponentInstance {
         // joint parameters
         QMap<QString, QVariant> parameters;
 
+        // Boards only: the sketch (project-relative) this board runs at the
+        // Real level ("firmware" in the .rsproj); empty = none.
+        QString firmware;
+
         // Emulator/Controller
         Emulator* emulator = nullptr;
 

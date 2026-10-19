@@ -4,11 +4,15 @@
 #include "Document/Components/ComponentInstance.h"
 #include "Document/Components/ComponentBlueprint.h"
 #include "Simulation/Rendering/CameraRenderer.h"
+#include "Simulation/Controller/DeviceBus.h"
+#include "Simulation/Controller/PinBus.h"
 #include "Utils/Log.h"
 #include <QVariantMap>
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <deque>
 #include <limits>
 #include <mutex>
@@ -21,17 +25,23 @@
  *
  * Pipeline (Async cadence, period 1/fps in sim time):
  *   sample()  physics thread: submit the camera to the CameraRenderer (scene
- *             build only); a full renderer drops the frame.
+ *             build only) and note the frame as in flight.
  *   worker    render + read back, then this stream's error model (noise,
  *             colour cast, quantisation, random drops), queued as pending.
- *   update()  every physics tick: publish the newest pending frame whose
+ *   awaitDue  before each step: wait until every in-flight frame due by the
+ *             end of the step (capture time + latency_ms) has come back, so
+ *             what the firmware sees depends on sim time only. A frame that
+ *             takes longer than kDeliveryTimeout of wall time is given up on
+ *             and published on arrival (counted as late).
+ *   update()  every physics step: publish the newest pending frame whose
  *             capture time + latency_ms has passed (sim time) into the
- *             signal's ImageIOValue. A frame the worker delivers after its
- *             deadline is published on arrival (counted as late).
+ *             signal's ImageIOValue.
+ *
+ * Random drops and noise come from the instance seed, so a run repeats.
  *
  * Parameters (component .rsdef -> emulator.parameters), read in init():
  *   fps                 frames per sim second             (default 15)
- *   latency_ms          capture -> visible to JS, sim ms  (default 50)
+ *   latency_ms          capture -> visible to firmware, sim ms (default 50)
  *   drop_probability    chance a frame is lost, 0..1      (default 0)
  *   noise_stddev        rgb: per-channel noise, 0..255    (default 0)
  *   color_gain          rgb: [r, g, b] channel gains      (default [1,1,1])
@@ -69,28 +79,76 @@ class CameraStream : public CameraFrameSink {
 
         // Rendered frames waiting for their latency to pass, oldest first.
         std::mutex pendingMutex;
+        std::condition_variable resolvedCv;   // a frame in flight came back (or was lost)
         std::deque<RenderedFrame> pending;
+        std::deque<double> inFlight;          // capture times submitted, not yet back
+        int abandoned = 0;                    // timed out of inFlight, still to come back
+        bool warnedLate = false;              // physics thread only
+
+        // Before the first frame (init(), no frame in flight).
+        void seedRng(quint64 s) { rng.seed(s); noise.reset(); }
+
+        // Physics thread, right before submitting a frame captured at simTime.
+        void markInFlight(double simTime) {
+            std::lock_guard<std::mutex> lock(pendingMutex);
+            inFlight.push_back(simTime);
+        }
 
         void onCameraFrame(RenderedFrame& frame) override {
-            if (dropProbability > 0.0 && uniform(rng) < dropProbability) {
-                dropped++;
-                return;
-            }
-            if (depth) applyDepthErrors(frame);
-            else       applyRgbErrors(frame);
+            const bool drop = dropProbability > 0.0 && uniform(rng) < dropProbability;
+            if (drop) dropped++;
+            else if (depth) applyDepthErrors(frame);
+            else applyRgbErrors(frame);
 
-            std::lock_guard<std::mutex> lock(pendingMutex);
-            pending.push_back(std::move(frame));
+            {
+                std::lock_guard<std::mutex> lock(pendingMutex);
+                resolveOldest();
+                if (!drop) pending.push_back(std::move(frame));
+            }
+            resolvedCv.notify_all();
+        }
+
+        void onCameraFrameLost() override {
+            dropped++;
+            {
+                std::lock_guard<std::mutex> lock(pendingMutex);
+                resolveOldest();
+            }
+            resolvedCv.notify_all();
+        }
+
+        // Physics thread. False if a frame due by `until` did not come back in
+        // time; it is then no longer waited for (published whenever it arrives).
+        bool awaitDue(double until, std::chrono::milliseconds timeout) {
+            std::unique_lock<std::mutex> lock(pendingMutex);
+            auto due = [&] { return !inFlight.empty() && inFlight.front() + latencySec <= until; };
+            if (resolvedCv.wait_for(lock, timeout, [&] { return !due(); })) return true;
+            while (due()) {
+                inFlight.pop_front();
+                ++abandoned;
+            }
+            return false;
         }
 
         void clearPending() {
-            std::lock_guard<std::mutex> lock(pendingMutex);
-            pending.clear();
+            {
+                std::lock_guard<std::mutex> lock(pendingMutex);
+                pending.clear();
+                inFlight.clear();
+                abandoned = 0;
+            }
+            resolvedCv.notify_all();
         }
 
     private:
+        // pendingMutex held: a frame came back, in submit order.
+        void resolveOldest() {
+            if (abandoned > 0) --abandoned;
+            else if (!inFlight.empty()) inFlight.pop_front();
+        }
+
         // Worker thread only.
-        std::mt19937 rng{std::random_device{}()};
+        std::mt19937_64 rng;
         std::normal_distribution<double> noise{0.0, 1.0};
         std::uniform_real_distribution<double> uniform{0.0, 1.0};
 
@@ -132,7 +190,7 @@ class CameraStream : public CameraFrameSink {
 
 
 
-class CameraEmulatorCpp : public Emulator {
+class CameraEmulatorCpp : public Emulator, public CameraDevice {
     Q_OBJECT
 
     private:
@@ -141,14 +199,12 @@ class CameraEmulatorCpp : public Emulator {
         // Replaced (never mutated) by init(): frames still in flight keep the
         // old streams alive and land there harmlessly.
         std::vector<std::shared_ptr<CameraStream>> streams;
-        // MCU thread: seq of the last frame JS captured, per stream.
-        std::vector<quint64> lastReadSeq;
 
         static double param(const QMap<QString, QVariant>& p, const char* key, double def) {
             return p.contains(key) ? p.value(key).toDouble() : def;
         }
 
-        // Stream for a JS-given signal name; empty name = first camera signal.
+        // Stream for a signal name; empty name = first camera signal.
         CameraStream* find(const QString& name, int* index = nullptr) const {
             for (size_t i = 0; i < streams.size(); ++i) {
                 if (name.isEmpty() || streams[i]->signal == name) {
@@ -193,6 +249,7 @@ class CameraEmulatorCpp : public Emulator {
                 s->bitsPerChannel = int(param(params, "bits_per_channel", 8));
                 s->depthNoiseStdDev = param(params, "depth_noise_stddev", 0.0);
                 s->depthMin = param(params, "depth_min", 0.0);
+                s->seedRng(seed() ^ (0x9E3779B97F4A7C15ull * (streams.size() + 1)));
                 s->depthMax = param(params, "depth_max", 0.0);
                 const QVariantList g = params.value("color_gain").toList();
                 for (int i = 0; i < 3 && i < g.size(); ++i) s->gain[i] = g[i].toDouble();
@@ -204,8 +261,26 @@ class CameraEmulatorCpp : public Emulator {
                 }
                 streams.push_back(s);
             }
-            lastReadSeq.assign(streams.size(), 0);
             clearPublished();
+            // Firmware reaches the camera through its SCCB data pin (esp32-camera's pin_sccb_sda).
+            if (pins && buses && !streams.empty()) buses->addCamera(pins->ensurePin(component->uid, "sda", "i2c_sda"), this);
+        }
+
+        // ---- CameraDevice (firmware): the first camera signal.
+        int frameWidth() const override { return streams.empty() ? 0 : streams[0]->width; }
+        int frameHeight() const override { return streams.empty() ? 0 : streams[0]->height; }
+        bool isDepth() const override { return !streams.empty() && streams[0]->depth; }
+        CameraFrame latestFrame() const override {
+            CameraFrame f;
+            if (streams.empty()) return f;
+            const ImageIOValue img = component->getImageValue(streams[0]->signal);
+            f.pixels = img.pixels;
+            f.width = img.width;
+            f.height = img.height;
+            f.depth = img.format == ImageFormat::Depth32F;
+            f.seq = img.seq;
+            f.time = img.time;
+            return f;
         }
 
         Schedule schedule() const override {
@@ -221,7 +296,21 @@ class CameraEmulatorCpp : public Emulator {
                 req.height = s->height;
                 req.depth = s->depth;
                 req.sink = s;
-                if (req.cameraId < 0 || !ctx.cameraRenderer->submit(ctx.m, ctx.d, req)) s->dropped++;
+                if (req.cameraId < 0) { s->dropped++; continue; }
+                s->markInFlight(ctx.simTime);
+                if (!ctx.cameraRenderer->submit(ctx.m, ctx.d, req)) s->onCameraFrameLost();
+            }
+        }
+
+        // Wall time a due frame may take before it is published late instead.
+        static constexpr std::chrono::milliseconds kDeliveryTimeout{1000};
+
+        void awaitDue(double until) override {
+            for (const auto& s : streams) {
+                if (s->awaitDue(until, kDeliveryTimeout) || s->warnedLate) continue;
+                s->warnedLate = true;
+                Log::warning(QString("CameraEmulator: component %1: camera '%2' frame took over %3 ms to render; publishing late")
+                                .arg(component->uid).arg(s->signal).arg(kDeliveryTimeout.count()));
             }
         }
 
@@ -233,7 +322,11 @@ class CameraEmulatorCpp : public Emulator {
                     std::lock_guard<std::mutex> lock(s->pendingMutex);
                     // Newest frame whose latency has passed; older due ones are
                     // superseded (a real camera's buffer only holds the latest).
-                    while (!s->pending.empty() && s->pending.front().simTime + s->latencySec <= simTime) {
+                    // A frame captured at this very step shows up on the next
+                    // one at the earliest: awaitDue() could not wait for it, so
+                    // publishing it now would depend on the render speed.
+                    while (!s->pending.empty() && s->pending.front().simTime + s->latencySec <= simTime
+                           && s->pending.front().simTime < simTime) {
                         frame = std::move(s->pending.front());
                         s->pending.pop_front();
                         have = true;
@@ -270,161 +363,6 @@ class CameraEmulatorCpp : public Emulator {
                 component->setImageValue(s->signal, img);
                 s->seq = 0;
             }
-            std::fill(lastReadSeq.begin(), lastReadSeq.end(), 0);
             prevTickTime = 0.0;
-        }
-
-
-
-        // ---- API exposed to JS. `signal` picks the camera of a multi-camera
-        // ---- component; omitted, the first camera signal is used.
-
-        Q_INVOKABLE int width(const QString& signal = QString()) const {
-            CameraStream* s = find(signal);
-            return s ? s->width : 0;
-        }
-
-        Q_INVOKABLE int height(const QString& signal = QString()) const {
-            CameraStream* s = find(signal);
-            return s ? s->height : 0;
-        }
-
-        // Sequence number of the newest published frame (0 = none yet).
-        Q_INVOKABLE double seq(const QString& signal = QString()) const {
-            return double(current(signal).seq);
-        }
-
-        // True if a frame newer than the last capture() is ready.
-        Q_INVOKABLE bool available(const QString& signal = QString()) const {
-            int index = -1;
-            if (!find(signal, &index)) return false;
-            ImageIOValue img = current(signal);
-            return img.pixels && img.seq != lastReadSeq[index];
-        }
-
-        // {width, height, time, seq, format: "rgb"|"depth", data: ArrayBuffer}
-        // rgb: 3 bytes per pixel, rows top to bottom. depth: Float32 meters
-        // (read with new Float32Array(frame.data)), 0 = no return.
-        // undefined until the first frame arrives.
-        Q_INVOKABLE QVariant capture(const QString& signal = QString()) {
-            int index = -1;
-            if (!find(signal, &index)) return QVariant();
-            ImageIOValue img = current(signal);
-            if (!img.pixels) return QVariant();
-            lastReadSeq[index] = img.seq;
-
-            QVariantMap frame;
-            frame["width"] = img.width;
-            frame["height"] = img.height;
-            frame["time"] = img.time;
-            frame["seq"] = double(img.seq);
-            frame["format"] = img.format == ImageFormat::Depth32F ? "depth" : "rgb";
-            frame["data"] = *img.pixels;
-            return frame;
-        }
-
-        // rgb: {r, g, b} of one pixel; depth: {depth}. undefined if out of range.
-        Q_INVOKABLE QVariant getPixel(int x, int y, const QString& signal = QString()) const {
-            ImageIOValue img = current(signal);
-            if (!img.pixels || x < 0 || y < 0 || x >= img.width || y >= img.height) return QVariant();
-            QVariantMap px;
-            if (img.format == ImageFormat::Depth32F) {
-                px["depth"] = reinterpret_cast<const float*>(img.pixels->constData())[y * img.width + x];
-            } else {
-                const unsigned char* p = reinterpret_cast<const unsigned char*>(img.pixels->constData()) + (y * img.width + x) * 3;
-                px["r"] = p[0];
-                px["g"] = p[1];
-                px["b"] = p[2];
-            }
-            return px;
-        }
-
-        // Depth in meters at a pixel (0 = no return, -1 = not a depth camera / out of range).
-        Q_INVOKABLE double getDepth(int x, int y, const QString& signal = QString()) const {
-            ImageIOValue img = current(signal);
-            if (!img.pixels || img.format != ImageFormat::Depth32F) return -1.0;
-            if (x < 0 || y < 0 || x >= img.width || y >= img.height) return -1.0;
-            return reinterpret_cast<const float*>(img.pixels->constData())[y * img.width + x];
-        }
-
-        // One byte per pixel, rows top to bottom, as an ArrayBuffer.
-        // rgb: luma. depth: near = bright, 0 for no return; scaled to depth_max
-        // (or the frame's farthest point if depth_max is 0).
-        Q_INVOKABLE QByteArray toGray(const QString& signal = QString()) const {
-            ImageIOValue img = current(signal);
-            if (!img.pixels) return QByteArray();
-            const int n = img.width * img.height;
-            QByteArray out(n, '\0');
-            unsigned char* dst = reinterpret_cast<unsigned char*>(out.data());
-
-            if (img.format == ImageFormat::Depth32F) {
-                const float* src = reinterpret_cast<const float*>(img.pixels->constData());
-                CameraStream* s = find(signal);
-                double range = s ? s->depthMax : 0.0;
-                if (range <= 0.0) {
-                    for (int i = 0; i < n; ++i) range = std::max(range, double(src[i]));
-                }
-                if (range <= 0.0) return out;
-                for (int i = 0; i < n; ++i) {
-                    if (src[i] <= 0.0f) continue;
-                    dst[i] = static_cast<unsigned char>(std::clamp(255.0 * (1.0 - src[i] / range), 0.0, 255.0));
-                }
-            } else {
-                const unsigned char* src = reinterpret_cast<const unsigned char*>(img.pixels->constData());
-                for (int i = 0; i < n; ++i) {
-                    dst[i] = static_cast<unsigned char>((77 * src[3 * i] + 150 * src[3 * i + 1] + 29 * src[3 * i + 2]) >> 8);
-                }
-            }
-            return out;
-        }
-
-        // Mean over a rectangle (clipped to the image).
-        // rgb: {r, g, b, gray}; depth: {depth} over pixels with a return.
-        Q_INVOKABLE QVariant regionMean(int x, int y, int w, int h, const QString& signal = QString()) const {
-            ImageIOValue img = current(signal);
-            if (!img.pixels) return QVariant();
-            const int x0 = std::max(0, x), y0 = std::max(0, y);
-            const int x1 = std::min(img.width, x + w), y1 = std::min(img.height, y + h);
-            if (x1 <= x0 || y1 <= y0) return QVariant();
-
-            QVariantMap result;
-            if (img.format == ImageFormat::Depth32F) {
-                const float* src = reinterpret_cast<const float*>(img.pixels->constData());
-                double sum = 0.0;
-                int count = 0;
-                for (int yy = y0; yy < y1; ++yy)
-                    for (int xx = x0; xx < x1; ++xx) {
-                        float v = src[yy * img.width + xx];
-                        if (v > 0.0f) { sum += v; ++count; }
-                    }
-                result["depth"] = count ? sum / count : 0.0;
-            } else {
-                const unsigned char* src = reinterpret_cast<const unsigned char*>(img.pixels->constData());
-                double r = 0, g = 0, b = 0;
-                for (int yy = y0; yy < y1; ++yy)
-                    for (int xx = x0; xx < x1; ++xx) {
-                        const unsigned char* p = src + (yy * img.width + xx) * 3;
-                        r += p[0]; g += p[1]; b += p[2];
-                    }
-                const double n = double(x1 - x0) * (y1 - y0);
-                result["r"] = r / n;
-                result["g"] = g / n;
-                result["b"] = b / n;
-                result["gray"] = (0.299 * r + 0.587 * g + 0.114 * b) / n;
-            }
-            return result;
-        }
-
-        // Frames lost so far: renderer busy, drop_probability, no camera.
-        Q_INVOKABLE double droppedFrames(const QString& signal = QString()) const {
-            CameraStream* s = find(signal);
-            return s ? double(s->dropped.load()) : 0.0;
-        }
-
-        // Frames the renderer delivered after their latency had already passed
-        // (published on arrival instead) -- the GPU can't keep up with fps.
-        Q_INVOKABLE double lateFrames(const QString& signal = QString()) const {
-            CameraStream* s = find(signal);
-            return s ? double(s->late.load()) : 0.0;
         }
 };

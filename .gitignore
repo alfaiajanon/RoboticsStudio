@@ -5,3 +5,4 @@ CLAUDE.md
 HANDOFF.old.md
 MUJOCO_LOG.TXT
 project_structure.txt
+extern/wasi-sdk/

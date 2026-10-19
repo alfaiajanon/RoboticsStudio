@@ -1,51 +1,278 @@
 {
-    "schema": 2,
-    "id": "motor_dc_gear_60rpm",
-    "meta": {
-        "hint_class": "actuator",
-        "name": "12V 60RPM DC Gear BO Motor (Dual Shaft)",
-        "version": "1.0.0",
-        "author": "Anon",
-        "icon_path": "dc_gear_60rpm.png"
-    },
-    "resources": {
-        "meshes": {
-            "mesh_body": "meshes/tt_motor.obj",
-            "mesh_shaft": "meshes/shaft.obj"
-        },
-        "materials": {
-            "mat_motor": "textures/tex_tt_motor.png"
-        }
-    },
-    "specs": {
-        "voltage_max": 12.0,
-        "voltage_min": 3.0,
-        "max_torque_nm": 0.15,
-        "max_speed_rad": 6.28,
-        "weight_kg": 0.035
-    },
-    "pins": [
+    "connectors": [
         {
-            "id": "motor_a",
-            "voltage_range": [
-                -12.0,
-                12.0
-            ],
-            "description": "Motor terminal A (H-Bridge Output 1)"
+            "body": "base",
+            "description": "",
+            "id": "chassie_left_1",
+            "transform": {
+                "pos": [
+                    0.0087,
+                    -0.019,
+                    0.0206
+                ],
+                "quat": [
+                    0.7071067811865476,
+                    0.7071067811865475,
+                    0,
+                    0
+                ]
+            }
         },
         {
-            "id": "motor_b",
-            "voltage_range": [
-                -12.0,
-                12.0
-            ],
-            "description": "Motor terminal B (H-Bridge Output 2)"
+            "body": "base",
+            "description": "",
+            "id": "chassie_left_2",
+            "transform": {
+                "pos": [
+                    -0.0087,
+                    -0.019,
+                    0.0206
+                ],
+                "quat": [
+                    0.7071067811865476,
+                    0.7071067811865475,
+                    0,
+                    0
+                ]
+            }
+        },
+        {
+            "body": "base",
+            "description": "Right mounting hole",
+            "id": "chassie_right_1",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    90,
+                    180,
+                    270
+                ]
+            },
+            "transform": {
+                "pos": [
+                    0.0087,
+                    2e-04,
+                    0.0206
+                ],
+                "quat": [
+                    4.329780281177467e-17,
+                    -4.329780281177466e-17,
+                    0.7071067811865476,
+                    0.7071067811865475
+                ]
+            }
+        },
+        {
+            "body": "base",
+            "description": "",
+            "id": "chassie_right_2",
+            "transform": {
+                "pos": [
+                    -0.0087,
+                    2e-04,
+                    0.0206
+                ],
+                "quat": [
+                    4.329780281177467e-17,
+                    -4.329780281177466e-17,
+                    0.7071067811865476,
+                    0.7071067811865475
+                ]
+            }
+        },
+        {
+            "body": "axle",
+            "description": "Left-side flattened TT shaft",
+            "id": "shaft_left",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    180
+                ]
+            },
+            "transform": {
+                "pos": [
+                    0,
+                    -0.0279,
+                    0
+                ],
+                "quat": [
+                    0.7071067811865476,
+                    0.7071067811865475,
+                    0,
+                    0
+                ]
+            }
+        },
+        {
+            "body": "axle",
+            "description": "Right-side flattened TT shaft",
+            "id": "shaft_right",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    180
+                ]
+            },
+            "transform": {
+                "pos": [
+                    0,
+                    0.0091,
+                    0
+                ],
+                "quat": [
+                    4.329780281177467e-17,
+                    -4.329780281177466e-17,
+                    0.7071067811865476,
+                    0.7071067811865475
+                ]
+            }
         }
     ],
+    "devices": {
+        "actuators": [
+            {
+                "ctrlrange": [
+                    -0.25,
+                    0.25
+                ],
+                "forcerange": [
+                    -0.25,
+                    0.25
+                ],
+                "id": "dc_motor",
+                "target": {
+                    "id": "dc_joint",
+                    "kind": "joint"
+                },
+                "type": "motor"
+            }
+        ],
+        "sensors": [
+            {
+                "id": "dc_vel",
+                "target": {
+                    "id": "dc_joint",
+                    "kind": "joint"
+                },
+                "type": "jointvel"
+            }
+        ]
+    },
+    "emulator": {
+        "parameter_sources": {
+            "no_load_speed_rpm": "spec sheet: 60 rpm at 12 V measured with the gearbox's friction (generic BO gear motor listing); the line runs through that point, so its friction-free intercept is 64 rpm (harness, 2026-10-19: 58.4 rpm at no load); to be measured (plan task 37)",
+            "rated_voltage": "spec sheet: voltage of the speed and torque figures",
+            "speed_spread": "estimate: unit-to-unit no-load speed spread (stddev); to be measured",
+            "stall_torque_nm": "estimate: the listing's max torque 0.15 N\u00b7m taken as the stall torque at 12 V; to be measured",
+            "supply_voltage": "assumption: 12 V supply through an ideal H-bridge, until the power net and driver parts exist (plan Phase 2)"
+        },
+        "parameters": {
+            "no_load_speed_rpm": 64,
+            "rated_voltage": 12,
+            "speed_spread": 0.05,
+            "stall_torque_nm": 0.15,
+            "supply_voltage": 12
+        },
+        "source": {
+        },
+        "type": "dc_gear_emulator"
+    },
+    "id": "motor_dc_gear_60rpm",
+    "interface": {
+        "inputs": [
+            {
+                "internal": true,
+                "name": "motor_torque",
+                "physical": false,
+                "target": {
+                    "id": "dc_motor",
+                    "kind": "actuator"
+                },
+                "unit": "N\u00b7m"
+            }
+        ],
+        "outputs": [
+            {
+                "name": "current_velocity",
+                "physical": false,
+                "target": {
+                    "id": "dc_vel",
+                    "kind": "sensor"
+                },
+                "unit": "rad/s"
+            },
+            {
+                "channel_type": "scalar",
+                "dim": 1,
+                "internal": true,
+                "name": "drive",
+                "physical": false,
+                "target": {
+                    "kind": "emulator"
+                }
+            }
+        ]
+    },
     "kinematics": {
-        "default_body": "base",
         "bodies": [
             {
+                "geoms": [
+                    {
+                        "id": "axle_geom",
+                        "mass": 0.005,
+                        "mesh": "mesh_shaft",
+                        "pos": [
+                            0,
+                            0,
+                            0
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "type": "mesh"
+                    }
+                ],
+                "id": "axle",
+                "overrideGeom": false,
+                "transform": {
+                    "pos": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "quat": [
+                        1,
+                        0,
+                        0,
+                        0
+                    ]
+                }
+            },
+            {
+                "geoms": [
+                    {
+                        "id": "base_geom",
+                        "mass": 0.03,
+                        "material": "mat_motor",
+                        "mesh": "mesh_body",
+                        "pos": [
+                            0,
+                            0,
+                            0
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "type": "mesh"
+                    }
+                ],
                 "id": "base",
                 "overrideGeom": false,
                 "transform": {
@@ -60,53 +287,28 @@
                         0,
                         0
                     ]
-                },
-                "geoms": [
-                    {
-                        "id": "base_geom",
-                        "type": "mesh",
-                        "mesh": "mesh_body",
-                        "material": "mat_motor",
-                        "mass": 0.03
-                    }
-                ]
-            },
-            {
-                "id": "axle",
-                "overrideGeom": false,
-                "transform": {
-                    "pos": [
-                        0,
-                        0.0,
-                        0
-                    ],
-                    "quat": [
-                        1,
-                        0,
-                        0,
-                        0
-                    ]
-                },
-                "geoms": [
-                    {
-                        "id": "axle_geom",
-                        "type": "mesh",
-                        "mesh": "mesh_shaft",
-                        "mass": 0.005
-                    }
-                ]
+                }
             }
         ],
+        "default_body": "base",
         "joints": [
             {
-                "id": "dc_joint",
+                "armature": 0.0015,
                 "body_a": "base",
                 "body_b": "axle",
-                "type": "hinge",
+                "collision": false,
+                "damping": 0.0005,
+                "frictionloss": 0.01,
+                "id": "dc_joint",
+                "sources": {
+                    "armature": "estimate: rotor inertia (~1e-7 kg\u00b7m\u00b2) times the gear ratio squared (~120:1) for a small BO gear motor; to be measured (spin-down test)",
+                    "damping": "estimate: bearing loss only; back-EMF is in the motor model",
+                    "frictionloss": "estimate: gearbox static friction, about 7 % of stall torque, so the motor doesn't start below ~7 % duty; to be measured (plan task 37)"
+                },
                 "transform": {
                     "pos": [
                         0,
-                        0.0,
+                        0,
                         0
                     ],
                     "quat": [
@@ -116,177 +318,52 @@
                         0
                     ]
                 },
-                "damping": 0.005,
-                "armature": 0.01,
-                "frictionloss": 0.01,
-                "collision": false
+                "type": "hinge"
             }
         ]
     },
-    "connectors": [
+    "meta": {
+        "author": "Anon",
+        "hint_class": "actuator",
+        "icon_path": "dc_gear_60rpm.png",
+        "name": "12V 60RPM DC Gear BO Motor (Dual Shaft)",
+        "version": "1.0.0"
+    },
+    "pins": [
         {
-            "id": "shaft_left",
-            "body": "axle",
-            "description": "Left-side flattened TT shaft",
-            "mechanics": {
-                "snap_angles": [
-                    0,
-                    180
-                ]
-            },
-            "transform": {
-                "pos": [
-                    0,
-                    -0.02,
-                    0
-                ],
-                "quat": [
-                    0.7071,
-                    0.7071,
-                    0,
-                    0
-                ]
-            }
+            "description": "Motor terminal A. At the Prototype level an ideal H-bridge (DRV8833-style) drives it from this board pin (driver input IN1)",
+            "id": "motor_a",
+            "type": "pwm",
+            "voltage_range": [
+                -12,
+                12
+            ]
         },
         {
-            "id": "shaft_right",
-            "body": "axle",
-            "description": "Right-side flattened TT shaft",
-            "mechanics": {
-                "snap_angles": [
-                    0,
-                    180
-                ]
-            },
-            "transform": {
-                "pos": [
-                    0,
-                    0.002,
-                    0
-                ],
-                "quat": [
-                    0.7071,
-                    -0.7071,
-                    0,
-                    0
-                ]
-            }
-        },
-        {
-            "id": "chassis_mount_1",
-            "body": "base",
-            "description": "Right mounting hole",
-            "mechanics": {
-                "snap_angles": [
-                    0,
-                    90,
-                    180,
-                    270
-                ]
-            },
-            "transform": {
-                "pos": [
-                    0,
-                    0,
-                    0.0205
-                ],
-                "quat": [
-                    0.7071,
-                    -0.7071,
-                    0,
-                    0
-                ]
-            }
-        },
-        {
-            "id": "chassis_mount_2",
-            "body": "base",
-            "description": "Left mounting hole",
-            "mechanics": {
-                "snap_angles": [
-                    0,
-                    90,
-                    180,
-                    270
-                ]
-            },
-            "transform": {
-                "pos": [
-                    0,
-                    -0.019,
-                    0.0205
-                ],
-                "quat": [
-                    0.7071,
-                    0.7071,
-                    0,
-                    0
-                ]
-            }
+            "description": "Motor terminal B. At the Prototype level an ideal H-bridge (DRV8833-style) drives it from this board pin (driver input IN2)",
+            "id": "motor_b",
+            "type": "pwm",
+            "voltage_range": [
+                -12,
+                12
+            ]
         }
     ],
-    "devices": {
-        "actuators": [
-            {
-                "id": "dc_motor",
-                "type": "velocity",
-                "target": {
-                    "kind": "joint",
-                    "id": "dc_joint"
-                },
-                "ctrlrange": [
-                    -6.28,
-                    6.28
-                ],
-                "forcerange": [
-                    -0.35,
-                    0.35
-                ],
-                "kv": 10.0
-            }
-        ],
-        "sensors": [
-            {
-                "id": "dc_vel",
-                "type": "jointvel",
-                "target": {
-                    "kind": "joint",
-                    "id": "dc_joint"
-                }
-            }
-        ]
-    },
-    "interface": {
-        "inputs": [
-            {
-                "name": "target_velocity",
-                "unit": "rad/s",
-                "physical": true,
-                "target": {
-                    "kind": "joint",
-                    "id": "dc_joint"
-                }
-            }
-        ],
-        "outputs": [
-            {
-                "name": "current_velocity",
-                "unit": "rad/s",
-                "physical": false,
-                "target": {
-                    "kind": "sensor",
-                    "id": "dc_vel"
-                }
-            }
-        ]
-    },
-    "emulator": {
-        "type": "dc_gear_emulator",
-        "source": null,
-        "parameters": {
-            "max_rpm_at_12v": 60,
-            "deadband_pwm": 30,
-            "acceleration_delay_ms": 100
+    "resources": {
+        "materials": {
+            "mat_motor": "textures/tex_tt_motor.png"
+        },
+        "meshes": {
+            "mesh_body": "meshes/tt_motor.obj",
+            "mesh_shaft": "meshes/shaft.obj"
         }
+    },
+    "schema": 3,
+    "specs": {
+        "max_speed_rad": 6.28,
+        "max_torque_nm": 0.15,
+        "voltage_max": 12,
+        "voltage_min": 3,
+        "weight_kg": 0.035
     }
 }

@@ -36,6 +36,16 @@ jobs:
         version: '6.10.2'
         modules: 'qt3d'
 
+    # Firmware compiler for robot sketches (bundled in the AppImage, see Package).
+    - name: Cache wasi-sdk
+      uses: actions/cache@v4
+      with:
+        path: extern/wasi-sdk
+        key: wasi-sdk-${{ hashFiles('tools/fetch_wasi_sdk.sh') }}
+
+    - name: Fetch wasi-sdk
+      run: tools/fetch_wasi_sdk.sh
+
     - name: Configure CMake
       run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
 
@@ -65,7 +75,24 @@ jobs:
 
         patchelf --set-rpath '$ORIGIN/../lib' AppDir/usr/bin/RoboticsStudio
 
-        ./linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
+        # Firmware toolchain + Arduino core, copied after linuxdeploy so it
+        # never rewrites the toolchain's own library paths ($ORIGIN/../lib).
+        tools/stage_firmware_toolchain.sh AppDir
+
+        wget -c "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
+        chmod +x appimagetool-x86_64.AppImage
+        ARCH=x86_64 ./appimagetool-x86_64.AppImage AppDir RoboticsStudio-x86_64.AppImage
+
+    - name: Report AppImage size
+      run: |
+        {
+          echo "### AppImage"
+          echo "| | Size |"
+          echo "|---|---|"
+          echo "| AppImage | $(du -h RoboticsStudio*.AppImage | cut -f1) |"
+          echo "| AppDir (unpacked) | $(du -sh AppDir | cut -f1) |"
+          echo "| of which firmware toolchain | $(du -sh AppDir/usr/lib/roboticsstudio/wasi-sdk | cut -f1) |"
+        } >> "$GITHUB_STEP_SUMMARY"
 
     - name: Upload AppImage Artifact
       uses: actions/upload-artifact@v4
@@ -89,3 +116,37 @@ jobs:
         publish_dir: ./models
         destination_dir: models
         keep_files: true
+
+  # Every demo and example firmware sketch must also compile, unchanged, for
+  # its real board (with that board's robot_pins.h): what is learned in the
+  # simulator transfers.
+  transfer-check:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Install arduino-cli
+      uses: arduino/setup-arduino-cli@v2
+
+    - name: Cache Arduino cores and libraries
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.arduino15
+          ~/Arduino/libraries
+        key: arduino-${{ hashFiles('tools/check_transfer.sh') }}
+
+    - name: Install cores and libraries
+      env:
+        ARDUINO_BOARD_MANAGER_ADDITIONAL_URLS: https://espressif.github.io/arduino-esp32/package_esp32_index.json
+      run: |
+        arduino-cli core update-index
+        arduino-cli core install arduino:avr esp32:esp32
+        arduino-cli lib install Servo ESP32Servo "Adafruit ST7735 and ST7789 Library" "Adafruit GFX Library"
+
+    - name: Sketches compile for their real boards (Uno, ESP32-CAM)
+      env:
+        ARDUINO_BOARD_MANAGER_ADDITIONAL_URLS: https://espressif.github.io/arduino-esp32/package_esp32_index.json
+      run: tools/check_transfer.sh

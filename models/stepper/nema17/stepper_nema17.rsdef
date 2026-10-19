@@ -1,5 +1,5 @@
 {
-    "schema": 2,
+    "schema": 3,
     "id": "stepper_nema17",
     "meta": {
         "hint_class": "actuator",
@@ -26,6 +26,7 @@
     "pins": [
         {
             "id": "vmot",
+            "type": "power",
             "voltage_range": [
                 9.0,
                 24.0
@@ -34,14 +35,17 @@
         },
         {
             "id": "step",
+            "type": "digital",
             "description": "Pulse input for stepping"
         },
         {
             "id": "dir",
+            "type": "digital",
             "description": "Direction control (HIGH/LOW)"
         },
         {
             "id": "gnd",
+            "type": "ground",
             "description": "Common ground"
         }
     ],
@@ -127,9 +131,14 @@
                         0
                     ]
                 },
-                "damping": 0.05,
-                "armature": 0.01,
-                "frictionloss": 0.02
+                "damping": 0.0001,
+                "armature": 0.00036,
+                "frictionloss": 0.01,
+                "sources": {
+                    "armature": "numerical: the minimum inertia that keeps the real torque-angle stiffness (holding x pi/2 / step = 20 N·m/rad) stable at the 2 ms physics step, Steps::StepperRotor::minInertia; the real rotor is ~5.4e-6 kg·m² (17HS4401: 54 g·cm²), so an almost unloaded motor accelerates slower than a real one",
+                    "damping": "estimate: bearing loss only; the driver's damping is in the motor model",
+                    "frictionloss": "estimate: stands in for the detent torque (~2.5 % of holding torque); to be measured (plan task 37)"
+                }
             }
         ]
     },
@@ -217,20 +226,19 @@
         "actuators": [
             {
                 "id": "stepper_motor",
-                "type": "velocity",
+                "type": "motor",
                 "target": {
                     "kind": "joint",
                     "id": "stepper_joint"
                 },
                 "ctrlrange": [
-                    -20.0,
-                    20.0
+                    -0.6,
+                    0.6
                 ],
                 "forcerange": [
-                    -0.45,
-                    0.45
-                ],
-                "kv": 1.0
+                    -0.6,
+                    0.6
+                ]
             }
         ],
         "sensors": [
@@ -255,19 +263,13 @@
     "interface": {
         "inputs": [
             {
-                "name": "target_velocity",
-                "unit": "rad/s",
-                "domain": {
-                    "type": "ranged",
-                    "parameters": {
-                        "min": -20.0,
-                        "max": 20.0
-                    }
-                },
-                "physical": true,
+                "name": "motor_torque",
+                "unit": "N·m",
+                "physical": false,
+                "internal": true,
                 "target": {
-                    "kind": "joint",
-                    "id": "stepper_joint"
+                    "kind": "actuator",
+                    "id": "stepper_motor"
                 }
             }
         ],
@@ -275,7 +277,7 @@
             {
                 "name": "current_position",
                 "unit": "radians",
-                "physical": true,
+                "physical": false,
                 "target": {
                     "kind": "sensor",
                     "id": "stepper_pos"
@@ -284,11 +286,21 @@
             {
                 "name": "current_velocity",
                 "unit": "rad/s",
-                "physical": true,
+                "physical": false,
                 "target": {
                     "kind": "sensor",
                     "id": "stepper_vel"
                 }
+            },
+            {
+                "name": "missed_steps",
+                "physical": false,
+                "internal": true,
+                "target": {
+                    "kind": "emulator"
+                },
+                "channel_type": "scalar",
+                "dim": 1
             }
         ]
     },
@@ -296,9 +308,16 @@
         "type": "stepper_emulator",
         "source": null,
         "parameters": {
+            "holding_torque_nm": 0.4,
             "step_angle_deg": 1.8,
             "microstepping": 1,
-            "holding_torque_factor": 1.0
+            "pullout_corner_rpm": 300
+        },
+        "parameter_sources": {
+            "holding_torque_nm": "datasheet: 17HS4401 (typical NEMA17), holding torque 40 N·cm at rated current",
+            "step_angle_deg": "datasheet: 17HS4401, 1.8° step angle (200 steps/rev)",
+            "microstepping": "driver setting: A4988 with MS1-MS3 LOW = full steps; set 2/4/8/16 to match the driver's MS pins",
+            "pullout_corner_rpm": "estimate: speed where the pull-out torque halves for a NEMA17 on an A4988 at 12 V (from typical torque-speed curves); to be measured (plan task 37)"
         }
     }
 }

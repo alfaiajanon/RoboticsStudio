@@ -1,6 +1,6 @@
 # Creating a display
 
-A TFT or OLED screen the script draws on. The picture shows on the part in the 3D view, in camera images, and in Image plot canvases. Read [component_basics.md](component_basics.md) first. Reference: `models/display/display_tft_160x128`.
+A TFT screen the firmware draws on. The picture shows on the part in the 3D view, in camera images, and in Image plot canvases. Read [component_basics.md](component_basics.md) first. Reference: `models/display/display_tft_160x128`.
 
 ## Structure
 
@@ -27,11 +27,15 @@ A TFT or OLED screen the script draws on. The picture shows on the part in the 3
 
 Put the surface about **0.1 mm in front** of the geom's face, or it flickers (z-fighting). In the Component Editor, **Fit Surface to Geom** does this for box geoms: it covers the box's +Z face.
 
-The surface is required; a display without one fails to load. Until the script sends a frame, the screen shows a dark "powered-off" panel.
+The surface is required; a display without one fails to load. Until something is drawn, the screen shows a dark "powered-off" panel.
 
 ## Interface
 
 One input with target kind `display`, any name (for example `screen`). Only the **first** display signal of a part is driven.
+
+## Pins
+
+For an SPI TFT (ST7735): `sck` (`spi_sck`), `mosi` (`spi_mosi`), `cs`, `dc`, `rst` (`digital`), `led` (`pwm`, the backlight), `vcc`, `gnd`. The part listens on the board's SPI bus while `cs` is LOW. An undriven `led` counts as wired to VCC; LOW turns the backlight off, PWM dims it.
 
 ## Emulator
 
@@ -40,37 +44,31 @@ One input with target kind `display`, any name (for example `screen`). Only the 
 | Parameter | Default | Effect |
 |---|---|---|
 | `refresh_hz` | 30 | how often the panel shows a new frame (sim time). Drawing faster than this just skips frames |
-| `transfer_ms` | 0 | how long `display()` blocks the script, like pushing the buffer over SPI/I²C. About 5–20 ms for a 160×128 TFT, 25+ ms for an I²C OLED. Max 200 |
 
-## Script API
+## Firmware: an ST7735 on SPI
 
-Drawing goes to a hidden buffer; **nothing shows until `display()`**, like Adafruit GFX. Colors are numbers `0xRRGGBB` or strings (`"#ff8800"`, `"red"`).
+From firmware the display is a real ST7735 controller: the sketch uses the Adafruit libraries (`Adafruit_ST7735`, `Adafruit_GFX`; RoboticsStudio ships a compatible subset), and the same sketch drives a real 1.8" TFT. See `examples/firmware/tft_display` and [firmware.md](firmware.md).
 
-```javascript
-let screen = comp_3;
-let n = 0;
-function loop() {
-    screen.clear();
-    screen.fillRect(0, 0, screen.width(), 12, 0x003366);
-    screen.drawText(2, 1, "count " + n++, 0xffffff, 10);
-    screen.drawCircle(80, 70, 20, "yellow");
-    screen.display();
-    delay(100);
+```cpp
+#include <SPI.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_ST7735.h>
+#include "robot_pins.h"
+Adafruit_ST7735 tft(TFT_CS, TFT_DC, TFT_RST);   // the part named "TFT"
+
+void setup() {
+  tft.initR(INITR_BLACKTAB);   // reset + wake-up: about 1 s, as on the real controller
+  tft.setRotation(1);          // landscape, upright on this part
+  tft.fillScreen(ST77XX_BLACK);
+  tft.setCursor(10, 10); tft.setTextColor(ST77XX_WHITE); tft.print("Hello");
 }
 ```
 
-| Call | |
-|---|---|
-| `width()`, `height()` | resolution |
-| `clear()`, `fill(c)` | whole buffer black / color |
-| `drawPixel(x, y, c)` | |
-| `drawLine(x0, y0, x1, y1, c)` | |
-| `drawRect` / `fillRect(x, y, w, h, c)` | |
-| `drawCircle` / `fillCircle(x, y, r, c)` | |
-| `drawText(x, y, text, c, size)` | (x, y) = top-left, size in pixels (default 8) |
-| `drawGray(data, w, h, x, y)` | blit a grayscale `ArrayBuffer`, for example a camera's `toGray()` |
-| `drawRGB(data, w, h, x, y)` | blit an RGB888 `ArrayBuffer`, for example a camera frame's `data` |
-| `display()` | send the buffer to the panel (blocks `transfer_ms`) |
+- The controller powers up asleep and dark: nothing shows before `initR()`.
+- Commands handled: reset, sleep in/out, display on/off, colour inversion, the address window (`CASET`/`RASET`), `RAMWR` (RGB565 pixels), `MADCTL` (rotation, mirroring, BGR) and `COLMOD`. Others are accepted and ignored.
+- The controller's memory is the native 128×160 portrait frame; this part's landscape screen shows it turned, as a module mounted on its side: `setRotation(1)` draws upright.
+- Drawing appears as it happens (the controller has no back buffer); the panel refreshes at `refresh_hz`.
+- SPI transfers take no simulated time at the Prototype level; bus timing comes with the Real level.
 
 ## Workarounds
 

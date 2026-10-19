@@ -11,11 +11,14 @@
 #include "View/Panels/PlotPanel.h"
 #include "View/Panels/ComponentsPanel.h"
 #include "View/Panels/ScriptPanel.h"
+#include "View/Panels/Wiring/WiringPage.h"
 #include "View/Panels/StagePanel.h"
 #include "View/Panels/OutputPanel.h"
 #include "View/Viewport/MViewport.h"
 #include "View/Viewport/Camera.h"
 #include "View/Widgets/HudStack.h"
+
+class FirmwareCompiler;
 
 
 
@@ -37,8 +40,12 @@ class EditorWindow : public QMainWindow{
         QLabel* fpsLabel;
         QLabel* simTimeLabel;
         QLabel* collisionCountLabel;
+        QLabel* rtfLabel;   // real-time factor: sim seconds per wall second
+        QPushButton* levelBadge = nullptr;   // "Prototype · ideal board" / "Real · Uno"; opens the project settings
+        void updateLevelBadge();
 
         QPushButton* playBtn;
+        FirmwareCompiler* firmwareCompiler = nullptr;   // C++ sketches, compiled on Play
         QPushButton* pauseBtn;
         QMenu* editMenu = nullptr;
         // Ctrl+S: saves the open script on the Script page, the project elsewhere.
@@ -67,6 +74,7 @@ class EditorWindow : public QMainWindow{
         OutputPanel* outputPanel;
         PlotPanel* plotPanel;
         ScriptPanel* scriptPanel;
+        WiringPage* wiringPage = nullptr;   // Real level only
         StagePanel* stagePanel;
 
 
@@ -108,5 +116,6 @@ class EditorWindow : public QMainWindow{
 
     public slots:
         void selectComponent(int uid);
+        void showScriptPage() { if (centerStack) centerStack->setCurrentPage(scriptPanel); }
         void clearSelection();
 };

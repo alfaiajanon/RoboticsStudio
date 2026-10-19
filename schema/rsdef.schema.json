@@ -1,6 +1,6 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
-    "title": "Robotics Studio Component Definition (RSDEF), schema 2",
+    "title": "Robotics Studio Component Definition (RSDEF), schema 3",
     "description": "Structure of an .rsdef file. JSON Schema cannot express cross-references, so these are checked elsewhere (ComponentData::fromJson and tools/validate_rsdef.py): ids unique within their kind (device ids across all device families; signal names across inputs and outputs), every target id resolves, joint and connector bodies exist, default_body is a body, tendon joints exist, joints sharing a body pair all have armature > 0.",
     "type": "object",
     "additionalProperties": false,
@@ -8,8 +8,8 @@
     "properties": {
         "$schema": { "type": "string" },
         "schema": {
-            "const": 2,
-            "description": "Format version. The loader rejects anything else."
+            "enum": [2, 3],
+            "description": "Format version. Files are saved as 3; schema 2 (no board pins, no board block) still loads and is upgraded in memory."
         },
         "id": {
             "type": "string",
@@ -57,9 +57,44 @@
                 "additionalProperties": false,
                 "properties": {
                     "id": { "type": "string" },
+                    "type": { "enum": ["pwm", "digital", "analog", "i2c_sda", "i2c_scl", "spi_sck", "spi_mosi", "spi_miso", "uart_tx", "uart_rx", "power", "ground", "gpio", "power_out"], "description": "Electrical role. Part pins: every type except power/ground is on the ideal board (it gets a pin number in robot_pins.h) and, at the Real level, is wired to a board gpio pin; power = a supply input (load). Board pins (only with a 'board' block): gpio = a pin the firmware drives, with 'number' and 'caps'; power_out = a supply output (5V, 3V3). Omit while untyped." },
+                    "number": { "type": "integer", "minimum": 0, "description": "Board pins only: the number the sketch uses (Uno D9 = 9, A0 = 14). Required on gpio and internal pins; unique per board." },
+                    "caps": { "type": "array", "items": { "enum": ["digital", "pwm", "analog", "interrupt", "i2c_sda", "i2c_scl", "spi_sck", "spi_mosi", "spi_miso", "uart_tx", "uart_rx"] }, "description": "gpio pins only: what the pin can do." },
+                    "internal": { "type": "boolean", "description": "Board pins only: hard-wired on the board's PCB (the ESP32-CAM's camera pins). Not wireable; the sketch still sees its number." },
                     "voltage_range": { "$ref": "#/definitions/pair" },
                     "description": { "type": "string" }
                 }
+            }
+        },
+        "board": {
+            "type": "object",
+            "required": ["fqbn", "header_folder", "logic_voltage"],
+            "additionalProperties": false,
+            "description": "Makes the component a board: it runs a firmware sketch at the Real level. Pin references name gpio pins with the matching capability.",
+            "properties": {
+                "fqbn": { "type": "string", "description": "arduino-cli board, e.g. arduino:avr:uno" },
+                "header_folder": { "type": "string", "description": "Project subfolder that receives the board's generated robot_pins.h (uno, esp32cam)" },
+                "logic_voltage": { "type": "number", "description": "Volts on a HIGH output" },
+                "adc": {
+                    "type": "object", "additionalProperties": false,
+                    "properties": { "bits": { "type": "integer" }, "vref": { "type": "number" } }
+                },
+                "analog_write": {
+                    "type": "object", "additionalProperties": false,
+                    "properties": {
+                        "hz": { "type": "number", "description": "analogWrite() PWM frequency" },
+                        "pins": { "type": "object", "additionalProperties": { "type": "number" }, "description": "pin id -> frequency, where it differs" }
+                    }
+                },
+                "i2c": {
+                    "type": "object", "additionalProperties": false,
+                    "properties": { "sda": { "type": "string" }, "scl": { "type": "string" }, "default_hz": { "type": "number" } }
+                },
+                "spi": {
+                    "type": "object", "additionalProperties": false,
+                    "properties": { "sck": { "type": "string" }, "mosi": { "type": "string" }, "miso": { "type": "string" }, "max_hz": { "type": "number" } }
+                },
+                "sources": { "type": "object", "additionalProperties": { "type": "string" }, "description": "field -> where its value comes from (datasheet, estimate)" }
             }
         },
         "kinematics": {
@@ -137,7 +172,12 @@
                     "examples": ["servo_emulator", "stepper_emulator", "dc_gear_emulator", "imu_emulator", "camera_emulator", "display_emulator", "default_emulator"]
                 },
                 "source": { "type": ["object", "null"], "description": "Reserved for a custom emulator script; unused." },
-                "parameters": { "type": "object", "description": "Free-form, read by the emulator in init(). Known keys of some types are typed below; others pass through." }
+                "parameters": { "type": "object", "description": "Free-form, read by the emulator in init(). Known keys of some types are typed below; others pass through." },
+                "parameter_sources": {
+                    "type": "object",
+                    "description": "Where each parameter's value comes from: a datasheet (with a link), a measurement (what, how, when), or 'estimate: ...'. validate_rsdef.py warns about parameters without one.",
+                    "additionalProperties": { "type": "string" }
+                }
             },
             "allOf": [
                 {
@@ -147,6 +187,10 @@
                 {
                     "if": { "properties": { "type": { "const": "display_emulator" } }, "required": ["type"] },
                     "then": { "properties": { "parameters": { "$ref": "#/definitions/displayEmulatorParameters" } } }
+                },
+                {
+                    "if": { "properties": { "type": { "const": "servo_emulator" } }, "required": ["type"] },
+                    "then": { "properties": { "parameters": { "$ref": "#/definitions/servoEmulatorParameters" } } }
                 }
             ]
         }
@@ -271,7 +315,13 @@
                 "damping": { "type": "number" },
                 "armature": { "type": "number" },
                 "frictionloss": { "type": "number" },
-                "collision": { "type": "boolean" }
+                "collision": { "type": "boolean" },
+                "sources": {
+                    "type": "object",
+                    "description": "Where a field's value comes from (datasheet, measurement, or 'estimate: ...'). Expected for the range of a play-gap (backlash) joint.",
+                    "propertyNames": { "enum": ["range", "damping", "armature", "frictionloss"] },
+                    "additionalProperties": { "type": "string" }
+                }
             }
         },
         "tendon": {
@@ -397,8 +447,26 @@
             "type": "object",
             "description": "display_emulator parameters. All optional.",
             "properties": {
-                "refresh_hz": { "type": "number", "exclusiveMinimum": 0, "description": "Panel refresh rate, sim time (default 30)." },
-                "transfer_ms": { "type": "integer", "minimum": 0, "maximum": 200, "description": "How long display() blocks the script, like a bus transfer (default 0)." }
+                "refresh_hz": { "type": "number", "exclusiveMinimum": 0, "description": "Panel refresh rate, sim time (default 30)." }
+            }
+        },
+        "servoEmulatorParameters": {
+            "type": "object",
+            "description": "servo_emulator parameters (analog hobby servo). All optional.",
+            "properties": {
+                "pulse_min_us": { "type": "number", "exclusiveMinimum": 0, "description": "Pulse width at -travel_deg/2 (default 1000)." },
+                "pulse_max_us": { "type": "number", "exclusiveMinimum": 0, "description": "Pulse width at +travel_deg/2 (default 2000)." },
+                "travel_deg": { "type": "number", "exclusiveMinimum": 0, "description": "Angle between pulse_min_us and pulse_max_us (default 180)." },
+                "frame_period_ms": { "type": "number", "exclusiveMinimum": 0, "description": "Pulse frame; the servo acts on one pulse per frame (default 20)." },
+                "deadband_us": { "type": "number", "minimum": 0, "description": "Full dead band width of the servo's controller, in pulse microseconds (default 0)." },
+                "proportional_band_deg": { "type": "number", "exclusiveMinimum": 0, "description": "Position error that gives full motor drive (default 5)." },
+                "stall_torque_nm": { "type": "number", "minimum": 0, "description": "Stall torque at rated_voltage, N·m." },
+                "no_load_speed_dps": { "type": "number", "minimum": 0, "description": "No-load output speed at rated_voltage, degrees per second." },
+                "rated_voltage": { "type": "number", "exclusiveMinimum": 0, "description": "Voltage the torque and speed figures are given at (default 5)." },
+                "supply_voltage": { "type": "number", "minimum": 0, "description": "Voltage the servo runs at (default 5)." },
+                "pot_noise_deg": { "type": "number", "minimum": 0, "description": "Noise of the position pot reading, stddev in degrees (default 0)." },
+                "center_spread_us": { "type": "number", "minimum": 0, "description": "Unit-to-unit spread of the centre pulse, stddev in microseconds (default 0)." },
+                "gain_spread": { "type": "number", "minimum": 0, "description": "Unit-to-unit spread of the pulse-to-angle scale, stddev as a fraction (default 0)." }
             }
         },
         "display": {
@@ -476,6 +544,7 @@
                 "unit": { "type": "string", "description": "degrees/deg/degree and degrees/s/deg/s/degree/s/dps are converted to radians (per second) for MuJoCo; any other unit is a label." },
                 "domain": { "$ref": "#/definitions/domain" },
                 "physical": { "type": "boolean", "description": "true if a real device would expose it (a pin), false for simulation-only ground truth." },
+                "internal": { "type": "boolean", "description": "The part's own internal state (motor drive, pot reading, gear speed). Listed apart from the part's inputs and outputs in the plot picker and Inspector. Default false." },
                 "componentLabels": { "type": "array", "items": { "type": "string" } },
                 "channel_type": { "enum": ["scalar", "vector"] },
                 "dim": { "type": "integer", "minimum": 1 }
@@ -507,7 +576,7 @@
                 {
                     "additionalProperties": false,
                     "properties": {
-                        "name": {}, "unit": {}, "domain": {}, "physical": {}, "componentLabels": {}, "channel_type": {}, "dim": {},
+                        "name": {}, "unit": {}, "domain": {}, "physical": {}, "internal": {}, "componentLabels": {}, "channel_type": {}, "dim": {},
                         "target": {
                             "oneOf": [
                                 {
@@ -530,7 +599,7 @@
                 {
                     "additionalProperties": false,
                     "properties": {
-                        "name": {}, "unit": {}, "domain": {}, "physical": {}, "componentLabels": {}, "channel_type": {}, "dim": {},
+                        "name": {}, "unit": {}, "domain": {}, "physical": {}, "internal": {}, "componentLabels": {}, "channel_type": {}, "dim": {},
                         "target": {
                             "oneOf": [
                                 {

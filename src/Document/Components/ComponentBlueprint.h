@@ -41,6 +41,11 @@ class ComponentBlueprint : public ComponentData {
         QString generateContactsXML(const int uid) const;
         QString generateActuatorXML(const int uid) const;
         QString drivingSignalUnit(const ActuatorDef& act) const;
+        // Id of the actuator an interface input drives, empty for none. An
+        // actuator-kind input drives that actuator; a joint-kind input drives
+        // the first position/velocity actuator on its joint (a motor actuator
+        // takes a torque, not an angle, so only an actuator-kind input drives it).
+        QString actuatorForInput(const InterfaceDef& def) const;
         QString generateBasicSensorXML(const int uid) const;
         QString generateTendonXML(const int uid) const;
         // Per instance (names carry the uid): texture + material + screen quad

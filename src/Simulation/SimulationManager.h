@@ -9,11 +9,14 @@
 #include <chrono>
 #include "mujoco/mujoco.h"
 #include "Simulation/MujocoContext.h"
+#include "Simulation/Controller/PinBus.h"
+#include "Simulation/Controller/DeviceBus.h"
+#include <QSet>
 
 class ComponentInstance;
 class Project;
 class Stage;
-class MicroController;
+class RobotController;
 class Emulator;
 class CameraRenderer;
 class DisplayTextures;
@@ -28,7 +31,8 @@ enum class SimulationState {
 struct SimStatus {
     int fps;
     double simTime;
-    double timeScale;
+    double timeScale;       // selected scale; <= 0 = as fast as possible
+    double realTimeFactor;  // sim seconds per wall second over the last window
     int activeContacts; // mjData->ncon, read alongside fps/simTime in trackFps
     int invasiveCollisions;
 };
@@ -50,17 +54,32 @@ class SimulationManager : public QObject {
 
     int frameCount = 0;
     QElapsedTimer fpsTimer;
+    double fpsWindowSimStart = 0.0;   // sim time when the current fps window began
     std::thread physicsThread;
-    std::thread mcuThread;
+    std::thread firmwareThread;  // runs the robot's firmware
     std::thread stageThread;   // runs the stage script, same loop as the MCU
 
     std::chrono::steady_clock::time_point lastTickTime;
 
     std::atomic<bool> isAlive;
     std::atomic<SimulationState> currentState;
-    std::atomic<float> timeScale;
+    std::atomic<float> timeScale;   // <= 0: as fast as possible
 
-    float stepAccumulator;
+    // Sim seconds the pacing allows ahead of the steps taken (real-time modes).
+    double simBudget = 0.0;
+
+    // Held by the physics thread for one whole step (controller handoff,
+    // camera wait, mj_step); play()/edit() take it to change the schedule and
+    // the scripts between steps. Lock order: stepMutex -> physicsMutex.
+    std::mutex stepMutex;
+
+    // The robot's controller for this run (JS or firmware), chosen at play();
+    // the physics thread steps it. Changed under stepMutex.
+    RobotController* robotController = nullptr;
+
+    // Telemetry is captured on a fixed sim-time period, not per step.
+    static constexpr double kTelemetryPeriod = 0.01;
+    double nextTelemetryDue = 0.0;   // physics thread (and play(), under stepMutex)
 
     // Emulator schedule, flattened from the component tree at play() (see
     // Cadence in Emulator.h). Only the physics thread reads it while PLAYING;
@@ -75,6 +94,13 @@ class SimulationManager : public QObject {
     std::vector<ScheduledEmulator> asyncEmulators;
     double nextAsyncDue = 0.0;   // min nextDue over asyncEmulators
 
+    // The pins between the robot's controller and its parts, rebuilt at Play.
+    PinBus pinBus;
+    DeviceBus deviceBus;   // the board's I2C/SPI buses, rebuilt at Play
+    // Real level: parts with no supply or ground (set at Play): their device
+    // models don't run and their actuators get no drive, like a dead part.
+    QSet<int> unpoweredUids;
+
     // Renders camera frames off the physics thread; created on the UI thread
     // (GLFW windows must be), lives as long as the manager.
     CameraRenderer* cameraRenderer = nullptr;
@@ -83,7 +109,8 @@ class SimulationManager : public QObject {
     DisplayTextures* displayTextures = nullptr;
 
     void physicsLoop();
-    void mcuLoop(MicroController* mcu);
+    bool stepOnce();   // one lockstep mj_step; false if no longer playing
+    void mcuLoop(RobotController* controller);
     void startThreads();
 
     void buildSchedule(ComponentInstance* root);
@@ -92,7 +119,7 @@ class SimulationManager : public QObject {
     void runDueAsync(double now);
     void runEmulators(double now);
 
-    SimStatus status;
+    SimStatus status{};
 
     public:
         std::mutex physicsMutex;
@@ -105,7 +132,9 @@ class SimulationManager : public QObject {
         void pause();    // freeze a running simulation (physics + scripts)
         void resume();   // continue a paused one without recompiling
         void trackFps();
+        // Sim seconds per wall second; <= 0 runs as fast as possible.
         void setTimeScale(float scale);
+        float getTimeScale() const { return timeScale.load(); }
 
         void pushTelemetry(ComponentInstance* comp, double time);
         void initEmulators(ComponentInstance* comp);
@@ -114,6 +143,8 @@ class SimulationManager : public QObject {
 
         MujocoContext* getMujocoContext() { return &mujocoContext; }
         CameraRenderer* getCameraRenderer() { return cameraRenderer; }
+        PinBus* getPinBus() { return &pinBus; }
+        DeviceBus* getDeviceBus() { return &deviceBus; }
 
         // Swaps in a new model and re-resolves every signal's MuJoCo id. Takes
         // physicsMutex itself. The single entry point for model reloads, so the
@@ -123,7 +154,8 @@ class SimulationManager : public QObject {
         static void cacheMujocoIds(ComponentInstance* root, mjModel* m);
 
         static void syncToMujocoJoint(ComponentInstance* root, mjModel* m, mjData* d);
-        static void syncToMujocoActuator(ComponentInstance* root, mjModel* m, mjData* d);
+        // dead: parts that drive nothing (unpowered at the Real level)
+        static void syncToMujocoActuator(ComponentInstance* root, mjModel* m, mjData* d, const QSet<int>& dead);
         static void syncFromMujocoSensor(ComponentInstance* root, mjModel* m, mjData* d);
 
         // Stage props + robot pose (stage script side), see Stage.h.

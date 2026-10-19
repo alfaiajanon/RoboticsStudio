@@ -804,6 +804,9 @@ void CanvasDockItem::showAddTargetDialog() {
         f.setBold(true);
         parentItem->setFont(0, f);
 
+        // The part's internal state goes under its own collapsed sub-group, so
+        // the top level lists only what goes into and comes out of the part.
+        QTreeWidgetItem* internalItem = nullptr;
         auto addGroup = [&](const QMap<QString, InterfaceDef>& defs, bool isInput) {
             for (auto it = defs.constBegin(); it != defs.constEnd(); ++it) {
                 const QString key = it.key();
@@ -811,13 +814,23 @@ void CanvasDockItem::showAddTargetDialog() {
                 if (wantedShape != SignalShape::Image && bp->interfaceDim(it.value()) <= 0) continue;   // unresolved target
                 if (subscribedSources.contains(QString("io:%1:%2").arg(uid).arg(key))) continue;
 
-                QTreeWidgetItem* item = new QTreeWidgetItem(parentItem);
+                QTreeWidgetItem* owner = parentItem;
+                if (it.value().internal) {
+                    if (!internalItem) {
+                        internalItem = new QTreeWidgetItem();
+                        internalItem->setText(0, "Internal (simulation-only)");
+                        internalItem->setFlags(Qt::ItemIsEnabled);
+                        internalItem->setToolTip(0, "The part's own internal state; the real part does not expose it");
+                    }
+                    owner = internalItem;
+                }
+                QTreeWidgetItem* item = new QTreeWidgetItem(owner);
                 item->setText(0, key);
                 item->setIcon(0, makeTargetIcon(isInput, it.value().physical));
                 item->setData(0, Qt::UserRole, uid);
                 item->setData(0, Qt::UserRole + 1, key);
                 item->setToolTip(0, QString("%1 %2%3%4")
-                    .arg(isInput ? "Input" : "Output")
+                    .arg(it.value().internal ? "Internal" : isInput ? "Input" : "Output")
                     .arg(it.value().physical ? "(physical)" : "(virtual)")
                     .arg(it.value().unit.isEmpty() ? "" : " [")
                     .arg(it.value().unit.isEmpty() ? "" : it.value().unit + "]"));
@@ -825,6 +838,7 @@ void CanvasDockItem::showAddTargetDialog() {
         };
         addGroup(bp->interfaceInputs, true);
         addGroup(bp->interfaceOutputs, false);
+        if (internalItem) parentItem->addChild(internalItem);   // after the I/O rows, collapsed
 
         if (parentItem->childCount() == 0) { delete parentItem; continue; }
         tree->addTopLevelItem(parentItem);
@@ -840,7 +854,7 @@ void CanvasDockItem::showAddTargetDialog() {
     QDialogButtonBox* buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
     layout->addWidget(buttonBox);
     QPushButton* okBtn = buttonBox->button(QDialogButtonBox::Ok);
-    auto isTarget = [](QTreeWidgetItem* i) { return i && i->parent(); };
+    auto isTarget = [](QTreeWidgetItem* i) { return i && !i->data(0, Qt::UserRole + 1).toString().isEmpty(); };
     okBtn->setEnabled(false);
     connect(tree, &QTreeWidget::currentItemChanged, &dialog, [okBtn, isTarget](QTreeWidgetItem* cur) {
         okBtn->setEnabled(isTarget(cur));

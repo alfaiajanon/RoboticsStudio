@@ -1,5 +1,5 @@
 {
-    "schema": 2,
+    "schema": 3,
     "id": "servo_mg996r",
     "meta": {
         "hint_class": "actuator",
@@ -26,6 +26,7 @@
     "pins": [
         {
             "id": "vcc",
+            "type": "power",
             "voltage_range": [
                 4.8,
                 7.2
@@ -34,10 +35,12 @@
         },
         {
             "id": "signal",
+            "type": "pwm",
             "description": "PWM signal input pin for controlling servo position"
         },
         {
             "id": "gnd",
+            "type": "ground",
             "description": "Ground pin for servo motor"
         }
     ],
@@ -128,7 +131,7 @@
                     -90,
                     90
                 ],
-                "damping": 0.14,
+                "damping": 0.015,
                 "armature": 0.004,
                 "frictionloss": 0.06,
                 "collision": false
@@ -155,10 +158,14 @@
                     -1.5,
                     1.5
                 ],
-                "damping": 0,
+                "damping": 0.005,
                 "armature": 0.0001,
                 "frictionloss": 0.001,
-                "collision": false
+                "collision": false,
+                "sources": {
+                    "range": "estimate: ±1.5° of play at the horn; to be measured (plan task 37)",
+                    "damping": "estimate: gear grease; the smallest value with which the horn crosses the gap on a load reversal without rebounding (offline harness, 2026-10-19); to be measured (plan task 37)"
+                }
             }
         ],
         "tendons": [
@@ -327,21 +334,19 @@
         "actuators": [
             {
                 "id": "servo_motor",
-                "type": "position",
+                "type": "motor",
                 "target": {
                     "kind": "joint",
                     "id": "servo_joint"
                 },
                 "ctrlrange": [
-                    -90,
-                    90
+                    -1.62,
+                    1.62
                 ],
                 "forcerange": [
-                    -1.08,
-                    1.08
-                ],
-                "kp": 20,
-                "kv": 0.3
+                    -1.62,
+                    1.62
+                ]
             }
         ],
         "sensors": [
@@ -359,6 +364,14 @@
                 "target": {
                     "kind": "tendon",
                     "id": "output_tendon"
+                }
+            },
+            {
+                "id": "servo_vel",
+                "type": "jointvel",
+                "target": {
+                    "kind": "joint",
+                    "id": "servo_joint"
                 }
             }
         ]
@@ -380,6 +393,16 @@
                     "kind": "joint",
                     "id": "servo_joint"
                 }
+            },
+            {
+                "name": "motor_torque",
+                "unit": "N·m",
+                "physical": false,
+                "target": {
+                    "kind": "actuator",
+                    "id": "servo_motor"
+                },
+                "internal": true
             }
         ],
         "outputs": [
@@ -390,7 +413,8 @@
                 "target": {
                     "kind": "sensor",
                     "id": "servo_pos"
-                }
+                },
+                "internal": true
             },
             {
                 "name": "current_angle_real",
@@ -400,6 +424,37 @@
                     "kind": "sensor",
                     "id": "sensor_real_pos"
                 }
+            },
+            {
+                "name": "gear_velocity",
+                "unit": "deg/s",
+                "physical": false,
+                "target": {
+                    "kind": "sensor",
+                    "id": "servo_vel"
+                },
+                "internal": true
+            },
+            {
+                "name": "pot_reading",
+                "physical": false,
+                "target": {
+                    "kind": "emulator"
+                },
+                "channel_type": "scalar",
+                "dim": 1,
+                "unit": "degrees",
+                "internal": true
+            },
+            {
+                "name": "drive",
+                "physical": false,
+                "target": {
+                    "kind": "emulator"
+                },
+                "channel_type": "scalar",
+                "dim": 1,
+                "internal": true
             }
         ]
     },
@@ -407,8 +462,34 @@
         "type": "servo_emulator",
         "source": null,
         "parameters": {
-            "noise_stddev": 0.2,
-            "deadband_threshold": 1
+            "pulse_min_us": 1000,
+            "pulse_max_us": 2000,
+            "travel_deg": 180,
+            "frame_period_ms": 20,
+            "deadband_us": 5,
+            "proportional_band_deg": 4,
+            "stall_torque_nm": 1.08,
+            "no_load_speed_dps": 428,
+            "rated_voltage": 6.0,
+            "supply_voltage": 5.0,
+            "pot_noise_deg": 0.3,
+            "center_spread_us": 10,
+            "gain_spread": 0.03
+        },
+        "parameter_sources": {
+            "pulse_min_us": "estimate: 1–2 ms for ±90° (datasheets disagree; measure, plan task 37)",
+            "pulse_max_us": "estimate: 1–2 ms for ±90° (datasheets disagree; measure, plan task 37)",
+            "travel_deg": "estimate: 1–2 ms for ±90° (datasheets disagree; measure, plan task 37)",
+            "frame_period_ms": "standard hobby servo signal: one pulse every 20 ms (50 Hz)",
+            "deadband_us": "datasheet: TowerPro MG996R: dead band width 5 µs",
+            "proportional_band_deg": "estimate: tuned so a 60° step matches the datasheet speed",
+            "stall_torque_nm": "datasheet: TowerPro MG996R: 11 kgf·cm at 6 V",
+            "no_load_speed_dps": "datasheet: TowerPro MG996R: 0.14 s/60° at 6 V",
+            "rated_voltage": "datasheet: TowerPro MG996R: voltage of the torque and speed figures",
+            "supply_voltage": "assumption: 5 V rail, until the power net exists (plan Phase 2)",
+            "pot_noise_deg": "estimate, to be measured (plan task 37)",
+            "center_spread_us": "estimate, to be measured (plan task 37)",
+            "gain_spread": "estimate, to be measured (plan task 37)"
         }
     }
 }

@@ -4,9 +4,49 @@
     "type": "object",
     "required": ["assembly", "meta", "script", "version"],
     "definitions": {
-        "vec3": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 }
+        "vec3": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+        "pinRef": {
+            "type": "object",
+            "required": ["uid", "pin"],
+            "additionalProperties": false,
+            "properties": {
+                "uid": { "type": "integer", "description": "Component instance" },
+                "pin": { "type": "string", "description": "Pin id in that component's .rsdef" }
+            }
+        }
     },
     "properties": {
+        "schema": {
+            "enum": [2, 3],
+            "description": "Project format. Saved as 3; a file without it is schema 2 and loads as a Prototype project with no wiring."
+        },
+        "level": {
+            "enum": ["prototype", "real"],
+            "description": "prototype: one implicit ideal board runs script.current, every part auto-wired. real: board components run the sketch in their 'firmware' slot, through the wires below. Default prototype."
+        },
+        "wiring": {
+            "type": "object",
+            "description": "Real level: two-point wires between pins (grouped into nets at load) and the schematic layout. Kept, unused, at the Prototype level.",
+            "properties": {
+                "wires": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": ["a", "b"],
+                        "additionalProperties": false,
+                        "properties": {
+                            "a": { "$ref": "#/definitions/pinRef" },
+                            "b": { "$ref": "#/definitions/pinRef" }
+                        }
+                    }
+                },
+                "layout": {
+                    "type": "object",
+                    "description": "Schematic block positions: uid -> [x, y]",
+                    "additionalProperties": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 }
+                }
+            }
+        },
         "assembly": {
             "type": "object",
             "required": ["components"],
@@ -20,6 +60,7 @@
                             "uid": { "type": "integer" },
                             "model_id": { "type": "string" },
                             "name": { "type": "string" },
+                            "firmware": { "type": "string", "description": "Boards only: the sketch (one of script.paths) this board runs at the Real level" },
                             "parameters": {
                                 "type": "object",
                                 "additionalProperties": { "type": "number" }
@@ -81,6 +122,7 @@
         },
         "script": {
             "type": "object",
+            "description": "The project's firmware sketches; current = the one the ideal board runs at the Prototype level (-1 = none).",
             "required": ["current"],
             "properties": {
                 "current": { "type": "integer" },
@@ -140,7 +182,13 @@
             }
         },
         "simulation": {
-            "type": "object"
+            "type": "object",
+            "properties": {
+                "seed": {
+                    "type": "integer",
+                    "description": "Seed of every random generator in a run (noise, drops, per-unit variation); the same seed repeats a run exactly. Default 1."
+                }
+            }
         },
         "stage": {
             "type": "object",

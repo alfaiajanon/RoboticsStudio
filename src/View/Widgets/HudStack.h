@@ -25,6 +25,9 @@ class HudStack : public QWidget {
 
         int addPage(QWidget* page, const QIcon& icon, const QString& tooltip);
         void setCurrentPage(QWidget* page);
+        // Shows or hides a page's switch button; hiding the current page
+        // switches to the first one.
+        void setPageVisible(QWidget* page, bool visible);
         QWidget* currentPage() const;
 
         // Appends a control to the right of the page switch (bottom-aligned).

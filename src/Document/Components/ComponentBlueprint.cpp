@@ -360,23 +360,24 @@ QString ComponentBlueprint::generateDisplayAssetXML(const int uid) const {
 
 
 
+QString ComponentBlueprint::actuatorForInput(const InterfaceDef& def) const {
+    if (def.target.kind == "actuator") return def.target.id;
+    if (def.target.kind != "joint") return QString();
+    for (const ActuatorDef& a : actuators) {
+        if (a.target.kind == "joint" && a.target.id == def.target.id && a.type != "motor") return a.id;
+    }
+    return QString();
+}
+
+
 /*
- * Unit of the interface input that drives an actuator -- the same resolution
- * SimulationManager::cacheMujocoIds uses: an input targeting the actuator
- * directly, or a joint input whose first actuator on that joint is this one.
- * Empty if no signal drives it (values are then taken as MuJoCo units).
+ * Unit of the interface input that drives an actuator (actuatorForInput, the
+ * same resolution SimulationManager::cacheMujocoIds uses). Empty if no signal
+ * drives it (values are then taken as MuJoCo units).
  */
 QString ComponentBlueprint::drivingSignalUnit(const ActuatorDef& act) const {
     for (const InterfaceDef& def : interfaceInputs) {
-        if (def.target.kind == "actuator" && def.target.id == act.id) return def.unit;
-        if (def.target.kind == "joint") {
-            for (const ActuatorDef& a : actuators) {
-                if (a.target.kind == "joint" && a.target.id == def.target.id) {
-                    if (a.id == act.id) return def.unit;
-                    break;   // only the first actuator on the joint is driven
-                }
-            }
-        }
+        if (actuatorForInput(def) == act.id) return def.unit;
     }
     return QString();
 }

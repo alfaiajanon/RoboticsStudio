@@ -368,6 +368,16 @@ static QList<Edge> parseJoints(const QJsonArray& jointsArr, QSet<QString>& joint
         edge.frictionloss = readNumber(jObj, "frictionloss", path, err, false, 0.0);
         edge.localTransform = parseTransform(jObj);
         edge.range = readNumberList(jObj, "range", 2, path, err);
+        if (jObj.contains("sources")) {
+            const QJsonObject src = readObject(jObj["sources"], path + ".sources", err);
+            for (auto it = src.constBegin(); it != src.constEnd() && !err.has(); ++it) {
+                if (!QStringList{"range", "damping", "armature", "frictionloss"}.contains(it.key()))
+                    err.set(QString("%1.sources: '%2' is not a sourced joint field (range, damping, armature, frictionloss)").arg(path, it.key()));
+                else if (!it.value().isString())
+                    err.set(QString("%1.sources.%2: must be a string").arg(path, it.key()));
+                else edge.sources[it.key()] = it.value().toString();
+            }
+        }
         rejectKeys(jObj, {"actuator", "sensor"}, path, "actuators and sensors live under devices with target {kind: joint}", err);
 
         parsedJoints.append(edge);
@@ -401,6 +411,11 @@ static QJsonObject edgeToJson(const Edge& e) {
     obj["armature"] = e.armature;
     obj["frictionloss"] = e.frictionloss;
     obj["collision"] = e.collision;
+    if (!e.sources.isEmpty()) {
+        QJsonObject src;
+        for (auto it = e.sources.constBegin(); it != e.sources.constEnd(); ++it) src[it.key()] = it.value();
+        obj["sources"] = src;
+    }
     return obj;
 }
 
@@ -766,6 +781,7 @@ static QMap<QString, InterfaceDef> parseInterface(const QJsonArray& arr, bool is
 
         def.unit = readString(o, "unit", path, err, false);
         def.physical = readBool(o, "physical", path, err, true, true);
+        def.internal = readBool(o, "internal", path, err, false, false);
         def.domain = parseDomain(o, path, err);
         def.target = parseTarget(o, path, allowedKinds, err);
         if (o.contains("componentLabels")) {
@@ -801,6 +817,7 @@ static QJsonArray interfaceToJson(const QMap<QString, InterfaceDef>& defs) {
         if (!def.unit.isEmpty()) o["unit"] = def.unit;
         if (def.domain.type != "unbounded" || !def.domain.parameters.isEmpty()) o["domain"] = domainToJson(def.domain);
         o["physical"] = def.physical;
+        if (def.internal) o["internal"] = true;
         o["target"] = targetToJson(def.target);
         if (def.target.kind == "emulator") {
             o["channel_type"] = def.channelType;
@@ -819,13 +836,59 @@ static QJsonArray interfaceToJson(const QMap<QString, InterfaceDef>& defs) {
 
 
 
-static QList<PinDef> parsePins(const QJsonArray& pinsArr) {
+const QStringList& PinDef::types() {
+    static const QStringList t{"pwm", "digital", "analog", "i2c_sda", "i2c_scl", "spi_sck", "spi_mosi", "spi_miso",
+                               "uart_tx", "uart_rx", "power", "ground", "gpio", "power_out"};
+    return t;
+}
+
+const QStringList& PinDef::capabilities() {
+    static const QStringList c{"digital", "pwm", "analog", "interrupt", "i2c_sda", "i2c_scl",
+                               "spi_sck", "spi_mosi", "spi_miso", "uart_tx", "uart_rx"};
+    return c;
+}
+
+static QList<PinDef> parsePins(const QJsonArray& pinsArr, QString& error) {
     QList<PinDef> pins;
     for (const auto& val : pinsArr) {
         QJsonObject pObj = val.toObject();
         PinDef pin;
         pin.id = pObj["id"].toString();
         pin.description = pObj["description"].toString();
+        pin.type = pObj["type"].toString();
+        for (const PinDef& other : pins) {
+            if (other.id == pin.id) {
+                error = QString("duplicate pin id '%1'").arg(pin.id);
+                return {};
+            }
+        }
+        if (!pin.type.isEmpty() && !PinDef::types().contains(pin.type)) {
+            error = QString("pin '%1': type '%2' is not one of: %3").arg(pin.id, pin.type, PinDef::types().join(", "));
+            return {};
+        }
+        pin.number = pObj["number"].toInt(-1);
+        pin.internal = pObj["internal"].toBool(false);
+        for (const QJsonValue& c : pObj["caps"].toArray()) {
+            if (!PinDef::capabilities().contains(c.toString())) {
+                error = QString("pin '%1': capability '%2' is not one of: %3").arg(pin.id, c.toString(), PinDef::capabilities().join(", "));
+                return {};
+            }
+            pin.caps.append(c.toString());
+        }
+        if (!pin.caps.isEmpty() && pin.type != "gpio") {
+            error = QString("pin '%1': only gpio pins have caps").arg(pin.id);
+            return {};
+        }
+        if (pin.type == "gpio" && pin.number < 0) {
+            error = QString("pin '%1': a gpio pin needs a number").arg(pin.id);
+            return {};
+        }
+        for (const PinDef& other : pins) {
+            if (pin.number >= 0 && other.number == pin.number) {
+                error = QString("pins '%1' and '%2' have the same number %3").arg(other.id, pin.id).arg(pin.number);
+                return {};
+            }
+        }
         pin.voltageRange = qMakePair(0.0f, 0.0f);
         if (pObj.contains("voltage_range")) {
             QJsonArray rangeArr = pObj["voltage_range"].toArray();
@@ -844,6 +907,10 @@ static QJsonArray pinsToJson(const QList<PinDef>& pins) {
     for (const PinDef& pin : pins) {
         QJsonObject obj;
         obj["id"] = pin.id;
+        if (!pin.type.isEmpty()) obj["type"] = pin.type;
+        if (pin.number >= 0) obj["number"] = pin.number;
+        if (!pin.caps.isEmpty()) obj["caps"] = QJsonArray::fromStringList(pin.caps);
+        if (pin.internal) obj["internal"] = true;
         if (!pin.description.isEmpty()) obj["description"] = pin.description;
         if (pin.voltageRange.first != 0.0f || pin.voltageRange.second != 0.0f) {
             obj["voltage_range"] = QJsonArray{pin.voltageRange.first, pin.voltageRange.second};
@@ -851,6 +918,81 @@ static QJsonArray pinsToJson(const QList<PinDef>& pins) {
         arr.append(obj);
     }
     return arr;
+}
+
+
+// The "board" block of a board part. Pin references must name gpio pins
+// with the matching capability.
+static BoardDef parseBoard(const QJsonObject& b, const QList<PinDef>& pins, LoadError& err) {
+    BoardDef board;
+    board.present = true;
+    board.fqbn = readString(b, "fqbn", "board", err, true);
+    board.headerFolder = readString(b, "header_folder", "board", err, true);
+    board.logicVoltage = readNumber(b, "logic_voltage", "board", err, true);
+    const QJsonObject adc = b["adc"].toObject();
+    board.adcBits = int(readNumber(adc, "bits", "board.adc", err, false, 10));
+    board.adcVref = readNumber(adc, "vref", "board.adc", err, false, board.logicVoltage);
+    const QJsonObject aw = b["analog_write"].toObject();
+    board.analogWriteHz = readNumber(aw, "hz", "board.analog_write", err, false, 490.0);
+    const QJsonObject awPins = aw["pins"].toObject();
+    for (auto it = awPins.begin(); it != awPins.end(); ++it) board.analogWriteHzByPin[it.key()] = it.value().toDouble();
+    const QJsonObject i2c = b["i2c"].toObject();
+    board.i2cSda = i2c["sda"].toString();
+    board.i2cScl = i2c["scl"].toString();
+    board.i2cDefaultHz = readNumber(i2c, "default_hz", "board.i2c", err, false, 100000.0);
+    const QJsonObject spi = b["spi"].toObject();
+    board.spiSck = spi["sck"].toString();
+    board.spiMosi = spi["mosi"].toString();
+    board.spiMiso = spi["miso"].toString();
+    board.spiMaxHz = readNumber(spi, "max_hz", "board.spi", err, false, 8000000.0);
+    const QJsonObject src = b["sources"].toObject();
+    for (auto it = src.begin(); it != src.end(); ++it) board.sources[it.key()] = it.value().toString();
+    if (err.has()) return board;
+
+    auto checkPin = [&](const QString& id, const QString& cap, const QString& field) {
+        if (id.isEmpty() || err.has()) return;
+        for (const PinDef& p : pins) {
+            if (p.id != id) continue;
+            if (p.type != "gpio" || !p.hasCap(cap)) err.set(QString("board.%1: pin '%2' is not a gpio pin with '%3'").arg(field, id, cap));
+            return;
+        }
+        err.set(QString("board.%1: pin '%2' does not exist").arg(field, id));
+    };
+    checkPin(board.i2cSda, "i2c_sda", "i2c.sda");
+    checkPin(board.i2cScl, "i2c_scl", "i2c.scl");
+    checkPin(board.spiSck, "spi_sck", "spi.sck");
+    checkPin(board.spiMosi, "spi_mosi", "spi.mosi");
+    checkPin(board.spiMiso, "spi_miso", "spi.miso");
+    for (const QString& id : board.analogWriteHzByPin.keys()) checkPin(id, "pwm", "analog_write.pins");
+    return board;
+}
+
+static QJsonObject boardToJson(const BoardDef& b) {
+    QJsonObject o;
+    o["fqbn"] = b.fqbn;
+    o["header_folder"] = b.headerFolder;
+    o["logic_voltage"] = b.logicVoltage;
+    o["adc"] = QJsonObject{{"bits", b.adcBits}, {"vref", b.adcVref}};
+    QJsonObject aw{{"hz", b.analogWriteHz}};
+    if (!b.analogWriteHzByPin.isEmpty()) {
+        QJsonObject pinsObj;
+        for (auto it = b.analogWriteHzByPin.begin(); it != b.analogWriteHzByPin.end(); ++it) pinsObj[it.key()] = it.value();
+        aw["pins"] = pinsObj;
+    }
+    o["analog_write"] = aw;
+    if (!b.i2cSda.isEmpty() || !b.i2cScl.isEmpty())
+        o["i2c"] = QJsonObject{{"sda", b.i2cSda}, {"scl", b.i2cScl}, {"default_hz", b.i2cDefaultHz}};
+    if (!b.spiSck.isEmpty()) {
+        QJsonObject spi{{"sck", b.spiSck}, {"mosi", b.spiMosi}, {"max_hz", b.spiMaxHz}};
+        if (!b.spiMiso.isEmpty()) spi["miso"] = b.spiMiso;
+        o["spi"] = spi;
+    }
+    if (!b.sources.isEmpty()) {
+        QJsonObject src;
+        for (auto it = b.sources.begin(); it != b.sources.end(); ++it) src[it.key()] = it.value();
+        o["sources"] = src;
+    }
+    return o;
 }
 
 
@@ -869,11 +1011,14 @@ ComponentData ComponentData::fromJson(const QJsonObject& mainJson, const QString
     LoadError err;
 
     if (!mainJson.contains("schema")) {
-        return loadFailure(QString(), QString("missing 'schema'; only schema %1 is supported (this looks like a schema 1 file, or not an rsdef)").arg(kSchemaVersion));
+        return loadFailure(QString(), QString("missing 'schema'; schemas %1-%2 are supported (this looks like a schema 1 file, or not an rsdef)").arg(kMinSchemaVersion).arg(kSchemaVersion));
     }
-    if (!mainJson["schema"].isDouble() || mainJson["schema"].toDouble() != kSchemaVersion) {
-        QString got = mainJson["schema"].isDouble() ? QString::number(mainJson["schema"].toDouble()) : typeName(mainJson["schema"]);
-        return loadFailure(QString(), QString("unsupported schema %1; only schema %2 is supported").arg(got).arg(kSchemaVersion));
+    // Schema 3 only adds optional fields (board pins, the board block), so a
+    // schema 2 file loads as is and is saved as 3.
+    const double schema = mainJson["schema"].toDouble();
+    if (!mainJson["schema"].isDouble() || schema < kMinSchemaVersion || schema > kSchemaVersion || schema != int(schema)) {
+        QString got = mainJson["schema"].isDouble() ? QString::number(schema) : typeName(mainJson["schema"]);
+        return loadFailure(QString(), QString("unsupported schema %1; schemas %2-%3 are supported").arg(got).arg(kMinSchemaVersion).arg(kSchemaVersion));
     }
 
     ComponentData data;
@@ -896,7 +1041,19 @@ ComponentData ComponentData::fromJson(const QJsonObject& mainJson, const QString
         }
     }
 
-    data.pins = parsePins(mainJson["pins"].toArray());
+    QString pinError;
+    data.pins = parsePins(mainJson["pins"].toArray(), pinError);
+    if (!pinError.isEmpty()) return loadFailure(data.modelId, pinError);
+    if (mainJson.contains("board")) {
+        data.board = parseBoard(readObject(mainJson["board"], "board", err), data.pins, err);
+        if (err.has()) return loadFailure(data.modelId, err.msg);
+    }
+    for (const PinDef& p : data.pins) {
+        if (!data.board.present && (p.type == "gpio" || p.type == "power_out" || p.internal))
+            return loadFailure(data.modelId, QString("pin '%1': gpio, power_out and internal pins are only on boards (add a \"board\" block)").arg(p.id));
+        if (p.internal && p.number < 0)
+            return loadFailure(data.modelId, QString("pin '%1': an internal pin needs a number").arg(p.id));
+    }
     data.specs = mainJson["specs"].toObject();
 
     QJsonObject resourcesObj = mainJson["resources"].toObject();
@@ -996,6 +1153,10 @@ ComponentData ComponentData::fromJson(const QJsonObject& mainJson, const QString
                 emuDef.parameters[key] = paramsObj[key].toVariant();
             }
         }
+        const QJsonObject sourcesObj = emuObj["parameter_sources"].toObject();
+        for (auto it = sourcesObj.constBegin(); it != sourcesObj.constEnd(); ++it) {
+            emuDef.parameterSources[it.key()] = it.value().toString();
+        }
     }
     data.emulatorDef = emuDef;
 
@@ -1056,6 +1217,7 @@ QJsonObject ComponentData::toJson() const {
 
     root["specs"] = specs;
     root["pins"] = pinsToJson(pins);
+    if (board.present) root["board"] = boardToJson(board);
 
     // Resource paths are stored absolute in memory (resolved against
     // basePath on load) -- converted back to relative here so a saved
@@ -1113,6 +1275,13 @@ QJsonObject ComponentData::toJson() const {
         paramsObj[it.key()] = QJsonValue::fromVariant(it.value());
     }
     emulatorObj["parameters"] = paramsObj;
+    if (!emulatorDef.parameterSources.isEmpty()) {
+        QJsonObject sourcesObj;
+        for (auto it = emulatorDef.parameterSources.constBegin(); it != emulatorDef.parameterSources.constEnd(); ++it) {
+            sourcesObj[it.key()] = it.value();
+        }
+        emulatorObj["parameter_sources"] = sourcesObj;
+    }
     root["emulator"] = emulatorObj;
 
     return root;

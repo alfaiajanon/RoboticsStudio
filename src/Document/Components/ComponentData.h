@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QString>
+#include <QStringList>
 #include <QMap>
 #include <QJsonObject>
 #include "Utils/Graph.h"
@@ -26,6 +27,41 @@ struct PinDef {
     QString id;
     QString description;
     QPair<float, float> voltageRange;
+    // Electrical role. Part pins: "pwm", "digital", "analog", the bus lines
+    // "i2c_sda", "i2c_scl", "spi_sck", "spi_mosi", "spi_miso", "uart_tx",
+    // "uart_rx", "power" (a load), "ground". Board pins: "gpio" (what it can
+    // do is in `caps`), "power_out" (a source: the board's 5V/3V3 regulator).
+    // Empty = not typed yet.
+    QString type;
+    int number = -1;        // the number a sketch uses (board gpio pins and internal pins)
+    QStringList caps;       // gpio: digital, pwm, analog, interrupt, i2c_sda, ...
+    bool internal = false;  // hard-wired on the board's PCB (ESP32-CAM camera): can't be wired
+
+    static const QStringList& types();
+    static const QStringList& capabilities();
+    // A part's signal or bus pin: the ideal board gives it a number, and at
+    // the Real level it is wired to a board gpio pin.
+    bool isBoardPin() const { return !type.isEmpty() && !isPower() && type != "ground" && type != "gpio"; }
+    bool isPower() const { return type == "power" || type == "power_out"; }
+    bool hasCap(const QString& cap) const { return caps.contains(cap); }
+};
+
+// What a board (a component with a "board" block) is: what its firmware is
+// compiled for and the limits of its pins. Only on board parts.
+struct BoardDef {
+    bool present = false;
+    QString fqbn;              // arduino-cli board, e.g. arduino:avr:uno
+    QString headerFolder;      // project subfolder for its robot_pins.h ("uno")
+    double logicVoltage = 5.0;
+    int adcBits = 10;
+    double adcVref = 5.0;
+    double analogWriteHz = 490.0;
+    QMap<QString, double> analogWriteHzByPin;   // pin id -> frequency
+    QString i2cSda, i2cScl;    // pin ids of the hardware I2C bus
+    double i2cDefaultHz = 100000.0;
+    QString spiSck, spiMosi, spiMiso;
+    double spiMaxHz = 8000000.0;
+    QMap<QString, QString> sources;   // field -> datasheet / estimate
 };
 
 struct ConnectorDef {
@@ -105,6 +141,9 @@ struct InterfaceDef {
     QString unit;
     DomainDef domain;
     bool physical = true;
+    // The part's own internal state (motor drive, pot reading, gear speed):
+    // plotted for insight, listed apart from the part's inputs and outputs.
+    bool internal = false;
     TargetRef target;
 
     QString channelType = "scalar";
@@ -116,6 +155,8 @@ struct EmulatorDef {
     QString type;
     QJsonObject source;
     QMap<QString, QVariant> parameters;
+    // parameter -> where its value comes from (datasheet, measurement, estimate)
+    QMap<QString, QString> parameterSources;
 };
 
 
@@ -148,12 +189,14 @@ struct ComponentData {
     QMap<QString, InterfaceDef> interfaceInputs;    // keyed by signal name
     QMap<QString, InterfaceDef> interfaceOutputs;   // keyed by signal name
     EmulatorDef emulatorDef;
+    BoardDef board;
 
     // Set by fromJson. On failure the returned data is otherwise empty.
     bool isValid = true;
     QString errorString;
 
-    static constexpr int kSchemaVersion = 2;
+    static constexpr int kSchemaVersion = 3;      // written on save
+    static constexpr int kMinSchemaVersion = 2;   // oldest still loaded (upgraded in memory)
 
     QJsonObject toJson() const;
     static ComponentData fromJson(const QJsonObject& obj, const QString& basePath);

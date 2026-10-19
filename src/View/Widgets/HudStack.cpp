@@ -93,6 +93,17 @@ void HudStack::setCurrentPage(QWidget* page) {
 
 
 
+void HudStack::setPageVisible(QWidget* page, bool visible) {
+    const int idx = stack->indexOf(page);
+    QAbstractButton* btn = idx >= 0 ? switchGroup->button(idx) : nullptr;
+    if (!btn || btn->isHidden() == !visible) return;
+    btn->setVisible(visible);
+    if (!visible && stack->currentIndex() == idx) setCurrentPage(stack->widget(0));
+    QTimer::singleShot(0, this, &HudStack::placeHud);
+}
+
+
+
 QWidget* HudStack::currentPage() const {
     return stack->currentWidget();
 }

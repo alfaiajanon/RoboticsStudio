@@ -27,13 +27,16 @@ struct RenderedFrame {
     QByteArray pixels;
 };
 
-// Receives rendered frames. Called on the renderer's worker thread. Jobs hold
-// a shared_ptr to their sink, so a sink outlives any frame still in flight --
-// its owner can go away without waiting for the worker.
+// Receives rendered frames. Called on the renderer's worker thread (lost
+// frames also from invalidate()). Every accepted submit() ends in exactly one
+// of the two calls. Jobs hold a shared_ptr to their sink, so a sink outlives
+// any frame still in flight -- its owner can go away without waiting.
 class CameraFrameSink {
     public:
         virtual ~CameraFrameSink() = default;
         virtual void onCameraFrame(RenderedFrame& frame) = 0;
+        // Not rendered: the model was replaced, or the GPU context failed.
+        virtual void onCameraFrameLost() {}
 };
 
 struct CameraRequest {
@@ -56,9 +59,10 @@ struct CameraRequest {
  *
  * Producer (physics thread, physicsMutex held): submit() builds the camera's
  * mjvScene from the live mjData into a free scene slot -- CPU only, no GL --
- * and queues it. A camera that still has a queued, not yet rendered job has
- * that job replaced (latest wins); if no slot is free the frame is dropped.
- * submit() never waits.
+ * and queues it. Every frame is rendered, in submit order: when all slots are
+ * busy a new one is added (up to kMaxSlots; only past that is a frame
+ * dropped). submit() never waits -- the physics thread waits for due frames
+ * through the camera emulator instead, outside physicsMutex.
  *
  * Worker: mjr_render into the offscreen buffer, mjr_readPixels, flip, linear
  * depth, hand the frame to the request's sink. mjr_render needs only the scene
@@ -83,7 +87,8 @@ class CameraRenderer {
         CameraRenderer& operator=(const CameraRenderer&) = delete;
 
         // Physics thread, physicsMutex held. False if the frame was dropped
-        // (no free slot, renderer unavailable, bad request).
+        // (kMaxSlots in use, renderer unavailable, bad request); the sink is
+        // then not called.
         bool submit(const mjModel* m, mjData* d, const CameraRequest& request);
 
         // physicsMutex held, before the model is swapped.
@@ -104,7 +109,8 @@ class CameraRenderer {
             quint64 jobGeneration = 0; // model the queued scene was built from
         };
 
-        static constexpr int kSlotCount = 4;
+        static constexpr int kInitialSlots = 4;
+        static constexpr int kMaxSlots = 32;
         static constexpr int kMaxGeom = 2000;
 
         MujocoContext* mujocoContext;
@@ -119,7 +125,10 @@ class CameraRenderer {
 
         std::mutex queueMutex;
         std::condition_variable queueCv;
-        SceneSlot sceneSlots[kSlotCount];
+        // Grows on demand (producer only, under queueMutex); a deque keeps
+        // references to existing slots valid. The worker takes its slot
+        // reference under queueMutex.
+        std::deque<SceneSlot> sceneSlots;
         std::deque<int> queue;         // slot indices, oldest first
         quint64 generation = 1;        // guarded by queueMutex
         bool stopRequested = false;    // guarded by queueMutex

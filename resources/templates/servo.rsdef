@@ -1,5 +1,5 @@
 {
-    "schema": 2,
+    "schema": 3,
     "id": "servo_template",
     "meta": {
         "hint_class": "actuator",
@@ -17,6 +17,7 @@
     "pins": [
         {
             "id": "vcc",
+            "type": "power",
             "voltage_range": [
                 4.8,
                 6.0
@@ -25,10 +26,12 @@
         },
         {
             "id": "signal",
+            "type": "pwm",
             "description": "PWM signal input pin for controlling servo position"
         },
         {
             "id": "gnd",
+            "type": "ground",
             "description": "Ground pin for servo motor"
         }
     ],
@@ -127,7 +130,7 @@
                     -90,
                     90
                 ],
-                "damping": 0.01,
+                "damping": 0.002,
                 "armature": 0.005,
                 "frictionloss": 0.01
             }
@@ -233,27 +236,33 @@
         "actuators": [
             {
                 "id": "servo_motor",
-                "type": "position",
+                "type": "motor",
                 "target": {
                     "kind": "joint",
                     "id": "servo_joint"
                 },
                 "ctrlrange": [
-                    -90,
-                    90
+                    -0.264,
+                    0.264
                 ],
                 "forcerange": [
-                    -0.176,
-                    0.176
-                ],
-                "kp": 5.0,
-                "kv": 0.5
+                    -0.264,
+                    0.264
+                ]
             }
         ],
         "sensors": [
             {
                 "id": "servo_pos",
                 "type": "jointpos",
+                "target": {
+                    "kind": "joint",
+                    "id": "servo_joint"
+                }
+            },
+            {
+                "id": "servo_vel",
+                "type": "jointvel",
                 "target": {
                     "kind": "joint",
                     "id": "servo_joint"
@@ -271,6 +280,16 @@
                     "kind": "joint",
                     "id": "servo_joint"
                 }
+            },
+            {
+                "name": "motor_torque",
+                "unit": "N·m",
+                "physical": false,
+                "target": {
+                    "kind": "actuator",
+                    "id": "servo_motor"
+                },
+                "internal": true
             }
         ],
         "outputs": [
@@ -282,6 +301,37 @@
                     "kind": "sensor",
                     "id": "servo_pos"
                 }
+            },
+            {
+                "name": "gear_velocity",
+                "unit": "deg/s",
+                "physical": false,
+                "target": {
+                    "kind": "sensor",
+                    "id": "servo_vel"
+                },
+                "internal": true
+            },
+            {
+                "name": "pot_reading",
+                "physical": false,
+                "target": {
+                    "kind": "emulator"
+                },
+                "channel_type": "scalar",
+                "dim": 1,
+                "unit": "degrees",
+                "internal": true
+            },
+            {
+                "name": "drive",
+                "physical": false,
+                "target": {
+                    "kind": "emulator"
+                },
+                "channel_type": "scalar",
+                "dim": 1,
+                "internal": true
             }
         ]
     },
@@ -289,7 +339,34 @@
         "type": "servo_emulator",
         "source": null,
         "parameters": {
-            "noise_stddev": 1.0
+            "pulse_min_us": 1000,
+            "pulse_max_us": 2000,
+            "travel_deg": 180,
+            "frame_period_ms": 20,
+            "deadband_us": 10,
+            "proportional_band_deg": 6,
+            "stall_torque_nm": 0.176,
+            "no_load_speed_dps": 600,
+            "rated_voltage": 4.8,
+            "supply_voltage": 5.0,
+            "pot_noise_deg": 0.3,
+            "center_spread_us": 10,
+            "gain_spread": 0.03
+        },
+        "parameter_sources": {
+            "pulse_min_us": "datasheet: TowerPro SG90: ~1 ms = -90°, 1.5 ms = 0°, ~2 ms = +90°",
+            "pulse_max_us": "datasheet: TowerPro SG90: ~1 ms = -90°, 1.5 ms = 0°, ~2 ms = +90°",
+            "travel_deg": "datasheet: TowerPro SG90: ~1 ms = -90°, 1.5 ms = 0°, ~2 ms = +90°",
+            "frame_period_ms": "standard hobby servo signal: one pulse every 20 ms (50 Hz)",
+            "deadband_us": "datasheet: TowerPro SG90: dead band width 10 µs",
+            "proportional_band_deg": "estimate: tuned so a 60° step matches the datasheet speed",
+            "stall_torque_nm": "datasheet: TowerPro SG90: 1.8 kgf·cm at 4.8 V (SG90-like template)",
+            "no_load_speed_dps": "datasheet: TowerPro SG90: 0.1 s/60° at 4.8 V (SG90-like template)",
+            "rated_voltage": "datasheet: TowerPro SG90: voltage of the torque and speed figures",
+            "supply_voltage": "assumption: 5 V rail, until the power net exists (plan Phase 2)",
+            "pot_noise_deg": "estimate, to be measured (plan task 37)",
+            "center_spread_us": "estimate, to be measured (plan task 37)",
+            "gain_spread": "estimate, to be measured (plan task 37)"
         }
     }
 }

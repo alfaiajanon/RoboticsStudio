@@ -7,6 +7,7 @@
 #include "Utils/Log.h"
 #include "Document/Project.h"
 #include "Document/Stage.h"
+#include "Document/DesignRules.h"
 #include "Document/Components/ComponentBlueprint.h"
 #include "Document/Components/ComponentInstance.h"
 #include "Document/Components/Units.h"
@@ -27,8 +28,7 @@
 SimulationManager::SimulationManager(Project* project): project(project),
                                                         isAlive(true),
                                                         currentState(SimulationState::PAUSED),
-                                                        timeScale(1.0f),
-                                                        stepAccumulator(0.0f) {
+                                                        timeScale(1.0f) {
     displayTextures = new DisplayTextures();
     cameraRenderer = new CameraRenderer(&mujocoContext, &physicsMutex, displayTextures);
 
@@ -50,11 +50,11 @@ SimulationManager::SimulationManager(Project* project): project(project),
 SimulationManager::~SimulationManager() {
     isAlive = false;
 
-    project->getMicroController()->stop();
+    project->getFirmware()->stop();
     project->getStageController()->stop();
 
-    if (mcuThread.joinable()) {
-        mcuThread.join();
+    if (firmwareThread.joinable()) {
+        firmwareThread.join();
     }
     if (stageThread.joinable()) {
         stageThread.join();
@@ -85,8 +85,8 @@ void SimulationManager::startThreads() {
     if (!physicsThread.joinable()) {
         physicsThread = std::thread(&SimulationManager::physicsLoop, this);
     }
-    if (!mcuThread.joinable()) {
-        mcuThread = std::thread(&SimulationManager::mcuLoop, this, project->getMicroController());
+    if (!firmwareThread.joinable()) {
+        firmwareThread = std::thread(&SimulationManager::mcuLoop, this, project->getFirmware());
     }
     if (!stageThread.joinable()) {
         stageThread = std::thread(&SimulationManager::mcuLoop, this, project->getStageController());
@@ -95,18 +95,59 @@ void SimulationManager::startThreads() {
 
 
 void SimulationManager::play() {
+    startThreads();
+
+    // Between steps only: the schedule and the scripts change below.
+    std::lock_guard<std::mutex> stepLock(stepMutex);
 
     ComponentInstance* root = project->getRootComponent();
+
+    // The pins between the board and the parts (before the emulators look
+    // them up), and the buses they register on. Prototype: the ideal board,
+    // every part wired. Real: the active board through the project's nets.
+    const bool real = project->getLevel() == ProjectLevel::Real;
+    const RealBoard board = real ? project->realBoard() : RealBoard();
+    unpoweredUids.clear();
+    if (!real) {
+        pinBus.build(project->idealBoard());
+        deviceBus.reset(&pinBus);
+    } else {
+        if (board.isValid()) pinBus.build(board, project->netlist());
+        else pinBus.clear();
+        deviceBus.reset(&pinBus);
+        const BoardDef& def = board.def();
+        const int uid = board.isValid() ? board.instance()->uid : -1;
+        auto handle = [&](const QString& id) { return id.isEmpty() || uid < 0 ? -1 : pinBus.handleOf(uid, id); };
+        deviceBus.restrictTo(handle(def.i2cSda), handle(def.i2cScl), handle(def.spiSck), handle(def.spiMosi));
+
+        // The wiring checks, in the Output panel (they don't stop the run).
+        for (const RuleIssue& issue : DesignRules::check(*project)) {
+            if (issue.isError()) Log::error("Wiring: " + issue.message);
+            else Log::warning("Wiring: " + issue.message);
+        }
+        for (int dead : DesignRules::unpoweredParts(*project).keys()) unpoweredUids.insert(dead);
+    }
     initEmulators(root);
     buildSchedule(root);
 
-    startThreads();
-
-    // move joint data to actuator targets before starting simulation
-    #pragma region todo
-
-    MicroController* mcu = project->getMicroController();
-    mcu->compile(project->getScript(), project->getRootComponent());
+    // The robot runs its compiled firmware. A .js robot script from before
+    // firmware is refused: physics runs, the robot stays idle (physics never
+    // waits for an idle controller).
+    robotController = project->getFirmware();
+    if (real && !board.isValid()) {
+        project->getFirmware()->stop();
+        Log::warning("Real level without a board: the physics runs, nothing drives the parts. Add a board from the library.");
+    } else if (project->usesFirmware()) {
+        project->getFirmware()->load(project->getFirmwareBinary(), &pinBus, &deviceBus,
+                                     real ? BoardProfile::fromBoard(board) : BoardProfile());
+    } else {
+        project->getFirmware()->stop();
+        if (project->hasRobotScript())
+            Log::error("The robot script is JavaScript (" + project->activeSketchPath() + "): JavaScript robot scripts were "
+                       "removed. Port it to a firmware sketch (.ino), see docs/user/firmware.md. The robot stays idle.");
+        else if (real)
+            Log::warning(board.instance()->name + " has no firmware: pick a sketch in its Inspector. The parts stay idle.");
+    }
 
     // Stage script: sees the controlled props and the robot pose, nothing else.
     Stage* stage = project->getStage();
@@ -119,9 +160,10 @@ void SimulationManager::play() {
             stageMcu->setGlobal("prop_" + h->id, h.get());
         }
         stageMcu->setGlobal("robot", stage->getRobotPose());
-        stageMcu->compile(stageScript, nullptr);
+        stageMcu->compile(stageScript);
     }
 
+    simBudget = 0.0;
     currentState = SimulationState::PLAYING;
 }
 
@@ -130,14 +172,20 @@ void SimulationManager::play() {
 void SimulationManager::edit() {
     startThreads();
 
-    MujocoContext* mj = &mujocoContext;
-    project->getMicroController()->stop();
+    // Stop the scripts first: a step in progress may be waiting for one.
+    project->getFirmware()->stop();
     project->getStageController()->stop();
+    std::lock_guard<std::mutex> stepLock(stepMutex);
+
+    MujocoContext* mj = &mujocoContext;
     for (const auto& h : project->getStage()->getHandles()) h->resetRuntime();
 
     ComponentInstance* root = project->getRootComponent();
     clearSchedule();
     resetEmulators(root);
+    deviceBus.reset(&pinBus);
+    pinBus.clear();
+    unpoweredUids.clear();
 
     mj_resetData(mj->getModel(), mj->getData());
     mj->forward();
@@ -147,19 +195,18 @@ void SimulationManager::edit() {
 
 
 
+// Scripts run only when a step releases them, so pausing the steps pauses
+// them too (a pending delay() resumes where it left off).
 void SimulationManager::pause() {
     if (currentState != SimulationState::PLAYING) return;
     currentState = SimulationState::PAUSED;
-    project->getMicroController()->setPaused(true);
-    project->getStageController()->setPaused(true);
 }
 
 
 
 void SimulationManager::resume() {
     if (currentState != SimulationState::PAUSED) return;
-    project->getMicroController()->setPaused(false);
-    project->getStageController()->setPaused(false);
+    simBudget = 0.0;
     currentState = SimulationState::PLAYING;
 }
 
@@ -199,6 +246,11 @@ void SimulationManager::trackFps() {
         int currentFps = static_cast<int>((frameCount*1000.0 / fpsTimer.elapsed()));
         // emit fpsUpdated(currentFps);
         status.fps=currentFps;
+        double wallSec = fpsTimer.elapsed() / 1000.0;
+        status.realTimeFactor = currentState == SimulationState::PLAYING
+            ? std::max(0.0, (status.simTime - fpsWindowSimStart) / wallSec) : 0.0;
+        status.timeScale = timeScale.load();
+        fpsWindowSimStart = status.simTime;
         emit statusUpdated(status);
 
         frameCount = 0;
@@ -215,18 +267,11 @@ void SimulationManager::trackFps() {
 #pragma region mcuLoop
 
 
-void SimulationManager::mcuLoop(MicroController* mcu) {
+// The controller runs only while a physics step releases it (lockstep, see
+// LockstepGate); runCycle() blocks until then.
+void SimulationManager::mcuLoop(RobotController* controller) {
     while (isAlive) {
-        if (currentState == SimulationState::PLAYING) {
-
-            mcu->run();
-
-            // Throttle the MCU to simulate a cheap processor
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }else{
-            // Sleep to avoid busy-waiting
-            std::this_thread::sleep_for(std::chrono::milliseconds(16));
-        }
+        controller->runCycle();
     }
 }
 
@@ -239,8 +284,8 @@ void SimulationManager::mcuLoop(MicroController* mcu) {
 
 
 /*
- * The continuous background physics loop.
- * Calculates scaled timesteps, locks the engine, processes math, and yields.
+ * The continuous background physics loop. Sim time is the only clock: wall
+ * time only paces how many lockstep steps (stepOnce) run per iteration.
  */
 #pragma region physicsLoop
 
@@ -253,51 +298,51 @@ void SimulationManager::physicsLoop() {
         lastTickTime = now;
         dtSeconds = std::min(dtSeconds, 0.25);  // Clamp so a debugger pause / OS hitch doesn't force a huge
                                                 // catch-up burst of steps on the next tick.
+        const float scale = timeScale.load();
+        const bool unbounded = scale <= 0.0f;
 
         if (currentState == SimulationState::PLAYING) {
             MujocoContext* mj = &mujocoContext;
-            double modelTimestep = mj->getModel()->opt.timestep;
+            double modelTimestep;
+            {
+                std::lock_guard<std::mutex> lock(physicsMutex);
+                modelTimestep = mj->getModel()->opt.timestep;
+            }
 
-            stepAccumulator += (dtSeconds * timeScale.load()) / modelTimestep;
-            int stepsToTake = static_cast<int>(stepAccumulator);
-            stepAccumulator -= stepsToTake;
+            // Real time: run the steps the elapsed wall time allows; a heavy
+            // script makes us fall behind (the budget is capped) instead of
+            // changing what it sees. Max: run steps for one frame's worth of
+            // wall time.
+            if (unbounded) simBudget = 0.0;
+            else simBudget = std::min(simBudget + dtSeconds * scale, std::max(0.25 * scale, modelTimestep));
 
-            if (stepsToTake > 0) {
-                ComponentInstance* root = project->getRootComponent();
-                {
-                    std::lock_guard<std::mutex> lock(physicsMutex);
+            const auto batchStart = std::chrono::steady_clock::now();
+            const auto batchWall = std::chrono::milliseconds(unbounded ? 16 : 100);
+            int steps = 0;
+            while (isAlive && (unbounded || simBudget >= modelTimestep)) {
+                if (std::chrono::steady_clock::now() - batchStart >= batchWall) break;
+                if (!stepOnce()) break;
+                if (!unbounded) simBudget -= modelTimestep;
+                ++steps;
+            }
 
-                    syncToMujocoActuator(root, mj->getModel(), mj->getData());
-                    syncToMujocoProps(project->getStage(), mj->getModel(), mj->getData());
-                    for(int i = 0; i < stepsToTake; ++i) {
-                        mj->step();
-                        // Async devices sample at the exact step that reaches their deadline.
-                        if (!asyncEmulators.empty() && mj->getData()->time >= nextAsyncDue) {
-                            runDueAsync(mj->getData()->time);
-                        }
+            {
+                std::lock_guard<std::mutex> lock(physicsMutex);
+                mjData* d = mj->getData();
+                if (steps > 0) displayTextures->collect();
+
+                status.simTime=d->time;
+                status.activeContacts=d->ncon;
+
+                int invasiveCount = 0;
+                const double PENETRATION_THRESHOLD = -0.002;
+                for (int i = 0; i < d->ncon; ++i) {
+                    if (d->contact[i].dist < PENETRATION_THRESHOLD) {
+                        invasiveCount++;
                     }
-                    syncFromMujocoSensor(root, mj->getModel(), mj->getData());
-                    syncFromMujocoProps(project->getStage(), mj->getModel(), mj->getData());
-
-                    runEmulators(mj->getData()->time); // position it here to capture both sensor and actuator properly
-                    displayTextures->collect();
-
-                    // pushTelemetry(root, mj->getData()->time);
-                    TelemetryRegistry::getInstance().captureAll(mj->getData()->time);
                 }
+                status.invasiveCollisions = invasiveCount;
             }
-            status.simTime=mj->getData()->time;
-            status.activeContacts=mj->getData()->ncon;
-
-            int invasiveCount = 0;
-            const double PENETRATION_THRESHOLD = -0.002;
-            mjData* d = mj->getData();
-            for (int i = 0; i < d->ncon; ++i) {
-                if (d->contact[i].dist < PENETRATION_THRESHOLD) {
-                    invasiveCount++;
-                }
-            }
-            status.invasiveCollisions = invasiveCount;
         }
 
         else if (currentState == SimulationState::EDITING) {
@@ -329,7 +374,9 @@ void SimulationManager::physicsLoop() {
 
         trackFps();
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        // Max mode keeps stepping; just let the UI thread at physicsMutex.
+        if (currentState == SimulationState::PLAYING && unbounded) std::this_thread::yield();
+        else std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
 }
 
@@ -339,9 +386,22 @@ void SimulationManager::physicsLoop() {
 
 
 
+// splitmix64: decorrelates per-instance seeds derived from one project seed.
+static quint64 mixSeed(quint64 x) {
+    x += 0x9E3779B97F4A7C15ull;
+    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ull;
+    x = (x ^ (x >> 27)) * 0x94D049BB133111EBull;
+    return x ^ (x >> 31);
+}
+
+
 void SimulationManager::initEmulators(ComponentInstance* comp) {
     if (!comp) return;
-    if (comp->emulator) {
+    if (comp->emulator && !unpoweredUids.contains(comp->uid)) {
+        quint64 projectSeed = quint64(project->getSimulationSeed());
+        comp->emulator->setSeed(mixSeed(mixSeed(projectSeed) ^ quint64(comp->uid)));
+        comp->emulator->setPins(&pinBus);
+        comp->emulator->setBuses(&deviceBus);
         comp->emulator->init();
     }
     for (ComponentInstance* child : comp->children) {
@@ -372,6 +432,7 @@ void SimulationManager::buildSchedule(ComponentInstance* root) {
     collectEmulators(root, d->time, m->opt.timestep);
 
     nextAsyncDue = d->time;
+    nextTelemetryDue = d->time;
 }
 
 
@@ -385,7 +446,7 @@ void SimulationManager::clearSchedule() {
 
 void SimulationManager::collectEmulators(ComponentInstance* comp, double now, double minPeriod) {
     if (!comp) return;
-    if (Emulator* e = comp->emulator) {
+    if (Emulator* e = unpoweredUids.contains(comp->uid) ? nullptr : comp->emulator) {
         Schedule s = e->schedule();
         if (s.cadence == Cadence::Synchronous) {
             syncEmulators.push_back(e);
@@ -446,8 +507,11 @@ void SimulationManager::runDueAsync(double now) {
  * tick so they can publish what their worker finished.
  */
 void SimulationManager::runEmulators(double now) {
+    const mjModel* m = mujocoContext.getModel();
+    const mjData* d = mujocoContext.getData();
     for (Emulator* e : syncEmulators) {
         e->setSimTime(now);
+        e->setPhysics(m, d);
         e->update();
     }
     for (ScheduledEmulator& s : throttledEmulators) {
@@ -461,6 +525,61 @@ void SimulationManager::runEmulators(double now) {
         s.emulator->setSimTime(now);
         s.emulator->update();
     }
+}
+
+
+
+/*
+ * One lockstep step [t, t + dt):
+ *   1. the scripts, in a fixed order (robot, then stage), see the state at t
+ *      and run until they yield past this step;
+ *   2. async workers deliver everything due by t + dt (sim time decides what
+ *      the script sees, never the host's speed);
+ *   3. under physicsMutex: inputs -> mj_step -> async samples -> sensors ->
+ *      emulators -> telemetry (on its own sim-time period).
+ * 1 and 2 run without physicsMutex, so the viewport can render meanwhile and
+ * the camera worker can rebuild its context.
+ */
+bool SimulationManager::stepOnce() {
+    std::lock_guard<std::mutex> stepLock(stepMutex);
+    if (!isAlive || currentState != SimulationState::PLAYING) return false;
+
+    MujocoContext* mj = &mujocoContext;
+    double t, dt;
+    {
+        std::lock_guard<std::mutex> lock(physicsMutex);
+        if (!mj->getModel() || !mj->getData()) return false;
+        t = mj->getData()->time;
+        dt = mj->getModel()->opt.timestep;
+    }
+
+    if (robotController) robotController->runStep(t, dt);
+    project->getStageController()->runStep(t, dt);
+
+    for (ScheduledEmulator& s : asyncEmulators) s.emulator->awaitDue(t + dt);
+
+    std::lock_guard<std::mutex> lock(physicsMutex);
+    mjModel* m = mj->getModel();
+    mjData* d = mj->getData();
+    ComponentInstance* root = project->getRootComponent();
+
+    syncToMujocoActuator(root, m, d, unpoweredUids);
+    syncToMujocoProps(project->getStage(), m, d);
+    mj->step();
+    // Async devices sample at the exact step that reaches their deadline.
+    if (!asyncEmulators.empty() && d->time >= nextAsyncDue) {
+        runDueAsync(d->time);
+    }
+    syncFromMujocoSensor(root, m, d);
+    syncFromMujocoProps(project->getStage(), m, d);
+
+    runEmulators(d->time); // position it here to capture both sensor and actuator properly
+
+    if (d->time >= nextTelemetryDue - 1e-9) {
+        TelemetryRegistry::getInstance().captureAll(d->time);
+        nextTelemetryDue = advanceDeadline(nextTelemetryDue, kTelemetryPeriod, d->time);
+    }
+    return true;
 }
 
 
@@ -580,28 +699,33 @@ void SimulationManager::cacheMujocoIds(ComponentInstance* root, mjModel* m) {
             const QString& key = it.key();
             const InterfaceDef& def = it.value();
 
-            QString actuatorId;
+            QString actuatorId = bp->actuatorForInput(def);
             if (def.target.kind == "joint") {
                 int jointMjId = mj_name2id(m, mjOBJ_JOINT, (prefix + def.target.id).toStdString().c_str());
                 BasicIOValue jvalue = root->getJointValue(def.target.id);
                 jvalue.mujocoId = jointMjId;
                 root->setJointValue(def.target.id, jvalue);
 
+                // Fine if an actuator-kind input drives this joint's actuator
+                // instead (a servo's motor torque); the joint input then only poses it.
+                bool drivenElsewhere = false;
                 for (const ActuatorDef& a : bp->actuators) {
-                    if (a.target.kind == "joint" && a.target.id == def.target.id) { actuatorId = a.id; break; }
+                    if (a.target.kind != "joint" || a.target.id != def.target.id) continue;
+                    for (const InterfaceDef& other : bp->interfaceInputs) {
+                        if (other.target.kind == "actuator" && other.target.id == a.id) drivenElsewhere = true;
+                    }
                 }
-                if (actuatorId.isEmpty()) {
-                    Log::warning(QString("SimulationManager: component %1 (%2): input '%3' targets joint '%4' which has no actuator; commands will not drive it")
+                if (actuatorId.isEmpty() && !drivenElsewhere) {
+                    Log::warning(QString("SimulationManager: component %1 (%2): input '%3' targets joint '%4' which has no position/velocity actuator; commands will not drive it")
                                     .arg(root->uid).arg(root->modelId, key, def.target.id));
                 }
-            } else if (def.target.kind == "actuator") {
-                actuatorId = def.target.id;
             }
 
-            if (!actuatorId.isEmpty()) {
-                int id = mj_name2id(m, mjOBJ_ACTUATOR, (prefix + actuatorId).toStdString().c_str());
-                BasicIOValue value = root->getActuatorValue(key);
-                value.mujocoId = id;
+            // -1 when nothing to drive, so a stale id from an earlier model can't write ctrl.
+            BasicIOValue value = root->getActuatorValue(key);
+            if (!value.data.empty()) {
+                value.mujocoId = actuatorId.isEmpty() ? -1
+                    : mj_name2id(m, mjOBJ_ACTUATOR, (prefix + actuatorId).toStdString().c_str());
                 root->setActuatorValue(key, value);
             }
         }
@@ -648,7 +772,7 @@ void SimulationManager::cacheMujocoIds(ComponentInstance* root, mjModel* m) {
  * Writes d->ctrl for every input signal that resolved to an actuator.
  * The unit conversion comes from the interface signal.
  */
-void SimulationManager::syncToMujocoActuator(ComponentInstance* root, mjModel* m, mjData* d) {
+void SimulationManager::syncToMujocoActuator(ComponentInstance* root, mjModel* m, mjData* d, const QSet<int>& dead) {
     if (!m || !d || !root) return;
 
     if (ComponentBlueprint* bp = root->getBlueprint()) {
@@ -661,6 +785,7 @@ void SimulationManager::syncToMujocoActuator(ComponentInstance* root, mjModel* m
             if (mujocoId >= 0 && mujocoId < m->nu) {
 
                 double val = data.dim == 1 ? data.data[0] : 0.0;
+                if (dead.contains(root->uid)) val = 0.0;   // a dead part drives nothing
 
                 val *= Units::toMujoco(it.value().unit);
 
@@ -670,7 +795,7 @@ void SimulationManager::syncToMujocoActuator(ComponentInstance* root, mjModel* m
     }
 
     for (ComponentInstance* child : root->children) {
-        syncToMujocoActuator(child, m, d);
+        syncToMujocoActuator(child, m, d, dead);
     }
 }
 

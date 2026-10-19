@@ -55,6 +55,8 @@ struct Edge {
     double armature = 0.0;
     double frictionloss = 0.0;
     bool collision = true;
+    // field ("range", "damping", ...) -> where its value comes from
+    QMap<QString, QString> sources;
 };
 
 

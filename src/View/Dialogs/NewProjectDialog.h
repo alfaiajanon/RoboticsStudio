@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QDialog>
+#include <QComboBox>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QString>
@@ -23,6 +24,7 @@ private:
 
     QLineEdit* m_nameEdit;
     QLineEdit* m_locationEdit;
+    QComboBox* m_levelCombo;
     QPushButton* m_createBtn;
     QString m_finalProjectPath;
 };

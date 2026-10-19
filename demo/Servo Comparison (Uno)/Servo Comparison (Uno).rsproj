@@ -1,0 +1,333 @@
+{
+    "assembly": {
+        "components": [
+            {
+                "connection": {
+                    "parent_connector": "root",
+                    "parent_uid": 0,
+                    "self_connector": "",
+                    "snap_angle": 0
+                },
+                "model_id": "stage",
+                "name": "stage",
+                "parameters": {
+                },
+                "uid": 1
+            },
+            {
+                "connection": {
+                    "parent_connector": "connector_1",
+                    "parent_uid": 1,
+                    "self_connector": "base",
+                    "snap_angle": 90
+                },
+                "model_id": "servo_sg90",
+                "name": "Emulated Servo",
+                "parameters": {
+                    "servo_joint": 0
+                },
+                "uid": 2
+            },
+            {
+                "connection": {
+                    "parent_connector": "connector_2",
+                    "parent_uid": 1,
+                    "self_connector": "base",
+                    "snap_angle": 90
+                },
+                "model_id": "sg90",
+                "name": "Standard Servo",
+                "parameters": {
+                    "servo_joint": 0
+                },
+                "uid": 3
+            },
+            {
+                "connection": {
+                    "parent_connector": "horn",
+                    "parent_uid": 2,
+                    "self_connector": "connector_1",
+                    "snap_angle": 0
+                },
+                "model_id": "weight",
+                "name": "weight",
+                "parameters": {
+                },
+                "uid": 4
+            },
+            {
+                "connection": {
+                    "parent_connector": "horn",
+                    "parent_uid": 3,
+                    "self_connector": "connector_1",
+                    "snap_angle": 0
+                },
+                "model_id": "weight",
+                "name": "weight",
+                "parameters": {
+                },
+                "uid": 5
+            },
+            {
+                "connection": {
+                    "parent_connector": "top",
+                    "parent_uid": 1,
+                    "self_connector": "base",
+                    "snap_angle": 0
+                },
+                "firmware": "Servo Comparison (Uno).ino",
+                "model_id": "arduino_uno",
+                "name": "Uno",
+                "parameters": {
+                },
+                "uid": 6
+            }
+        ],
+        "constraints": [
+        ],
+        "transform": {
+            "rotation": [
+                0,
+                0,
+                0
+            ]
+        }
+    },
+    "level": "real",
+    "meta": {
+        "author": "",
+        "icon": "logo.png",
+        "name": "Servo Comparison (Uno)",
+        "version": "1.0.0"
+    },
+    "plotting": {
+        "canvases": [
+            {
+                "enabled": true,
+                "name": "Emulated",
+                "targets": [
+                    {
+                        "color": "#34bef0",
+                        "signal": "target_angle",
+                        "uid": 2
+                    },
+                    {
+                        "color": "#bef034",
+                        "signal": "current_angle_real",
+                        "uid": 2
+                    }
+                ],
+                "type": "scalar"
+            },
+            {
+                "enabled": true,
+                "name": "Standard",
+                "targets": [
+                    {
+                        "color": "#34f069",
+                        "signal": "target_angle",
+                        "uid": 3
+                    },
+                    {
+                        "color": "#3440f0",
+                        "signal": "current_angle",
+                        "uid": 3
+                    }
+                ],
+                "type": "scalar"
+            }
+        ],
+        "motion": {
+            "targets": [
+            ]
+        }
+    },
+    "schema": 3,
+    "script": {
+        "current": 0,
+        "paths": [
+            "Servo Comparison (Uno).ino"
+        ]
+    },
+    "stage": {
+        "environment": {
+            "ambient": [
+                0.1,
+                0.1,
+                0.1
+            ],
+            "fog": {
+                "color": [
+                    0.5,
+                    0.5,
+                    0.5
+                ],
+                "enabled": false,
+                "end": 10,
+                "start": 3
+            },
+            "gravity": [
+                0,
+                0,
+                -9.81
+            ],
+            "headlight": [
+                0.4,
+                0.4,
+                0.4
+            ],
+            "light": {
+                "castShadow": true,
+                "diffuse": [
+                    0.8,
+                    0.8,
+                    0.8
+                ],
+                "dir": [
+                    0,
+                    0,
+                    -1
+                ]
+            },
+            "shadowSize": 4096,
+            "skyBottom": [
+                0,
+                0,
+                0
+            ],
+            "skyTop": [
+                0.4,
+                0.6,
+                0.8
+            ],
+            "timestep": 0.002
+        },
+        "floor": {
+            "color1": [
+                0.2,
+                0.3,
+                0.4
+            ],
+            "color2": [
+                0.1,
+                0.15,
+                0.2
+            ],
+            "euler": [
+                0,
+                0,
+                0
+            ],
+            "file": "",
+            "friction": [
+                1,
+                0.005,
+                1e-04
+            ],
+            "pattern": "checker",
+            "pos": [
+                0,
+                0,
+                0
+            ],
+            "scale": [
+                1,
+                1,
+                1
+            ],
+            "texRepeat": 10,
+            "type": "plane"
+        },
+        "props": [
+        ],
+        "robotSpawn": [
+            0,
+            0,
+            0
+        ],
+        "script": {
+            "current": -1,
+            "paths": [
+            ]
+        }
+    },
+    "version": "0.3.0-alpha",
+    "wiring": {
+        "layout": {
+            "2": [
+                -320,
+                60
+            ],
+            "3": [
+                -320,
+                200
+            ],
+            "6": [
+                0,
+                0
+            ]
+        },
+        "wires": [
+            {
+                "a": {
+                    "pin": "d9",
+                    "uid": 6
+                },
+                "b": {
+                    "pin": "signal",
+                    "uid": 2
+                }
+            },
+            {
+                "a": {
+                    "pin": "d10",
+                    "uid": 6
+                },
+                "b": {
+                    "pin": "signal",
+                    "uid": 3
+                }
+            },
+            {
+                "a": {
+                    "pin": "5v",
+                    "uid": 6
+                },
+                "b": {
+                    "pin": "vcc",
+                    "uid": 2
+                }
+            },
+            {
+                "a": {
+                    "pin": "5v",
+                    "uid": 6
+                },
+                "b": {
+                    "pin": "vcc",
+                    "uid": 3
+                }
+            },
+            {
+                "a": {
+                    "pin": "gnd",
+                    "uid": 6
+                },
+                "b": {
+                    "pin": "gnd",
+                    "uid": 2
+                }
+            },
+            {
+                "a": {
+                    "pin": "gnd2",
+                    "uid": 6
+                },
+                "b": {
+                    "pin": "gnd",
+                    "uid": 3
+                }
+            }
+        ]
+    }
+}

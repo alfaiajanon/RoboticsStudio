@@ -1,4 +1,6 @@
 #include "EditorWindow.h"
+#include "Simulation/Firmware/FirmwareCompiler.h"
+#include "View/Widgets/CodeEditor.h"
 
 #include <QDockWidget>
 #include <QDialog>
@@ -9,6 +11,7 @@
 #include <QWidget>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QComboBox>
 #include <QTabBar>
 #include <algorithm>
 #include <limits>
@@ -99,6 +102,18 @@ void EditorWindow::setupSimConn(){
         }
         simTimeLabel->setText(QString("Sim Time: %1").arg(status.simTime));
         collisionCountLabel->setText(QString("Contacts: %1").arg(status.activeContacts));
+
+        SimulationManager* sim = Application::getInstance()->getSimulationManager();
+        if (sim->getState() != SimulationState::PLAYING) {
+            rtfLabel->setText("Real-time: --");
+            rtfLabel->setStyleSheet("color: #e6e7e9;");
+        } else {
+            rtfLabel->setText(QString("Real-time: %1x").arg(status.realTimeFactor, 0, 'f', 2));
+            // Falling well behind the selected scale: the scripts or cameras
+            // are heavier than the host can run at that speed.
+            bool behind = status.timeScale > 0.0 && status.realTimeFactor < 0.9 * status.timeScale;
+            rtfLabel->setStyleSheet(behind ? "color: #ff5555;" : "color: #e6e7e9;");
+        }
     });
 
     setupCameraControls();
@@ -122,6 +137,13 @@ void EditorWindow::refresh() {
     if(scriptPanel){
         scriptPanel->refresh();
     }
+    if (wiringPage) {
+        Project* project = Application::getInstance()->getProject();
+        const bool real = project && project->getLevel() == ProjectLevel::Real;
+        centerStack->setPageVisible(wiringPage, real);
+        if (real) wiringPage->refresh();
+    }
+    updateLevelBadge();
     int temp = currentSelectedUid;
     currentSelectedUid = -1;
     selectComponent(temp);
@@ -143,6 +165,21 @@ void EditorWindow::scheduleRefresh() {
     });
 }
 
+
+
+
+void EditorWindow::updateLevelBadge() {
+    Project* project = Application::getInstance() ? Application::getInstance()->getProject() : nullptr;
+    if (!levelBadge || !project) return;
+    if (project->getLevel() == ProjectLevel::Prototype) {
+        levelBadge->setText("Prototype · ideal board");
+        return;
+    }
+    const QList<ComponentInstance*> boards = project->boards();
+    if (boards.isEmpty()) levelBadge->setText("Real · no board");
+    else if (boards.size() == 1) levelBadge->setText("Real · " + boards.first()->name);
+    else levelBadge->setText(QString("Real · %1 boards").arg(boards.size()));
+}
 
 
 
@@ -305,6 +342,8 @@ void EditorWindow::setupMenuBar() {
     showViewportAct->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_1));
     QAction* showScriptAct = viewMenu->addAction("Script");
     showScriptAct->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_2));
+    QAction* showWiringAct = viewMenu->addAction("Wiring (Real level)");
+    showWiringAct->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_3));
 
     QMenu* debugMenu = topMenu->addMenu("Debug");
     QAction* dumpXMLAct = debugMenu->addAction("Dump Mujoco XML (Edit Mode)");
@@ -327,6 +366,15 @@ void EditorWindow::setupMenuBar() {
     });
     connect(showScriptAct, &QAction::triggered, this, [this]() {
         if (centerStack) centerStack->setCurrentPage(scriptPanel);
+    });
+    connect(showWiringAct, &QAction::triggered, this, [this]() {
+        Project* project = Application::getInstance()->getProject();
+        if (!centerStack || !wiringPage || !project) return;
+        if (project->getLevel() != ProjectLevel::Real) {
+            Toast::showMessage(this, "Wiring is part of the Real level (project settings: Level)", 2500);
+            return;
+        }
+        centerStack->setCurrentPage(wiringPage);
     });
 
     connect(newAct, &QAction::triggered, this, [this]() {
@@ -611,6 +659,12 @@ void EditorWindow::setupSplitting(){
     scriptPanel = new ScriptPanel();
     centerStack->addPage(scriptPanel, Theme::icon(":/icons/code.svg", Theme::accentLight), "Script (Ctrl+2)");
 
+    // The schematic of the Real level's electronics (hidden at Prototype).
+    wiringPage = new WiringPage();
+    centerStack->addPage(wiringPage, Theme::icon(":/icons/wire.svg", Theme::accentLight), "Wiring (Ctrl+3)");
+    centerStack->setPageVisible(wiringPage, false);
+    connect(wiringPage, &WiringPage::componentSelected, this, &EditorWindow::selectComponent);
+
     bottomTabs = new QTabWidget();
     bottomTabs->setMinimumHeight(bottomTabs->tabBar()->sizeHint().height());
     bottomTabs->setMovable(true);
@@ -703,11 +757,31 @@ void EditorWindow::setupMainViewport() {
     fpsLabel = new QLabel("FPS: --", viewport);
     simTimeLabel = new QLabel("Sim Time: --", viewport);
     collisionCountLabel=new QLabel("Collisions: --", viewport);
+    rtfLabel = new QLabel("Real-time: --", viewport);
     containerLayout->addWidget(simTimeLabel);
+    containerLayout->addWidget(rtfLabel);
     containerLayout->addWidget(collisionCountLabel);
     containerLayout->addWidget(fpsLabel);
 
     hudLayout->addWidget(container, 0, Qt::AlignTop | Qt::AlignLeft);
+
+    // The project's level; a click opens the project settings, where it is set.
+    levelBadge = new QPushButton(viewport);
+    levelBadge->setObjectName("levelBadge");
+    levelBadge->setCursor(Qt::PointingHandCursor);
+    levelBadge->setFocusPolicy(Qt::NoFocus);
+    levelBadge->setToolTip("Project level: click to change it in the project settings");
+    levelBadge->setStyleSheet(R"(
+        #levelBadge { background-color: rgba(39, 40, 43, 220); border: 1px solid #101113; border-radius: 6px;
+                      padding: 4px 10px; color: #a6a8ae; text-align: left; }
+        #levelBadge:hover { background-color: rgba(49, 50, 54, 240); color: #e6e7e9; }
+    )");
+    connect(levelBadge, &QPushButton::clicked, this, [this]() {
+        currentSelectedUid = -2;   // force the Inspector to rebuild even if the project settings were shown
+        selectComponent(0);
+    });
+    hudLayout->addSpacing(6);
+    hudLayout->addWidget(levelBadge, 0, Qt::AlignTop | Qt::AlignLeft);
     hudLayout->addStretch();
 
     centerStack->addPage(viewport, Theme::icon(":/icons/cube.svg", Theme::accentLight), "3D View (Ctrl+1)");
@@ -763,6 +837,27 @@ void EditorWindow::setupMainViewport() {
     simControlsLayout->setContentsMargins(0, 0, 0, 0);
     simControlsLayout->setSpacing(6);
 
+    // Time scale: sim seconds per wall second. Sim time is the only clock, so
+    // this changes only how fast a run plays, never what the scripts see.
+    QComboBox* scaleCombo = new QComboBox();
+    scaleCombo->setObjectName("timeScaleCombo");
+    scaleCombo->setFocusPolicy(Qt::NoFocus);
+    scaleCombo->setCursor(Qt::PointingHandCursor);
+    scaleCombo->setToolTip("Simulation speed. Max runs as fast as the computer allows.");
+    scaleCombo->setStyleSheet(R"(
+        #timeScaleCombo { background-color: rgba(39, 40, 43, 230); border: 1px solid #101113; border-radius: 6px;
+                          padding: 7px 10px; color: #e6e7e9; font-weight: 600; }
+        #timeScaleCombo:hover { background-color: rgba(49, 50, 54, 240); }
+    )");
+    for (auto [label, scale] : {std::pair{"0.25x", 0.25f}, {"0.5x", 0.5f}, {"1x", 1.0f}, {"2x", 2.0f}, {"Max", 0.0f}}) {
+        scaleCombo->addItem(label, scale);
+    }
+    scaleCombo->setCurrentIndex(2);
+    connect(scaleCombo, &QComboBox::currentIndexChanged, this, [scaleCombo](int index) {
+        Application::getInstance()->getSimulationManager()->setTimeScale(scaleCombo->itemData(index).toFloat());
+    });
+    simControlsLayout->addWidget(scaleCombo);
+
     pauseBtn = makeHudBtn("pauseSimBtn");
     setHudBtn(pauseBtn, "Pause", ":/icons/pause.svg", pauseColor);
     pauseBtn->hide();
@@ -790,31 +885,75 @@ void EditorWindow::setupMainViewport() {
         simManager->reloadModel(project->generateMujocoXML(isSimulation), project->getRootComponent());
     };
 
-    connect(playBtn, &QPushButton::clicked, this, [this, reloadSimulation, setHudBtn]() {
+    firmwareCompiler = new FirmwareCompiler(this);
+
+    // Start the run (the script, or the compiled firmware, is ready).
+    auto startRun = [this, reloadSimulation, setHudBtn]() {
+        SimulationManager* sim = Application::getInstance()->getSimulationManager();
+        Project* project = Application::getInstance()->getProject();
+        centerStack->setCurrentPage(viewport);
+        reloadSimulation(project, sim, true);
+
+        sim->play();
+        setHudBtn(playBtn, "Stop", ":/icons/stop.svg", stopColor);
+        setHudBtn(pauseBtn, "Pause", ":/icons/pause.svg", pauseColor);
+        pauseBtn->show();
+
+        if (this->inspector) this->inspector->setInputState(false);
+        if (this->componentsPanel) this->componentsPanel->setEnabled(false);
+        if (this->stagePanel) this->stagePanel->setEnabled(false);
+        scriptPanel->setCreationEnabled(false);
+        if (wiringPage) wiringPage->setEditable(false);
+    };
+
+    // A C++ sketch is compiled first; the run starts only if that succeeds.
+    connect(firmwareCompiler, &FirmwareCompiler::finished, this, [this, startRun, setHudBtn](bool ok) {
+        playBtn->setEnabled(true);
+        setHudBtn(playBtn, "Play", ":/icons/play.svg", playColor);
+        SimulationManager* sim = Application::getInstance()->getSimulationManager();
+        if (sim->getState() != SimulationState::EDITING) return;
+
+        // The sketch's own errors and warnings, as markers in the script editor.
+        Project* project = Application::getInstance()->getProject();
+        QList<LineMarker> markers;
+        for (const FirmwareCompiler::Diagnostic& d : firmwareCompiler->diagnostics()) {
+            if (d.inSketch && d.severity != "note") markers.append({d.line, d.severity == "error", d.message});
+        }
+        const QString sketchPath = project->getProjectDirectory() + "/" + project->activeSketchPath();
+        if (!ok) {
+            // Show the sketch at its first error (opening it if another script is shown).
+            centerStack->setCurrentPage(scriptPanel);
+            if (QFileInfo(scriptPanel->currentPath()) != QFileInfo(sketchPath) && scriptPanel->confirmLeaveUnsaved())
+                scriptPanel->loadScript(sketchPath);
+            if (QFileInfo(scriptPanel->currentPath()) == QFileInfo(sketchPath)) scriptPanel->showDiagnostics(markers, true);
+            Toast::showMessage(this, "Firmware didn't compile: see the marked lines and the Output panel", 3000);
+            return;
+        }
+        if (QFileInfo(scriptPanel->currentPath()) == QFileInfo(sketchPath)) scriptPanel->showDiagnostics(markers, false);
+        Application::getInstance()->getProject()->setFirmwareBinary(firmwareCompiler->wasm());
+        startRun();
+    });
+
+    connect(playBtn, &QPushButton::clicked, this, [this, startRun, reloadSimulation, setHudBtn]() {
         SimulationManager* sim = Application::getInstance()->getSimulationManager();
 
         if (sim->getState() == SimulationState::EDITING) {
+            if (firmwareCompiler->isBusy()) return;
             // The run reads the script from disk: flush pending editor edits
             if (scriptPanel->hasUnsavedChanges()) scriptPanel->saveScript();
-            centerStack->setCurrentPage(viewport);
 
             Project* project = Application::getInstance()->getProject();
-            project->reloadScript();
-            reloadSimulation(project, sim, true);
-
-            if (this->plotPanel) {
-                // this->plotPanel->clearAllGraphs();
+            if (project->hasScriptAt(project->getCurrentScriptIdx())) project->reloadScript();
+            // The active sketch: the ideal board's (Prototype) or the active
+            // board's slot (Real), with that board's robot_pins.h.
+            if (project->usesFirmware()) {
+                project->writeBoardHeader();
+                setHudBtn(playBtn, "Compiling...", ":/icons/play.svg", playColor);
+                playBtn->setEnabled(false);
+                firmwareCompiler->compile(project->activeSketchPath(), project->readActiveSketch(), project->pinsHeader());
+                return;
             }
-
-            sim->play();
-            setHudBtn(playBtn, "Stop", ":/icons/stop.svg", stopColor);
-            setHudBtn(pauseBtn, "Pause", ":/icons/pause.svg", pauseColor);
-            pauseBtn->show();
-
-            if (this->inspector) this->inspector->setInputState(false);
-            if (this->componentsPanel) this->componentsPanel->setEnabled(false);
-            if (this->stagePanel) this->stagePanel->setEnabled(false);
-            scriptPanel->setCreationEnabled(false);
+            startRun();
 
         } else {
             sim->edit();
@@ -830,6 +969,7 @@ void EditorWindow::setupMainViewport() {
             if (this->componentsPanel) this->componentsPanel->setEnabled(true);
             if (this->stagePanel) this->stagePanel->setEnabled(true);
             scriptPanel->setCreationEnabled(true);
+            if (wiringPage) wiringPage->setEditable(true);
         }
     });
 
@@ -959,6 +1099,7 @@ void EditorWindow::selectComponent(int uid) {
     viewport->blockSignals(false);
 
     inspector->setComponent(uid);
+    if (wiringPage) wiringPage->setSelectedUid(uid);
 }
 
 

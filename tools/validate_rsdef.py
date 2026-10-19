@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Validate .rsdef files against schema 2.
+"""Validate .rsdef files against schema 3 (schema 2 files still load: they are
+upgraded in memory, with a warning).
 
 Mirrors the rules of ComponentData::fromJson (src/Document/Components/ComponentData.cpp)
 and the DeviceTypes table (src/Document/Components/DeviceTypes.cpp): reference
@@ -36,6 +37,14 @@ class Errors(list):
         self.append(msg)
 
 
+# mirrors PinDef::types() / PinDef::capabilities() in ComponentData.cpp
+PIN_TYPES = ("pwm", "digital", "analog", "i2c_sda", "i2c_scl", "spi_sck", "spi_mosi", "spi_miso",
+             "uart_tx", "uart_rx", "power", "ground", "gpio", "power_out")
+PIN_CAPS = ("digital", "pwm", "analog", "interrupt", "i2c_sda", "i2c_scl",
+            "spi_sck", "spi_mosi", "spi_miso", "uart_tx", "uart_rx")
+SCHEMA_VERSION, MIN_SCHEMA_VERSION = 3, 2
+SOURCED_JOINT_FIELDS = ("range", "damping", "armature", "frictionloss")
+
 def unique(errs, ids, what):
     seen = set()
     for i in ids:
@@ -60,10 +69,58 @@ def check_target(errs, owner, target, allowed, ids):
         errs.add(f"{owner}: target {kind} '{target.get('id')}' does not exist")
 
 
+def check_pins(errs, d):
+    pins = d.get("pins", [])
+    board = d.get("board")
+    numbers = {}
+    for p in pins:
+        pid, ptype = p.get("id"), p.get("type")
+        if ptype is not None and ptype not in PIN_TYPES:
+            errs.add(f"pin '{pid}': type '{ptype}' is not one of {PIN_TYPES}")
+        for c in p.get("caps", []):
+            if c not in PIN_CAPS:
+                errs.add(f"pin '{pid}': capability '{c}' is not one of {PIN_CAPS}")
+        if p.get("caps") and ptype != "gpio":
+            errs.add(f"pin '{pid}': only gpio pins have caps")
+        if ptype == "gpio" and "number" not in p:
+            errs.add(f"pin '{pid}': a gpio pin needs a number")
+        if p.get("internal") and "number" not in p:
+            errs.add(f"pin '{pid}': an internal pin needs a number")
+        if board is None and (ptype in ("gpio", "power_out") or p.get("internal")):
+            errs.add(f"pin '{pid}': gpio, power_out and internal pins are only on boards (add a \"board\" block)")
+        if "number" in p:
+            if p["number"] in numbers:
+                errs.add(f"pins '{numbers[p['number']]}' and '{pid}' have the same number {p['number']}")
+            numbers[p["number"]] = pid
+    if board is None:
+        return
+    for key in ("fqbn", "header_folder", "logic_voltage"):
+        if not board.get(key):
+            errs.add(f"board: missing '{key}'")
+    by_id = {p.get("id"): p for p in pins}
+
+    def check_ref(field, pin_id, cap):
+        if not pin_id:
+            return
+        p = by_id.get(pin_id)
+        if p is None:
+            errs.add(f"board.{field}: pin '{pin_id}' does not exist")
+        elif p.get("type") != "gpio" or cap not in p.get("caps", []):
+            errs.add(f"board.{field}: pin '{pin_id}' is not a gpio pin with '{cap}'")
+    i2c, spi = board.get("i2c", {}), board.get("spi", {})
+    check_ref("i2c.sda", i2c.get("sda"), "i2c_sda")
+    check_ref("i2c.scl", i2c.get("scl"), "i2c_scl")
+    check_ref("spi.sck", spi.get("sck"), "spi_sck")
+    check_ref("spi.mosi", spi.get("mosi"), "spi_mosi")
+    check_ref("spi.miso", spi.get("miso"), "spi_miso")
+    for pin_id in board.get("analog_write", {}).get("pins", {}):
+        check_ref("analog_write.pins", pin_id, "pwm")
+
+
 def validate(d):
     errs = Errors()
-    if d.get("schema") != 2:
-        errs.add(f"schema must be 2, got {d.get('schema')!r}")
+    if d.get("schema") not in range(MIN_SCHEMA_VERSION, SCHEMA_VERSION + 1):
+        errs.add(f"schema must be {MIN_SCHEMA_VERSION}..{SCHEMA_VERSION}, got {d.get('schema')!r}")
         return errs
     if not d.get("id"):
         errs.add("missing top-level 'id'")
@@ -114,6 +171,8 @@ def validate(d):
     geom_ids = unique(errs, geom_ids, "geom")
     site_ids = unique(errs, site_ids, "site")
 
+    unique(errs, [p.get("id") for p in d.get("pins", [])], "pin")
+    check_pins(errs, d)
     for j in joints:
         for key in ("actuator", "sensor"):
             if key in j:
@@ -121,6 +180,15 @@ def validate(d):
         for side in ("body_a", "body_b"):
             if j.get(side) not in body_ids:
                 errs.add(f"joint '{j.get('id')}': {side} '{j.get(side)}' does not exist")
+        src = j.get("sources", {})
+        if not isinstance(src, dict):
+            errs.add(f"joint '{j.get('id')}': 'sources' must be an object")
+        else:
+            for key, val in src.items():
+                if key not in SOURCED_JOINT_FIELDS:
+                    errs.add(f"joint '{j.get('id')}': sources.{key} is not a sourced joint field {SOURCED_JOINT_FIELDS}")
+                elif not isinstance(val, str):
+                    errs.add(f"joint '{j.get('id')}': sources.{key} must be a string")
     # Joints stacked on one body pair need armature > 0 (else MuJoCo's mass matrix is singular)
     pair = lambda j: frozenset((j.get("body_a"), j.get("body_b")))
     per_pair = {}
@@ -236,7 +304,44 @@ def validate(d):
                         if not isinstance(params.get(p), (int, float)) or isinstance(params.get(p), bool):
                             errs.add(f"{owner}: domain parameter '{p}' missing or not a number")
     unique(errs, names, "signal name")
+
+    emu = d.get("emulator") or {}
+    sources = emu.get("parameter_sources", {})
+    if not isinstance(sources, dict) or not all(isinstance(v, str) for v in sources.values()):
+        errs.add("emulator: 'parameter_sources' must map parameter names to strings")
     return errs
+
+
+def warnings(d):
+    """Non-fatal: error-model parameters without a stated source."""
+    out = []
+    if d.get("schema") == 2:
+        out.append("schema 2: loads (upgraded in memory); tools/convert_schema3.py updates the file")
+    board = d.get("board")
+    if board is not None:
+        bsrc = board.get("sources", {}) if isinstance(board.get("sources"), dict) else {}
+        for key in ("logic_voltage", "adc", "analog_write", "i2c", "spi"):
+            if key in board and not str(bsrc.get(key, "")).strip():
+                out.append(f"board '{key}' has no source (datasheet, measurement or 'estimate: ...')")
+    # A joint stacked on another joint's bodies is a play gap (backlash): an
+    # error-model parameter in all but name, so its range needs a source.
+    joints = (d.get("kinematics") or {}).get("joints", [])
+    seen = set()
+    for j in joints:
+        pair = frozenset((j.get("body_a"), j.get("body_b")))
+        src = j.get("sources") if isinstance(j.get("sources"), dict) else {}
+        if pair in seen and "range" in j and not str(src.get("range", "")).strip():
+            out.append(f"joint '{j.get('id')}' (play gap on another joint) has no sources.range")
+        seen.add(pair)
+    emu = d.get("emulator") or {}
+    sources = emu.get("parameter_sources", {})
+    if not isinstance(sources, dict):
+        return out
+    params = emu.get("parameters") or {}
+    out += [f"emulator parameter '{k}' has no source (datasheet, measurement or 'estimate: ...')"
+           for k in params if not str(sources.get(k, "")).strip()]
+    out += [f"parameter_sources: '{k}' is not an emulator parameter" for k in sources if k not in params]
+    return out
 
 
 def collect(args):
@@ -266,6 +371,8 @@ def main(argv):
                 print(f"     {e}")
         else:
             print(f"ok   {f}")
+        for w in warnings(data):
+            print(f"     warning: {w}")
     print(f"{len(files) - bad}/{len(files)} valid")
     return 1 if bad else 0
 

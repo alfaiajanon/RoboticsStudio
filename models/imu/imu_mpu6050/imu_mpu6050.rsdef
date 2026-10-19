@@ -1,5 +1,5 @@
 {
-    "schema": 2,
+    "schema": 3,
     "id": "sensor_mpu6050",
     "meta": {
         "hint_class": "sensor",
@@ -25,6 +25,7 @@
     "pins": [
         {
             "id": "vcc",
+            "type": "power",
             "voltage_range": [
                 2.3,
                 3.3
@@ -33,14 +34,17 @@
         },
         {
             "id": "gnd",
+            "type": "ground",
             "description": "Ground pin for IMU sensor"
         },
         {
             "id": "scl",
+            "type": "i2c_scl",
             "description": "I2C clock pin for communication"
         },
         {
             "id": "sda",
+            "type": "i2c_sda",
             "description": "I2C data pin for communication"
         },
         {
@@ -186,7 +190,7 @@
             {
                 "name": "acceleration",
                 "unit": "m/s^2",
-                "physical": true,
+                "physical": false,
                 "target": {
                     "kind": "sensor",
                     "id": "imu_accel"
@@ -200,11 +204,41 @@
             {
                 "name": "gyroscope",
                 "unit": "degrees/s",
-                "physical": true,
+                "physical": false,
                 "target": {
                     "kind": "sensor",
                     "id": "imu_gyro"
                 },
+                "componentLabels": [
+                    "x",
+                    "y",
+                    "z"
+                ]
+            },
+            {
+                "name": "accel_reading",
+                "unit": "g",
+                "physical": true,
+                "target": {
+                    "kind": "emulator"
+                },
+                "channel_type": "vector",
+                "dim": 3,
+                "componentLabels": [
+                    "x",
+                    "y",
+                    "z"
+                ]
+            },
+            {
+                "name": "gyro_reading",
+                "unit": "\u00b0/s",
+                "physical": true,
+                "target": {
+                    "kind": "emulator"
+                },
+                "channel_type": "vector",
+                "dim": 3,
                 "componentLabels": [
                     "x",
                     "y",
@@ -217,7 +251,24 @@
         "type": "imu_emulator",
         "source": null,
         "parameters": {
-            "noise_stddev": 1.0
+            "accel_noise_density_ug": 400,
+            "gyro_noise_density_dps": 0.005,
+            "accel_bias_spread_mg": 25,
+            "gyro_bias_spread_dps": 5,
+            "accel_bias_walk_mg": 0.05,
+            "gyro_bias_walk_dps": 0.01,
+            "scale_spread": 0.01,
+            "ad0_high": 0
+        },
+        "parameter_sources": {
+            "accel_noise_density_ug": "datasheet: InvenSense MPU-6000/MPU-6050 Product Specification rev 3.4, accelerometer noise power spectral density 400 \u00b5g/\u221aHz",
+            "gyro_noise_density_dps": "datasheet: InvenSense MPU-6000/MPU-6050 Product Specification rev 3.4, gyroscope rate noise spectral density 0.005 \u00b0/s/\u221aHz",
+            "accel_bias_spread_mg": "datasheet: InvenSense MPU-6000/MPU-6050 Product Specification rev 3.4, zero-G initial calibration tolerance \u00b150 mg (X, Y), \u00b180 mg (Z); estimate: stddev 25 mg on every axis",
+            "gyro_bias_spread_dps": "datasheet: InvenSense MPU-6000/MPU-6050 Product Specification rev 3.4, initial ZRO tolerance \u00b120 \u00b0/s; estimate: stddev 5 \u00b0/s (typical units read a few \u00b0/s); to be measured",
+            "accel_bias_walk_mg": "estimate: bias drift is not in the datasheet; to be measured (plan task 37)",
+            "gyro_bias_walk_dps": "estimate: bias drift is not in the datasheet; to be measured (plan task 37)",
+            "scale_spread": "datasheet: InvenSense MPU-6000/MPU-6050 Product Specification rev 3.4, sensitivity scale factor tolerance \u00b13 %; estimate: stddev 1 %",
+            "ad0_high": "wiring: AD0 tied LOW, address 0x68 (1 = AD0 HIGH, 0x69)"
         }
     }
 }

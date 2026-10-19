@@ -2,6 +2,8 @@
 
 #include <QScrollArea>
 #include <QLineEdit>
+#include <QSpinBox>
+#include <limits>
 #include <QListWidget>
 #include <QFrame>
 #include <QGridLayout>
@@ -22,6 +24,7 @@
 #include "Commands/CommandUtils.h"
 #include "Commands/AddComponentCommand.h"
 #include "Commands/RemoveComponentCommand.h"
+#include "Commands/WiringCommands.h"
 #include "Simulation/SimulationManager.h"
 #include "Utils/Log.h"
 #include "View/Widgets/Toast.h"
@@ -274,6 +277,7 @@ void InspectorPanel::buildUI() {
     if (!comp->getBlueprint()->connectors.isEmpty()) {
         build_connectors(comp);
     }
+    build_pins(comp);
 
     mainLayout->addStretch();
 }
@@ -456,19 +460,29 @@ static QString formatReadout(const BasicIOValue& data, bool singleFull) {
 }
 
 
+// Outputs, then the part's internal state in a group of its own.
 void InspectorPanel::build_outputs(ComponentInstance* comp) {
-    QGroupBox* outputBox = new QGroupBox("Sensor Outputs", this);
-    QFormLayout* outputLayout = new QFormLayout(outputBox);
-    for (const QString& key : comp->getBlueprint()->interfaceOutputs.keys()) {
-        BasicIOValue data = comp->getSensorValue(key);
-        if (data.data.empty()) continue;   // no numeric slot (camera: see build_images)
-        QLineEdit* valueLabel = createShrinkableLabel("", outputBox);
-        valueLabel->setObjectName("lbl_out_" + key);
-        valueLabel->setText(formatReadout(data, true));
-
-        outputLayout->addRow(comp->getBlueprint()->interfaceOutputs[key].name + " (" + comp->getBlueprint()->interfaceOutputs[key].unit + "):", valueLabel);
-    }
-    mainLayout->addWidget(outputBox);
+    auto buildGroup = [&](const QString& title, bool internal) {
+        QGroupBox* box = nullptr;
+        QFormLayout* form = nullptr;
+        for (const QString& key : comp->getBlueprint()->interfaceOutputs.keys()) {
+            const InterfaceDef& def = comp->getBlueprint()->interfaceOutputs[key];
+            if (def.internal != internal) continue;
+            BasicIOValue data = comp->getSensorValue(key);
+            if (data.data.empty()) continue;   // no numeric slot (camera: see build_images)
+            if (!box) {
+                box = new QGroupBox(title, this);
+                form = new QFormLayout(box);
+            }
+            QLineEdit* valueLabel = createShrinkableLabel("", box);
+            valueLabel->setObjectName("lbl_out_" + key);
+            valueLabel->setText(formatReadout(data, true));
+            form->addRow(def.name + (def.unit.isEmpty() ? QString() : " (" + def.unit + ")") + ":", valueLabel);
+        }
+        if (box) mainLayout->addWidget(box);
+    };
+    buildGroup("Sensor Outputs", false);
+    buildGroup("Internal (simulation-only)", true);
 }
 
 
@@ -500,6 +514,104 @@ void InspectorPanel::build_images(ComponentInstance* comp) {
     addRows(bp->interfaceOutputs, "camera");
     addRows(bp->interfaceInputs, "display");
     mainLayout->addWidget(imageBox);
+}
+
+
+// The part's signal pins as the sketch names them (robot_pins.h). Read-only:
+// on the ideal board the numbers follow from the part's uid; at the Real
+// level they are the board pins it is wired to (the Wiring page).
+void InspectorPanel::build_pins(ComponentInstance* comp) {
+    Project* project = Application::getInstance()->getProject();
+    if (Project::isBoard(comp)) {
+        build_board(comp);
+        return;
+    }
+    const bool real = project->getLevel() == ProjectLevel::Real;
+    const RealBoard board = real ? project->realBoard() : RealBoard();
+    const QList<BoardPin> pins = real ? board.pinsOf(comp->uid) : project->idealBoard().pinsOf(comp->uid);
+    if (pins.isEmpty() && !real) return;
+
+    QGroupBox* box = new QGroupBox(real ? QString("Pins (wired to %1)").arg(board.isValid() ? board.instance()->name : "no board")
+                                        : QString("Pins (ideal board)"), this);
+    box->setToolTip("Use these names in the sketch, e.g. servo.attach(COMP_6_SIGNAL); they come from robot_pins.h");
+    QFormLayout* form = new QFormLayout(box);
+    for (const BoardPin& p : pins) {
+        QString text = QString("%1 = %2").arg(p.constant).arg(p.number);
+        if (!p.alias.isEmpty()) text += QString("  (or %1)").arg(p.alias);
+        if (real) text += QString("  [%1]").arg(p.boardPinId.toUpper());
+        form->addRow(QString("%1 (%2):").arg(p.pinId, p.type), createShrinkableLabel(text, box));
+    }
+    if (real && pins.isEmpty()) {
+        bool typed = false;
+        for (const PinDef& p : comp->getBlueprint()->pins) typed = typed || p.isBoardPin();
+        if (!typed) return;
+        form->addRow(createShrinkableLabel("Not wired to the board: open the Wiring page (Ctrl+3).", box));
+    }
+    mainLayout->addWidget(box);
+}
+
+
+// A board: the sketch it runs at the Real level (its firmware slot) and what
+// is wired to its pins.
+void InspectorPanel::build_board(ComponentInstance* comp) {
+    Project* project = Application::getInstance()->getProject();
+    const BoardDef& def = comp->getBlueprint()->board;
+    QGroupBox* box = new QGroupBox("Board", this);
+    QFormLayout* form = new QFormLayout(box);
+
+    if (project->getLevel() != ProjectLevel::Real) {
+        form->addRow(createShrinkableLabel("Boards run their firmware at the Real level (project settings: Level). "
+                                           "At the Prototype level the ideal board runs the project's firmware.", box));
+        mainLayout->addWidget(box);
+        return;
+    }
+
+    QWidget* slot = new QWidget(box);
+    QHBoxLayout* slotLayout = new QHBoxLayout(slot);
+    slotLayout->setContentsMargins(0, 0, 0, 0);
+    QComboBox* combo = new QComboBox(slot);
+    fixComboBoxPolicy(combo);
+    combo->addItem("(none)", QString());
+    for (const QJsonValue& v : project->getScriptPaths()) {
+        const QString path = v.toString();
+        if (path.endsWith(".ino", Qt::CaseInsensitive) || path.endsWith(".cpp", Qt::CaseInsensitive)) combo->addItem(path, path);
+    }
+    combo->setCurrentIndex(std::max(0, combo->findData(comp->firmware)));
+    combo->setToolTip("The sketch this board runs. Its robot_pins.h comes from the wiring.");
+    QPushButton* openBtn = new QPushButton("Open", slot);
+    openBtn->setEnabled(!comp->firmware.isEmpty());
+    slotLayout->addWidget(combo, 1);
+    slotLayout->addWidget(openBtn);
+    form->addRow("Firmware:", slot);
+    form->addRow("Compiles for:", createShrinkableLabel(def.fqbn, box));
+    form->addRow("Logic:", createShrinkableLabel(QString("%1 V, ADC %2-bit").arg(def.logicVoltage).arg(def.adcBits), box));
+    if (project->activeBoard() != comp)
+        form->addRow(createShrinkableLabel("Idle: one board runs at a time until boards can talk to each other (UART).", box));
+
+    const int uid = comp->uid;
+    connect(combo, &QComboBox::currentIndexChanged, this, [combo, uid]() {
+        Commands::setBoardFirmware(uid, combo->currentData().toString());
+    });
+    connect(openBtn, &QPushButton::clicked, this, [project, uid]() {
+        ComponentInstance* b = project->getComponentByUid(uid);
+        EditorWindow* editor = Application::getInstance()->getEditor();
+        if (!b || b->firmware.isEmpty() || !editor->scriptPanel->confirmLeaveUnsaved()) return;
+        editor->scriptPanel->loadScript(project->getProjectDirectory() + "/" + b->firmware);
+        editor->showScriptPage();
+    });
+    mainLayout->addWidget(box);
+
+    // What the sketch sees: the part pins on this board's pins.
+    const RealBoard rb = RealBoard::build(comp, project->getRootComponent(), project->netlist());
+    QGroupBox* pinsBox = new QGroupBox("Pins in robot_pins.h", this);
+    pinsBox->setToolTip("Generated from the wiring; the sketch uses these names");
+    QFormLayout* pinsForm = new QFormLayout(pinsBox);
+    for (const BoardPin& p : rb.pins()) {
+        QString text = p.alias.isEmpty() ? p.constant : p.alias;
+        pinsForm->addRow(QString("%1 (%2):").arg(p.boardPinId.toUpper()).arg(p.number), createShrinkableLabel(text, pinsBox));
+    }
+    if (rb.pins().isEmpty()) pinsForm->addRow(createShrinkableLabel("Nothing wired yet: open the Wiring page (Ctrl+3).", pinsBox));
+    mainLayout->addWidget(pinsBox);
 }
 
 
@@ -806,6 +918,34 @@ void InspectorPanel::build_globalSettings(Project* project) {
     applyShrinkablePolicy(nameEdit);
     globalLayout->addRow("Robot Name:", nameEdit);
 
+    // Prototype: one ideal board runs the firmware below, every part auto-wired.
+    // Real: board parts run their own firmware through the Wiring page.
+    QComboBox* levelCombo = new QComboBox(globalBox);
+    fixComboBoxPolicy(levelCombo);
+    levelCombo->addItem("Prototype (ideal board)", int(ProjectLevel::Prototype));
+    levelCombo->addItem("Real (boards and wiring)", int(ProjectLevel::Real));
+    levelCombo->setCurrentIndex(project->getLevel() == ProjectLevel::Real ? 1 : 0);
+    levelCombo->setToolTip("Prototype: an ideal controller with unlimited pins, wired automatically.\n"
+                           "Real: add a board from the library, wire it on the Wiring page (Ctrl+3); "
+                           "the board's limits, bus speeds and power apply.");
+    globalLayout->addRow("Level:", levelCombo);
+    connect(levelCombo, &QComboBox::currentIndexChanged, this, [this, project, levelCombo]() {
+        const ProjectLevel level = ProjectLevel(levelCombo->currentData().toInt());
+        if (level == project->getLevel()) return;
+        if (level == ProjectLevel::Prototype && !project->netlist().isEmpty() &&
+            QMessageBox::question(this, "Switch to Prototype",
+                                  "The ideal board wires every part itself. Your wiring is kept in the project but not used. Switch?",
+                                  QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes) {
+            QSignalBlocker block(levelCombo);
+            levelCombo->setCurrentIndex(1);
+            return;
+        }
+        Commands::setLevel(level);
+        if (level == ProjectLevel::Real && project->boards().isEmpty())
+            Toast::showMessage(Application::getInstance()->getEditor(),
+                               "Real level: add a board from the Components library (Boards), then wire it (Ctrl+3)", 3500);
+    });
+
     QWidget* scriptWidget = new QWidget(globalBox);
     QGridLayout* scriptLayout = new QGridLayout(scriptWidget);
     scriptLayout->setContentsMargins(0, 0, 0, 0);
@@ -818,7 +958,17 @@ void InspectorPanel::build_globalSettings(Project* project) {
     scriptLayout->addWidget(scriptCombo, 0, 0, 1, 2);
     scriptLayout->addWidget(btnAddScript, 1, 0);
     scriptLayout->addWidget(btnDelScript, 1, 1);
-    globalLayout->addRow("Control Script:", scriptWidget);
+    globalLayout->addRow(project->getLevel() == ProjectLevel::Real ? "Sketches:" : "Firmware:", scriptWidget);
+    if (project->getLevel() == ProjectLevel::Real)
+        scriptCombo->setToolTip("The ideal board's sketch (Prototype). At the Real level each board picks its own in its Inspector.");
+
+    // Same seed, same run: noise, drops and per-unit variation all derive from it.
+    QSpinBox* seedSpin = new QSpinBox(globalBox);
+    seedSpin->setRange(0, std::numeric_limits<int>::max());
+    seedSpin->setValue(project->getSimulationSeed());
+    seedSpin->setToolTip("Seed of every random generator in a run. The same seed repeats a run exactly.");
+    applyShrinkablePolicy(seedSpin);
+    globalLayout->addRow("Random Seed:", seedSpin);
 
     // Live document state: projectData["script"] is only refreshed on save.
     int activeScriptIdx = project->getCurrentScriptIdx();
@@ -864,6 +1014,21 @@ void InspectorPanel::build_globalSettings(Project* project) {
         Application::getInstance()->getEditor()->scheduleRefresh();
     });
 
+    connect(seedSpin, &QSpinBox::editingFinished, this, [this, project, seedSpin]() {
+        int newSeed = seedSpin->value();
+        int oldSeed = project->getSimulationSeed();
+        if (newSeed == oldSeed) return;
+
+        pushCommand(
+            [project, newSeed]() { project->setSimulationSeed(newSeed); },
+            [project, oldSeed]() { project->setSimulationSeed(oldSeed); },
+            "Set random seed",
+            QString(),
+            false // read when Play starts; nothing to reload
+        );
+        Application::getInstance()->getEditor()->scheduleRefresh();
+    });
+
     connect(scriptCombo, &QComboBox::currentTextChanged, this, [this, project, scriptCombo](const QString& text) {
         if (text.isEmpty()) return;
         int index = project->getScriptPaths().toVariantList().indexOf(text);
@@ -881,29 +1046,9 @@ void InspectorPanel::build_globalSettings(Project* project) {
         if (panel) panel->loadScript(project->getProjectDirectory() + "/" + text);
     });
 
-    connect(btnAddScript, &QPushButton::clicked, this, [this, project]() {
-        bool ok;
-        QString name = QInputDialog::getText(this, "New Script", "Script File Name (e.g. custom.js):", QLineEdit::Normal, "", &ok);
-        if (!ok || name.isEmpty()) return;
-
-        if (!name.endsWith(".js")) name += ".js";
-
-        QJsonArray newArr = project->getScriptPaths();
-        if (newArr.contains(name)) {
-            Toast::showMessage(this, name + " is already a project script.");
-            return;
-        }
-
-        // The file is created right away (undo keeps it); only the list entry is undoable.
-        QFile file(project->getProjectDirectory() + "/" + name);
-        if (!file.exists() && file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-            file.write("// New Script: " + name.toUtf8() + "\n\nfunction setup() {\n\n}\n\nfunction loop() {\n\n}\n");
-            file.close();
-        }
-
-        newArr.append(name);
-        // the editor refresh this triggers rebuilds the combo and script list
-        Commands::setMcuScripts(newArr, newArr.size() - 1, "Add script");
+    // Same dialog as the script panel's "+": firmware sketch, JS script or stage script.
+    connect(btnAddScript, &QPushButton::clicked, this, []() {
+        if (ScriptPanel* panel = Application::getInstance()->getEditor()->scriptPanel) panel->createScript();
     });
 
     connect(btnDelScript, &QPushButton::clicked, this, [this, project, scriptCombo]() {

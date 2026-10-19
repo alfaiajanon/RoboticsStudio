@@ -1,5 +1,5 @@
 {
-    "schema": 2,
+    "schema": 3,
     "id": "camera_depth_80x60",
     "meta": {
         "hint_class": "vision",
@@ -23,6 +23,7 @@
     "pins": [
         {
             "id": "vcc",
+            "type": "power",
             "voltage_range": [
                 3.0,
                 3.3
@@ -31,14 +32,17 @@
         },
         {
             "id": "gnd",
+            "type": "ground",
             "description": "Ground"
         },
         {
             "id": "scl",
+            "type": "i2c_scl",
             "description": "SCCB/I2C clock (configuration)"
         },
         {
             "id": "sda",
+            "type": "i2c_sda",
             "description": "SCCB/I2C data (configuration)"
         }
     ],
@@ -221,6 +225,14 @@
             "depth_min": 0.05,
             "depth_max": 4.0,
             "drop_probability": 0.01
+        },
+        "parameter_sources": {
+            "fps": "estimate: a generic low-cost depth module (no specific datasheet); this part is not a real product",
+            "latency_ms": "estimate: generic low-cost depth module; not a real product",
+            "depth_noise_stddev": "estimate: about 1 % of range at 1 m, typical of cheap ToF sensors",
+            "depth_min": "estimate: typical minimum range of cheap ToF sensors",
+            "depth_max": "estimate: typical maximum range of cheap ToF sensors indoors",
+            "drop_probability": "estimate: occasional lost frames; to be measured on a real module"
         }
     }
 }

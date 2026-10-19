@@ -4,70 +4,153 @@
 #include "Document/Components/ComponentInstance.h"
 #include "Document/Components/ComponentBlueprint.h"
 #include "Utils/Log.h"
-#include <QColor>
-#include <QFont>
-#include <QImage>
-#include <QPainter>
+#include "Simulation/Controller/PinBus.h"
+#include "Simulation/Controller/DeviceBus.h"
+#include <vector>
 #include <algorithm>
-#include <chrono>
-#include <mutex>
-#include <thread>
 
 /*
- * Generic RGB framebuffer display, Adafruit-GFX style: JS draws into a back
- * buffer, display() sends it to the panel, the panel shows it at its refresh
- * rate.
+ * TFT display with an ST7735-style controller (1.8" 160x128 modules), on the
+ * board's SPI bus:
  *
- *   back buffer   MCU thread only (all drawing calls), so no lock.
- *   display()     copies the back buffer into `sent` (mutex) and blocks for
- *                 transfer_ms, like pushing the buffer over I2C/SPI.
- *   update()      Throttled at refresh_hz (physics thread): publishes the
- *                 newest sent buffer into the display signal's ImageIOValue.
+ *   SPI            the real controller: bytes clocked in while CS is LOW are
+ *                   commands while DC is LOW and parameters/pixels while it
+ *                   is HIGH. Handled: SWRESET 0x01, SLPIN/SLPOUT 0x10/0x11,
+ *                   INVOFF/INVON 0x20/0x21, DISPOFF/DISPON 0x28/0x29,
+ *                   CASET 0x2A, RASET 0x2B, RAMWR 0x2C, MADCTL 0x36 (MX, MY,
+ *                   MV, BGR), COLMOD 0x3A (16-bit RGB565 only). Others are
+ *                   accepted and ignored. GRAM is the controller's native
+ *                   128x160 portrait memory; the part's landscape screen shows
+ *                   it rotated, as on a module mounted that way, so a sketch
+ *                   with setRotation(1) draws upright. The panel is black while
+ *                   asleep (as at power-on), switched off, held in reset (rst
+ *                   LOW) or with the backlight pin LOW; a backlight pin driven
+ *                   with PWM dims it; an undriven one counts as wired to VCC.
  *
- * Drives the first display-kind input signal of the component.
+ *   update()       Throttled at refresh_hz (physics thread): publishes the
+ *                  panel into the display signal's ImageIOValue when it changed.
+ *
+ * SPI bytes arrive on the controller thread while the physics thread is
+ * blocked (lockstep), so GRAM needs no lock.
  *
  * Parameters (component .rsdef -> emulator.parameters), read in init():
  *   refresh_hz   panel refresh rate, sim time   (default 30)
- *   transfer_ms  time display() blocks the MCU  (default 0, capped at 200)
- *
- * Colours from JS: a number 0xRRGGBB, or any string QColor accepts
- * ("#ff8800", "red").
  */
-class DisplayEmulatorCpp : public Emulator {
+class DisplayEmulatorCpp : public Emulator, public SPIDevice {
     Q_OBJECT
 
     private:
         QString signal;
         double refreshHz = 30.0;
-        int transferMs = 0;
-
-        QImage back;   // MCU thread only
-
-        std::mutex sentMutex;
-        std::shared_ptr<const QByteArray> sent;   // last buffer display() sent
-        quint64 sentSeq = 0;                      // guarded by sentMutex
         quint64 publishedSeq = 0;                 // physics thread only
 
-        static QColor toColor(const QVariant& v) {
-            if (v.typeId() == QMetaType::QString) return QColor(v.toString());
-            return QColor::fromRgb(QRgb(v.toUInt() | 0xff000000u));
+        // ---- ST7735 controller
+        int nativeCols = 128, nativeRows = 160;   // GRAM: the part's height x width
+        std::vector<uint16_t> gram;
+        bool sleeping = true, displayOn = false, inverted = false, resetHeld = false;
+        uint8_t madctl = 0;
+        int xs = 0, xe = 127, ys = 0, ye = 159;   // address window (logical)
+        int px = 0, py = 0;                       // RAMWR position
+        uint8_t command = 0;
+        int paramIndex = 0;
+        uint8_t pending = 0;                      // high byte of a pixel / parameter pair
+        bool spiUsed = false, gramDirty = false;
+        int csPin = -1, dcPin = -1, rstPin = -1, ledPin = -1;
+
+        void resetController() {
+            sleeping = true; displayOn = false; inverted = false; madctl = 0;
+            xs = 0; xe = nativeCols - 1; ys = 0; ye = nativeRows - 1;
+            px = py = 0; command = 0; paramIndex = 0;
+            gramDirty = true;
         }
 
-        bool ready() const { return !back.isNull(); }
+        void writePixel(uint16_t color) {
+            int c = px, r = py;
+            if (madctl & 0x20) std::swap(c, r);           // MV: row/column exchange
+            if (madctl & 0x40) c = nativeCols - 1 - c;    // MX
+            if (madctl & 0x80) r = nativeRows - 1 - r;    // MY
+            if (c >= 0 && c < nativeCols && r >= 0 && r < nativeRows) {
+                gram[size_t(r) * nativeCols + c] = color;
+                gramDirty = true;
+            }
+            if (++px > xe) { px = xs; if (++py > ye) py = ys; }
+        }
+
+        void commandByte(uint8_t b) {
+            command = b;
+            paramIndex = 0;
+            switch (b) {
+                case 0x01: resetController(); break;               // SWRESET
+                case 0x10: sleeping = true; gramDirty = true; break;
+                case 0x11: sleeping = false; gramDirty = true; break;
+                case 0x20: inverted = false; gramDirty = true; break;
+                case 0x21: inverted = true; gramDirty = true; break;
+                case 0x28: displayOn = false; gramDirty = true; break;
+                case 0x29: displayOn = true; gramDirty = true; break;
+                case 0x2C: px = xs; py = ys; break;                // RAMWR
+                default: break;
+            }
+        }
+
+        void dataByte(uint8_t b) {
+            const int i = paramIndex++;
+            switch (command) {
+                case 0x2A:   // CASET: xs hi, xs lo, xe hi, xe lo
+                case 0x2B: { // RASET
+                    if (i % 2 == 0) { pending = b; break; }
+                    const int v = (pending << 8) | b;
+                    int& lo = command == 0x2A ? xs : ys;
+                    int& hi = command == 0x2A ? xe : ye;
+                    (i == 1 ? lo : hi) = v;
+                    break;
+                }
+                case 0x2C:   // RAMWR: RGB565, high byte first
+                    if (i % 2 == 0) pending = b;
+                    else writePixel(uint16_t((pending << 8) | b));
+                    break;
+                case 0x36: madctl = b; gramDirty = true; break;
+                default: break;   // COLMOD, frame rate, power, gamma...: accepted
+            }
+        }
+
+        bool pinLow(int h) const {
+            const PinState* s = pins ? pins->state(h) : nullptr;
+            return s && s->drive == PinState::Drive::Level && s->level == 0;
+        }
+
+        // The panel as the viewer sees it (RGB888, the part's resolution).
+        std::shared_ptr<QByteArray> renderGram() const {
+            const int w = nativeRows, h = nativeCols;
+            auto frame = std::make_shared<QByteArray>(w * h * 3, '\0');
+            double brightness = 1.0;
+            if (pins && pins->state(ledPin) && pins->state(ledPin)->drive != PinState::Drive::None) brightness = pins->dutyCycle(ledPin);
+            if (sleeping || !displayOn || resetHeld || brightness <= 0.0) return frame;   // black
+            uchar* out = reinterpret_cast<uchar*>(frame->data());
+            for (int v = 0; v < h; ++v) {
+                for (int u = 0; u < w; ++u) {
+                    uint16_t c = gram[size_t(w - 1 - u) * nativeCols + v];   // out(u, v) = native(c = v, r = W-1-u)
+                    if (inverted) c = uint16_t(~c);
+                    int r8 = ((c >> 11) & 0x1f) * 255 / 31, g8 = ((c >> 5) & 0x3f) * 255 / 63, b8 = (c & 0x1f) * 255 / 31;
+                    if (madctl & 0x08) std::swap(r8, b8);   // BGR panel order
+                    uchar* p = out + (size_t(v) * w + u) * 3;
+                    p[0] = uchar(r8 * brightness); p[1] = uchar(g8 * brightness); p[2] = uchar(b8 * brightness);
+                }
+            }
+            return frame;
+        }
 
     public:
         using Emulator::Emulator;
 
         void init() override {
             signal.clear();
-            back = QImage();
+            gram.clear();
             ComponentBlueprint* bp = component ? component->getBlueprint() : nullptr;
             if (!bp) return;
 
             const auto& params = bp->emulatorDef.parameters;
             refreshHz = params.value("refresh_hz", 30.0).toDouble();
             if (refreshHz <= 0.0) refreshHz = 30.0;
-            transferMs = std::clamp(params.value("transfer_ms", 0).toInt(), 0, 200);
 
             for (auto it = bp->interfaceInputs.constBegin(); it != bp->interfaceInputs.constEnd(); ++it) {
                 if (it.value().target.kind != "display") continue;
@@ -87,8 +170,35 @@ class DisplayEmulatorCpp : public Emulator {
                 signal.clear();
                 return;
             }
-            back = QImage(img.width, img.height, QImage::Format_RGB888);
+            nativeCols = img.height;
+            nativeRows = img.width;
+            gram.assign(size_t(nativeCols) * nativeRows, 0);
+            spiUsed = false;
+            resetHeld = false;
+            resetController();
+            if (pins) {
+                csPin = pins->ensurePin(component->uid, "cs", "digital");
+                dcPin = pins->ensurePin(component->uid, "dc", "digital");
+                rstPin = pins->ensurePin(component->uid, "rst", "digital");
+                ledPin = pins->ensurePin(component->uid, "led", "pwm");
+                if (buses)
+                    buses->addSPI(csPin, this, QString("ST7735 display (part %1)").arg(component->uid),
+                                  pins->ensurePin(component->uid, "sck", "spi_sck"), pins->ensurePin(component->uid, "mosi", "spi_mosi"));
+            }
             reset();
+        }
+
+        // ---- SPI (controller thread)
+        void spiTransfer(const uint8_t* data, int len) override {
+            if (gram.empty()) return;
+            spiUsed = true;
+            if (pinLow(rstPin)) { resetHeld = true; resetController(); return; }   // held in reset
+            resetHeld = false;
+            const bool isData = !pinLow(dcPin);
+            for (int i = 0; i < len; ++i) {
+                if (isData) dataByte(data[i]);
+                else commandByte(data[i]);
+            }
         }
 
         Schedule schedule() const override {
@@ -96,33 +206,24 @@ class DisplayEmulatorCpp : public Emulator {
         }
 
         void update() override {
-            if (signal.isEmpty()) return;
-            std::shared_ptr<const QByteArray> frame;
-            quint64 seq;
-            {
-                std::lock_guard<std::mutex> lock(sentMutex);
-                frame = sent;
-                seq = sentSeq;
-            }
-            if (!frame || seq == publishedSeq) return;
-            publishedSeq = seq;
-
+            // Nothing shows until the firmware first talks to the controller.
+            if (signal.isEmpty() || !spiUsed) return;
+            const bool held = pinLow(rstPin);
+            if (held != resetHeld) { resetHeld = held; if (held) resetController(); gramDirty = true; }
+            // Backlight changes show without new pixels.
+            if (pins && pins->state(ledPin) && pins->state(ledPin)->drive != PinState::Drive::None) gramDirty = true;
+            if (!gramDirty) return;
+            gramDirty = false;
             ImageIOValue img = component->getImageValue(signal);
             img.format = ImageFormat::RGB888;
             img.time = simTime;
-            img.seq = seq;
-            img.pixels = frame;
+            img.seq = ++publishedSeq;
+            img.pixels = renderGram();
             component->setImageValue(signal, img);
         }
 
-        // Blank panel: back buffer, sent buffer and published frame.
+        // Blank panel: no published frame.
         void reset() override {
-            if (!back.isNull()) back.fill(Qt::black);
-            {
-                std::lock_guard<std::mutex> lock(sentMutex);
-                sent.reset();
-                sentSeq = 0;
-            }
             publishedSeq = 0;
             if (!signal.isEmpty()) {
                 ImageIOValue img = component->getImageValue(signal);
@@ -131,113 +232,5 @@ class DisplayEmulatorCpp : public Emulator {
                 img.time = 0.0;
                 component->setImageValue(signal, img);
             }
-        }
-
-
-
-        // ---- API exposed to JS (drawing goes to the back buffer; nothing is
-        // ---- visible until display()).
-
-        Q_INVOKABLE int width() const  { return back.width(); }
-        Q_INVOKABLE int height() const { return back.height(); }
-
-        Q_INVOKABLE void clear() { fill(0); }
-
-        Q_INVOKABLE void fill(const QVariant& color) {
-            if (ready()) back.fill(toColor(color));
-        }
-
-        Q_INVOKABLE void drawPixel(int x, int y, const QVariant& color) {
-            if (ready() && back.valid(x, y)) back.setPixelColor(x, y, toColor(color));
-        }
-
-        Q_INVOKABLE void drawLine(int x0, int y0, int x1, int y1, const QVariant& color) {
-            if (!ready()) return;
-            QPainter p(&back);
-            p.setPen(toColor(color));
-            p.drawLine(x0, y0, x1, y1);
-        }
-
-        Q_INVOKABLE void drawRect(int x, int y, int w, int h, const QVariant& color) {
-            if (!ready() || w <= 0 || h <= 0) return;
-            QPainter p(&back);
-            p.setPen(toColor(color));
-            p.drawRect(x, y, w - 1, h - 1);
-        }
-
-        Q_INVOKABLE void fillRect(int x, int y, int w, int h, const QVariant& color) {
-            if (!ready()) return;
-            QPainter p(&back);
-            p.fillRect(x, y, w, h, toColor(color));
-        }
-
-        Q_INVOKABLE void drawCircle(int x, int y, int r, const QVariant& color) {
-            if (!ready()) return;
-            QPainter p(&back);
-            p.setPen(toColor(color));
-            p.drawEllipse(QPoint(x, y), r, r);
-        }
-
-        Q_INVOKABLE void fillCircle(int x, int y, int r, const QVariant& color) {
-            if (!ready()) return;
-            QPainter p(&back);
-            p.setPen(Qt::NoPen);
-            p.setBrush(toColor(color));
-            p.drawEllipse(QPoint(x, y), r, r);
-        }
-
-        // (x, y) is the top-left of the text; size in pixels.
-        Q_INVOKABLE void drawText(int x, int y, const QString& text, const QVariant& color, int size = 8) {
-            if (!ready()) return;
-            QPainter p(&back);
-            QFont font;
-            font.setPixelSize(std::max(1, size));
-            font.setStyleStrategy(QFont::NoAntialias);
-            p.setFont(font);
-            p.setPen(toColor(color));
-            p.drawText(QRect(x, y, back.width() - x, back.height() - y), Qt::AlignLeft | Qt::AlignTop, text);
-        }
-
-        // Blit a grayscale (1 byte/pixel) image, e.g. a camera's toGray(),
-        // with its top-left at (x, y). Pixels outside the panel are clipped.
-        Q_INVOKABLE void drawGray(const QByteArray& data, int w, int h, int x = 0, int y = 0) {
-            if (!ready() || w <= 0 || h <= 0 || data.size() < qsizetype(w) * h) return;
-            const unsigned char* src = reinterpret_cast<const unsigned char*>(data.constData());
-            for (int yy = std::max(0, -y); yy < h && y + yy < back.height(); ++yy) {
-                uchar* row = back.scanLine(y + yy);
-                for (int xx = std::max(0, -x); xx < w && x + xx < back.width(); ++xx) {
-                    uchar v = src[yy * w + xx];
-                    uchar* px = row + (x + xx) * 3;
-                    px[0] = px[1] = px[2] = v;
-                }
-            }
-        }
-
-        // Blit an RGB888 (3 bytes/pixel) image, e.g. a camera frame's data.
-        Q_INVOKABLE void drawRGB(const QByteArray& data, int w, int h, int x = 0, int y = 0) {
-            if (!ready() || w <= 0 || h <= 0 || data.size() < qsizetype(w) * h * 3) return;
-            const unsigned char* src = reinterpret_cast<const unsigned char*>(data.constData());
-            for (int yy = std::max(0, -y); yy < h && y + yy < back.height(); ++yy) {
-                uchar* row = back.scanLine(y + yy);
-                const int x0 = std::max(0, -x);
-                const int x1 = std::min(w, back.width() - x);
-                if (x1 > x0) std::copy_n(src + (yy * w + x0) * 3, (x1 - x0) * 3, row + (x + x0) * 3);
-            }
-        }
-
-        // Send the back buffer to the panel. Blocks for transfer_ms.
-        Q_INVOKABLE void display() {
-            if (!ready()) return;
-            auto frame = std::make_shared<QByteArray>(back.width() * back.height() * 3, '\0');
-            const int rowBytes = back.width() * 3;
-            for (int y = 0; y < back.height(); ++y) {
-                std::copy_n(back.constScanLine(y), rowBytes, frame->data() + y * rowBytes);
-            }
-            {
-                std::lock_guard<std::mutex> lock(sentMutex);
-                sent = std::move(frame);
-                ++sentSeq;
-            }
-            if (transferMs > 0) std::this_thread::sleep_for(std::chrono::milliseconds(transferMs));
         }
 };

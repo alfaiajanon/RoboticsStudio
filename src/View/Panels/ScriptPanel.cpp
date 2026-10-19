@@ -1,4 +1,5 @@
 #include "ScriptPanel.h"
+#include "Document/Components/ComponentInstance.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -25,6 +26,7 @@
 #include <QPixmap>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QRegularExpression>
 
 #include "Utils/Log.h"
 #include "Application/Application.h"
@@ -32,6 +34,7 @@
 #include "View/Widgets/Toast.h"
 #include "View/Widgets/CodeEditor.h"
 #include "View/Widgets/PanelCorners.h"
+#include "FirmwareTemplate.h"
 
 
 
@@ -40,18 +43,6 @@ namespace {
 enum class ScriptKind { Mcu, Stage };
 constexpr int ROLE_KIND = Qt::UserRole;       // ScriptKind as int
 constexpr int ROLE_PATH = Qt::UserRole + 1;   // path relative to the project dir
-
-const char* MCU_SCRIPT_TEMPLATE = R"(// MCU script: controls the robot through its components (comp_<uid>).
-
-function setup() {
-    // Called once when the simulation starts
-}
-
-function loop() {
-    // Called repeatedly while the simulation runs
-    delay(20);
-}
-)";
 
 const char* STAGE_SCRIPT_TEMPLATE = R"(// Stage script: drives the controlled props, next to (not inside) the robot.
 // Globals:
@@ -71,8 +62,7 @@ function loop() {
 )";
 
 // Logo-style badge: a colored rounded square with a white letter.
-QIcon kindBadge(ScriptKind kind) {
-    const bool mcu = kind == ScriptKind::Mcu;
+QIcon badge(const QColor& color, const QString& letter) {
     const qreal dpr = 2.0;
     QPixmap pm(QSize(18, 18) * dpr);
     pm.setDevicePixelRatio(dpr);
@@ -81,7 +71,7 @@ QIcon kindBadge(ScriptKind kind) {
     QPainter p(&pm);
     p.setRenderHint(QPainter::Antialiasing);
     p.setPen(Qt::NoPen);
-    p.setBrush(mcu ? QColor("#1E88E5") : QColor("#43A047"));
+    p.setBrush(color);
     p.drawRoundedRect(QRectF(1, 1, 16, 16), 4, 4);
 
     QFont f = p.font();
@@ -89,8 +79,17 @@ QIcon kindBadge(ScriptKind kind) {
     f.setPixelSize(12);
     p.setFont(f);
     p.setPen(Qt::white);
-    p.drawText(QRectF(1, 1, 16, 16), Qt::AlignCenter, mcu ? "M" : "S");
+    p.drawText(QRectF(1, 1, 16, 16), Qt::AlignCenter, letter);
     return QIcon(pm);
+}
+
+QIcon kindBadge(ScriptKind kind) {
+    return kind == ScriptKind::Mcu ? badge(QColor("#1E88E5"), "M") : badge(QColor("#43A047"), "S");
+}
+
+// A robot script that no longer runs (an old project's .js).
+QIcon staleBadge() {
+    return badge(QColor("#E53935"), "!");
 }
 
 }
@@ -213,12 +212,28 @@ void ScriptPanel::refresh() {
     Project* project = app->getProject();
     if (!project) return;
 
-    auto addItem = [this](ScriptKind kind, const QString& rel, bool active) {
-        QListWidgetItem* item = new QListWidgetItem(kindBadge(kind), rel, scriptList);
+    // At the Real level a sketch runs on the boards whose slot holds it.
+    const bool real = project->getLevel() == ProjectLevel::Real;
+    QHash<QString, QStringList> boardsOf;
+    if (real) for (ComponentInstance* b : project->boards()) if (!b->firmware.isEmpty()) boardsOf[b->firmware] << b->name;
+
+    auto addItem = [this, real, &boardsOf](ScriptKind kind, const QString& rel, bool active) {
+        const QStringList boards = kind == ScriptKind::Mcu ? boardsOf.value(rel) : QStringList();
+        QListWidgetItem* item = new QListWidgetItem(kindBadge(kind), boards.isEmpty() ? rel : rel + "  → " + boards.join(", "), scriptList);
         item->setData(ROLE_KIND, static_cast<int>(kind));
         item->setData(ROLE_PATH, rel);
-        QString kindName = kind == ScriptKind::Mcu ? "MCU script" : "Stage script";
-        item->setToolTip(active ? kindName + " (active, runs on Play)" : kindName);
+        QString kindName = kind == ScriptKind::Mcu ? "Firmware sketch" : "Stage script";
+        if (kind == ScriptKind::Mcu && real)
+            item->setToolTip(boards.isEmpty() ? kindName + " (no board runs it: pick it in a board's Inspector)"
+                                              : kindName + " (runs on " + boards.join(", ") + ")");
+        else
+            item->setToolTip(active ? kindName + " (active, runs on Play)" : kindName);
+        if (kind == ScriptKind::Mcu && rel.endsWith(".js", Qt::CaseInsensitive)) {
+            // An old project's JavaScript robot script: no longer runs.
+            item->setIcon(staleBadge());
+            item->setToolTip("JavaScript robot scripts were removed: this script does not run.\n"
+                             "Port it to a firmware sketch (.ino), see docs/user/firmware.md.");
+        }
         if (active) {
             QFont f = item->font();
             f.setBold(true);
@@ -228,8 +243,10 @@ void ScriptPanel::refresh() {
 
     QJsonArray mcuPaths = project->getScriptPaths();
     int mcuCurrent = project->getCurrentScriptIdx();
-    for (int i = 0; i < mcuPaths.size(); ++i)
-        addItem(ScriptKind::Mcu, mcuPaths[i].toString(), i == mcuCurrent);
+    for (int i = 0; i < mcuPaths.size(); ++i) {
+        const QString rel = mcuPaths[i].toString();
+        addItem(ScriptKind::Mcu, rel, real ? rel == project->activeSketchPath() : i == mcuCurrent);
+    }
 
     const Stage::Data& stage = project->getStage()->getData();
     for (int i = 0; i < stage.scripts.size(); ++i)
@@ -297,7 +314,7 @@ bool ScriptPanel::confirmLeaveUnsaved() {
 /*
  * "+" dialog: file name + kind. The file is created from the kind's template
  * (an existing file of that name is reused, not overwritten) and registered
- * in the project: MCU scripts in "script", stage scripts in "stage.script".
+ * in the project: firmware sketches in "script", stage scripts in "stage.script".
  * Either becomes its kind's active script when that kind has none.
  */
 void ScriptPanel::createScript() {
@@ -311,10 +328,15 @@ void ScriptPanel::createScript() {
     QFormLayout* form = new QFormLayout(&dialog);
 
     QComboBox* kindCombo = new QComboBox(&dialog);
-    kindCombo->addItem(kindBadge(ScriptKind::Mcu), "MCU script (controls the robot)", static_cast<int>(ScriptKind::Mcu));
-    kindCombo->addItem(kindBadge(ScriptKind::Stage), "Stage script (drives props)", static_cast<int>(ScriptKind::Stage));
+    kindCombo->addItem(kindBadge(ScriptKind::Mcu), "Firmware sketch (.ino, controls the robot)", static_cast<int>(ScriptKind::Mcu));
+    kindCombo->addItem(kindBadge(ScriptKind::Stage), "Stage script (JavaScript, drives props)", static_cast<int>(ScriptKind::Stage));
     QLineEdit* nameEdit = new QLineEdit(&dialog);
-    nameEdit->setPlaceholderText("e.g. walker.js");
+    auto extensionOf = [kindCombo]() {
+        return static_cast<ScriptKind>(kindCombo->currentData().toInt()) == ScriptKind::Mcu ? QString(".ino") : QString(".js");
+    };
+    auto updatePlaceholder = [nameEdit, extensionOf]() { nameEdit->setPlaceholderText("e.g. walker" + extensionOf()); };
+    updatePlaceholder();
+    connect(kindCombo, &QComboBox::currentIndexChanged, &dialog, updatePlaceholder);
     form->addRow("Type:", kindCombo);
     form->addRow("File name:", nameEdit);
 
@@ -328,7 +350,12 @@ void ScriptPanel::createScript() {
     connect(buttons, &QDialogButtonBox::accepted, &dialog, [&]() {
         name = nameEdit->text().trimmed();
         if (name.isEmpty()) return;
-        if (!name.endsWith(".js")) name += ".js";
+        // A firmware .cpp stays .cpp; any other extension becomes the kind's own.
+        const bool keepCpp = extensionOf() == ".ino" && name.endsWith(".cpp", Qt::CaseInsensitive);
+        if (!keepCpp && !name.endsWith(extensionOf(), Qt::CaseInsensitive)) {
+            name.remove(QRegularExpression("\\.(js|ino|cpp)$", QRegularExpression::CaseInsensitiveOption));
+            name += extensionOf();
+        }
         if (mcuPaths.contains(name) || stagePaths.contains(name)) {
             QMessageBox::warning(&dialog, "New Script", name + " is already a project script.");
             return;
@@ -337,7 +364,7 @@ void ScriptPanel::createScript() {
     });
 
     if (dialog.exec() != QDialog::Accepted) return;
-    auto kind = static_cast<ScriptKind>(kindCombo->currentData().toInt());
+    const ScriptKind kind = static_cast<ScriptKind>(kindCombo->currentData().toInt());
 
     QString fullPath = project->getProjectDirectory() + "/" + name;
     if (!QFile::exists(fullPath)) {
@@ -346,7 +373,7 @@ void ScriptPanel::createScript() {
             Log::error("ScriptPanel could not create " + fullPath);
             return;
         }
-        QTextStream(&file) << (kind == ScriptKind::Mcu ? MCU_SCRIPT_TEMPLATE : STAGE_SCRIPT_TEMPLATE);
+        QTextStream(&file) << (kind == ScriptKind::Mcu ? firmwareTemplate(project) : QString(STAGE_SCRIPT_TEMPLATE));
     }
 
     if (kind == ScriptKind::Mcu) {
@@ -385,6 +412,9 @@ void ScriptPanel::loadScript(const QString& fullpath) {
 
     // Disconnect our specific slot to prevent state changes, allowing CodeEditor to process internal sizing signals
     disconnect(textEditor, &QPlainTextEdit::textChanged, this, &ScriptPanel::onEditorTextChanged);
+    const QString suffix = QFileInfo(fullpath).suffix().toLower();
+    textEditor->setLanguage(suffix == "ino" || suffix == "cpp" || suffix == "h" ? CodeLanguage::Cpp : CodeLanguage::JavaScript);
+    textEditor->clearLineMarkers();
     textEditor->setPlainText(content);
     textEditor->horizontalScrollBar()->setValue(0);
     textEditor->verticalScrollBar()->setValue(0);
@@ -397,6 +427,14 @@ void ScriptPanel::loadScript(const QString& fullpath) {
 
     QFileInfo fileInfo(fullpath);
     statusLabel->setText(fileInfo.fileName() + " (External Editor Preferred)");
+}
+
+void ScriptPanel::showDiagnostics(const QList<LineMarker>& markers, bool goToFirstError) {
+    textEditor->setLineMarkers(markers);
+    if (!goToFirstError) return;
+    for (const LineMarker& m : markers) {
+        if (m.error) { textEditor->goToLine(m.line); return; }
+    }
 }
 
 void ScriptPanel::unloadScript() {

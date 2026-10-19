@@ -82,6 +82,8 @@ class InspectorPanel : public QWidget {
         void build_images(ComponentInstance* comp);
 
         void build_connectors(ComponentInstance* comp);
+        void build_pins(ComponentInstance* comp);
+        void build_board(ComponentInstance* comp);   // a board's firmware slot and pin map
         void build_globalSettings(Project* project);
         void build_rootAttachment(Project* project);
         

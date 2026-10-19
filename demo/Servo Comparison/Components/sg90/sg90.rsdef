@@ -331,20 +331,23 @@
     },
     "pins": [
         {
-            "description": "Power input pin for servo motor",
             "id": "vcc",
+            "type": "power",
+            "description": "Power input pin for servo motor",
             "voltage_range": [
                 4.800000190734863,
                 6
             ]
         },
         {
-            "description": "PWM signal input pin for controlling servo position",
-            "id": "signal"
+            "id": "signal",
+            "type": "pwm",
+            "description": "PWM signal input pin for controlling servo position"
         },
         {
-            "description": "Ground pin for servo motor",
-            "id": "gnd"
+            "id": "gnd",
+            "type": "ground",
+            "description": "Ground pin for servo motor"
         }
     ],
     "resources": {
@@ -356,7 +359,7 @@
             "sg90_horn": "meshes/sg90_horn.obj"
         }
     },
-    "schema": 2,
+    "schema": 3,
     "specs": {
         "max_speed_rad": 10.47,
         "max_torque_nm": 0.176,

@@ -8,6 +8,7 @@
 #include <QFile>
 #include <QStandardPaths>
 #include "Version.h"
+#include "View/Panels/FirmwareTemplate.h"
 
 
 
@@ -30,6 +31,14 @@ NewProjectDialog::NewProjectDialog(QWidget* parent) : QDialog(parent) {
     locLayout->addWidget(m_locationEdit);
     locLayout->addWidget(browseBtn);
     mainLayout->addLayout(locLayout);
+
+    // Level: Prototype (an ideal board, auto-wired) or Real (add and wire boards yourself).
+    mainLayout->addWidget(new QLabel("Level:"));
+    m_levelCombo = new QComboBox();
+    m_levelCombo->addItem("Prototype: an ideal board, every part wired automatically", "prototype");
+    m_levelCombo->addItem("Real: add a board from the library and wire it yourself", "real");
+    m_levelCombo->setToolTip("You can switch later in the project settings. A Real project starts with no board.");
+    mainLayout->addWidget(m_levelCombo);
 
     // Buttons
     QHBoxLayout* btnLayout = new QHBoxLayout();
@@ -88,20 +97,12 @@ void NewProjectDialog::onCreateClicked() {
 void NewProjectDialog::generateProjectScaffolding(const QString& folderPath, const QString& projectName) {
     QDir dir(folderPath);
 
-    // 1. Create the .js file template
-    QString jsFileName = projectName + ".js";
-    QFile jsFile(dir.absoluteFilePath(jsFileName));
-    if (jsFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QString jsTemplate = 
-            "// RoboticsStudio Controller Script\n\n"
-            "function setup() {\n"
-            "    // Called once when simulation starts\n"
-            "}\n\n"
-            "function loop() {\n"
-            "    // Called every physics step\n"
-            "}\n";
-        jsFile.write(jsTemplate.toUtf8());
-        jsFile.close();
+    // 1. The firmware sketch (no parts yet: a bare setup()/loop())
+    QString sketchFileName = projectName + ".ino";
+    QFile sketchFile(dir.absoluteFilePath(sketchFileName));
+    if (sketchFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        sketchFile.write(firmwareTemplate(nullptr).toUtf8());
+        sketchFile.close();
     }
 
     // 2. Create the .rsproj file template
@@ -111,6 +112,8 @@ void NewProjectDialog::generateProjectScaffolding(const QString& folderPath, con
         QString appVersion = ROBOTICS_STUDIO_VERSION; 
         QString projTemplate = QString(
             "{\n"
+            "  \"schema\": 3,\n"
+            "  \"level\": \"%4\",\n"
             "  \"version\": \"%1\",\n"
             "  \"meta\": {\n"
             "    \"author\": \"\",\n"
@@ -126,7 +129,7 @@ void NewProjectDialog::generateProjectScaffolding(const QString& folderPath, con
             "    \"components\": []\n"
             "  }\n"
             "}\n"
-        ).arg(appVersion, projectName, jsFileName);
+        ).arg(appVersion, projectName, sketchFileName, m_levelCombo->currentData().toString());
         
         projFile.write(projTemplate.toUtf8());
         projFile.close();

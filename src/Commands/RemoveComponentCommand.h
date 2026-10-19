@@ -52,11 +52,13 @@ public:
             m_parentConnector = comp->parentConnector;
             m_root = m_project->takeSubtree(m_uid);
             if (!m_root) return;
+            m_wires = m_project->netlist().wiresOf(subtreeUids(m_root));
         } else {
             // Redo after an undo: unlink the same subtree again (keeps uids + emulators).
             Log::info("Redo: " + text());
             m_project->takeSubtree(m_root->uid);
         }
+        for (const Wire& w : m_wires) m_project->netlist().removeWire(w);   // its wires go with it
         m_taken = true;
         Application::getInstance()->reloadSimulation();
     }
@@ -69,11 +71,18 @@ public:
         m_root->parentUid = m_parentUid;
         m_root->parentConnector = m_parentConnector;
         m_project->adoptSubtree(m_root);
+        for (const Wire& w : m_wires) m_project->netlist().addWire(w);
         m_taken = false;
         Application::getInstance()->reloadSimulation();
     }
 
 private:
+    static QSet<int> subtreeUids(ComponentInstance* comp) {
+        QSet<int> uids{comp->uid};
+        for (ComponentInstance* child : comp->children) uids.unite(subtreeUids(child));
+        return uids;
+    }
+
     static void deleteSubtree(ComponentInstance* comp) {
         for (ComponentInstance* child : comp->children) {
             deleteSubtree(child);
@@ -88,5 +97,6 @@ private:
     QString m_parentConnector;
 
     ComponentInstance* m_root = nullptr;
+    QList<Wire> m_wires;   // the subtree's wires, restored on undo
     bool m_taken = false;
 };

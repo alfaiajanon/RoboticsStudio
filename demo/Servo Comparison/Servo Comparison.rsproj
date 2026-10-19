@@ -1,4 +1,6 @@
 {
+    "level": "prototype",
+    "schema": 3,
     "assembly": {
         "components": [
             {
@@ -130,7 +132,7 @@
     "script": {
         "current": 0,
         "paths": [
-            "Servo Comparison.js"
+            "Servo Comparison.ino"
         ]
     },
     "version": "0.3.0-alpha"

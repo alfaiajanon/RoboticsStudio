@@ -1,4 +1,6 @@
 {
+    "level": "prototype",
+    "schema": 3,
     "assembly": {
         "components": [
             {
@@ -9,7 +11,7 @@
                     "snap_angle": 0
                 },
                 "model_id": "servo_mg996r",
-                "name": "TowerPro MG996R (1)",
+                "name": "Yaw",
                 "parameters": {
                     "servo_joint": 0
                 },
@@ -36,7 +38,7 @@
                     "snap_angle": 0
                 },
                 "model_id": "servo_mg996r",
-                "name": "TowerPro MG996R (6)",
+                "name": "Shoulder",
                 "parameters": {
                     "servo_joint": 81
                 },
@@ -76,7 +78,7 @@
                     "snap_angle": -90
                 },
                 "model_id": "servo_mg996r",
-                "name": "TowerPro MG996R (11)",
+                "name": "Elbow",
                 "parameters": {
                     "servo_joint": 34
                 },
@@ -129,7 +131,7 @@
                     "snap_angle": -90
                 },
                 "model_id": "cam_ov7670",
-                "name": "OV7670 Camera (QQVGA) (17)",
+                "name": "Camera",
                 "parameters": {
                 },
                 "uid": 17
@@ -203,7 +205,7 @@
     "script": {
         "current": 0,
         "paths": [
-            "Robot arm.js"
+            "Robot arm.ino"
         ]
     },
     "stage": {

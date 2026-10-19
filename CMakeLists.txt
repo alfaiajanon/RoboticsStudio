@@ -32,6 +32,9 @@ file(GLOB_RECURSE SRC_FILES
 )
 add_executable(RoboticsStudio ${SRC_FILES})
 
+# WebAssembly runtime for the robot's firmware (extern/wamr).
+add_subdirectory(cmake/wamr)
+
 
 
 target_link_libraries(RoboticsStudio
@@ -42,6 +45,7 @@ target_link_libraries(RoboticsStudio
     Qt6::PrintSupport
     Qt6::Qml
     Qt6::Network
+    vmlib
     mujoco
     glfw
     GL
@@ -57,4 +61,9 @@ target_include_directories(RoboticsStudio PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/extern/qcustomplot
     "${CMAKE_CURRENT_BINARY_DIR}/generated"
+)
+
+# Firmware core sources (read from disk by the firmware compiler).
+target_compile_definitions(RoboticsStudio PRIVATE
+    RS_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
 )

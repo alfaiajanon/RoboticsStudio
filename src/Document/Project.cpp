@@ -7,6 +7,8 @@
 #include "Simulation/ErrorSystem/Emulator.h"
 #include "Simulation/ErrorSystem/EmulatorFactory.h"
 
+#include <QDir>
+#include <QFile>
 #include <queue>
 #include <cmath>
 #include <functional>
@@ -45,6 +47,18 @@ QMap<int, ComponentInstance*>& Project::getComponentMap() {
 
 QJsonObject Project::getProjectData() {
     return projectData;
+}
+
+
+int Project::getSimulationSeed() const {
+    return projectData["simulation"].toObject()["seed"].toInt(1);
+}
+
+
+void Project::setSimulationSeed(int seed) {
+    QJsonObject sim = projectData["simulation"].toObject();
+    sim["seed"] = seed;
+    projectData["simulation"] = sim;
 }
 
 
@@ -116,6 +130,100 @@ void Project::setScript(int idx){
 
 
 
+bool Project::usesFirmware() const {
+    const QString path = activeSketchPath().toLower();
+    return path.endsWith(".ino") || path.endsWith(".cpp");
+}
+
+
+
+bool Project::isBoard(const ComponentInstance* comp) {
+    return comp && comp->getBlueprint() && comp->getBlueprint()->board.present;
+}
+
+
+
+QList<ComponentInstance*> Project::boards() const {
+    QList<ComponentInstance*> out;
+    for (ComponentInstance* comp : componentMap) if (isBoard(comp)) out.append(comp);   // QMap: by uid
+    return out;
+}
+
+
+
+ComponentInstance* Project::activeBoard() const {
+    const QList<ComponentInstance*> all = boards();
+    for (ComponentInstance* b : all) if (!b->firmware.isEmpty()) return b;
+    return all.isEmpty() ? nullptr : all.first();
+}
+
+
+
+RealBoard Project::realBoard() const {
+    return RealBoard::build(activeBoard(), rootComponent, wiring);
+}
+
+
+
+QString Project::activeSketchPath() const {
+    if (level == ProjectLevel::Real) {
+        ComponentInstance* b = activeBoard();
+        return b ? b->firmware : QString();
+    }
+    if (currentScriptIdx < 0 || currentScriptIdx >= scriptPaths.size()) return QString();
+    return scriptPaths[currentScriptIdx].toString();
+}
+
+
+
+QString Project::readActiveSketch() const {
+    const QString rel = activeSketchPath();
+    if (rel.isEmpty()) return {};
+    QFile file(directoryPath + "/" + rel);
+    if (!file.open(QFile::ReadOnly)) {
+        Log::error("Failed to open firmware sketch: " + rel);
+        return {};
+    }
+    return QString::fromUtf8(file.readAll());
+}
+
+
+
+QString Project::pinsHeader() {
+    if (level == ProjectLevel::Real) {
+        const RealBoard rb = realBoard();
+        if (rb.isValid()) return rb.header(getName());
+    }
+    return idealBoard().header(getName());
+}
+
+
+
+bool Project::writeBoardHeader() {
+    if (level != ProjectLevel::Real || directoryPath.isEmpty()) return true;
+    const RealBoard rb = realBoard();
+    if (!rb.isValid() || rb.def().headerFolder.isEmpty()) return true;
+    QDir dir(directoryPath);
+    if (!dir.mkpath(rb.def().headerFolder)) {
+        Log::error("Can't create the board header folder: " + dir.filePath(rb.def().headerFolder));
+        return false;
+    }
+    const QString path = dir.filePath(rb.def().headerFolder + "/robot_pins.h");
+    const QByteArray text = rb.header(getName()).toUtf8();
+    QFile existing(path);
+    if (existing.open(QFile::ReadOnly) && existing.readAll() == text) return true;   // unchanged: keep the mtime
+    existing.close();
+    QFile file(path);
+    if (!file.open(QFile::WriteOnly | QFile::Truncate)) {
+        Log::error("Can't write the board header: " + path);
+        return false;
+    }
+    file.write(text);
+    return true;
+}
+
+
+
 QString Project::readStageScript() const {
     const QString rel = stage.getData().activeScript();
     if (rel.isEmpty()) return {};
@@ -169,6 +277,23 @@ bool Project::loadProject(const QString& path) {
 
     directoryPath = QFileInfo(path).absolutePath();
 
+    // Schema 3 adds the level and the wiring; a schema 2 file (no "schema")
+    // is a Prototype project with no wires, saved as 3.
+    const int schema = projectData["schema"].toInt(2);
+    if (schema > kSchemaVersion)
+        Log::warning(QString("Project schema %1 is newer than this app (%2): unknown fields are dropped on save").arg(schema).arg(kSchemaVersion));
+    else if (schema < kSchemaVersion)
+        Log::info(QString("Project is schema %1: loaded as a Prototype project with no wiring, saved as schema %2").arg(schema).arg(kSchemaVersion));
+    level = projectData["level"].toString() == "real" ? ProjectLevel::Real : ProjectLevel::Prototype;
+    const QJsonObject wiringObj = projectData["wiring"].toObject();
+    wiring = Netlist::fromJson(wiringObj["wires"].toArray());
+    schematicLayout.clear();
+    const QJsonObject layoutObj = wiringObj["layout"].toObject();
+    for (auto it = layoutObj.begin(); it != layoutObj.end(); ++it) {
+        const QJsonArray xy = it.value().toArray();
+        if (xy.size() == 2) schematicLayout.insert(it.key().toInt(), QPointF(xy[0].toDouble(), xy[1].toDouble()));
+    }
+
     QJsonObject scriptObj = projectData["script"].toObject();
     scriptPaths   = scriptObj["paths"].toArray();
     int scriptIdx = scriptObj["current"].toInt();
@@ -183,6 +308,21 @@ bool Project::loadProject(const QString& path) {
     buildHierarchy();
     applyDefaults();
 
+    // Wires to parts or pins that no longer exist (a part file changed) are dropped.
+    for (const Wire& w : QList<Wire>(wiring.wires())) {
+        for (const PinRef& r : {w.a, w.b}) {
+            ComponentInstance* comp = componentMap.value(r.uid, nullptr);
+            bool found = false;
+            if (comp && comp->getBlueprint())
+                for (const PinDef& p : comp->getBlueprint()->pins) found = found || p.id == r.pin;
+            if (!found) {
+                Log::warning(QString("Wiring: pin %1.%2 doesn't exist; its wire was dropped").arg(r.uid).arg(r.pin));
+                wiring.removeWire(w);
+                break;
+            }
+        }
+    }
+
     return true;
 }
 
@@ -196,6 +336,9 @@ void Project::unloadProject() {
     directoryPath = "";
     currentScriptContent = "";
     scriptPaths = QJsonArray();
+    level = ProjectLevel::Prototype;
+    wiring.clear();
+    schematicLayout.clear();
     stage.setProjectDirectory("");
     stage.setData(Stage::Data());
 }
@@ -221,6 +364,7 @@ bool Project::saveProject() {
         compObj["uid"] = comp->uid;
         compObj["name"] = comp->name;
         compObj["model_id"]=comp->modelId;
+        if (isBoard(comp) && !comp->firmware.isEmpty()) compObj["firmware"] = comp->firmware;
 
         if (comp->parentUid == -1) {
             compObj["connection"] = QJsonValue::Null;
@@ -269,6 +413,14 @@ bool Project::saveProject() {
     };
 
     projectData["stage"] = Stage::toJson(stage.getData());
+
+    projectData["schema"] = kSchemaVersion;
+    projectData["level"] = levelName(level);
+    QJsonObject layoutObj;
+    for (auto it = schematicLayout.begin(); it != schematicLayout.end(); ++it)
+        if (componentMap.contains(it.key())) layoutObj[QString::number(it.key())] = QJsonArray{it.value().x(), it.value().y()};
+    projectData["wiring"] = QJsonObject{{"wires", wiring.toJson()}, {"layout", layoutObj}};
+    writeBoardHeader();
 
     if (plottingProvider) plotting = plottingProvider();
     projectData["plotting"] = plotting;
@@ -336,6 +488,7 @@ void Project::parseAssembly() {
         component->uid = obj["uid"].toInt();
         component->name = obj["name"].toString();
         component->modelId = obj["model_id"].toString();
+        component->firmware = obj["firmware"].toString();
 
         QJsonValue connVal = obj["connection"];
         if (connVal.isNull()) {
@@ -364,7 +517,7 @@ void Project::parseAssembly() {
         QString emulatorType = component->getBlueprint()->emulatorDef.type;
         if(!emulatorType.isEmpty()){
             component->emulator = EmulatorFactory::create(emulatorType, component);
-        }else{
+        }else if (!component->getBlueprint()->board.present) {   // a board is run by its firmware
             component->emulator = EmulatorFactory::create("default_emulator", component);
         }
 
@@ -555,6 +708,10 @@ ComponentInstance* Project::createComponentInstance(const int parentUid,
     newComp->snapAngle = snapAngle;
     newComp->setBlueprint(blueprint);
     // newComp->initializeIO();
+
+    // The first board of a Real project takes over the Prototype sketch.
+    if (blueprint->board.present && level == ProjectLevel::Real && boards().isEmpty() && hasScriptAt(currentScriptIdx))
+        newComp->firmware = scriptPaths[currentScriptIdx].toString();
 
     QString emulatorType = blueprint->emulatorDef.type;
     if(!emulatorType.isEmpty()){

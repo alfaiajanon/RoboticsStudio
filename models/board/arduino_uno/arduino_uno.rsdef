@@ -1,0 +1,657 @@
+{
+    "schema": 3,
+    "id": "arduino_uno",
+    "meta": {
+        "name": "Arduino Uno R3",
+        "version": "1.0.0",
+        "author": "Anon",
+        "icon_path": "",
+        "hint_class": "mcu"
+    },
+    "specs": {
+        "mcu": "ATmega328P, 16 MHz",
+        "flash_kb": 32,
+        "sram_kb": 2,
+        "logic_voltage": 5,
+        "weight_kg": 0.025,
+        "size_mm": [
+            68.6,
+            53.4
+        ]
+    },
+    "pins": [
+        {
+            "id": "d0",
+            "type": "gpio",
+            "number": 0,
+            "caps": [
+                "digital",
+                "uart_rx"
+            ],
+            "description": "Digital pin 0, Serial RX (shared with USB)",
+            "voltage_range": [
+                0,
+                5
+            ]
+        },
+        {
+            "id": "d1",
+            "type": "gpio",
+            "number": 1,
+            "caps": [
+                "digital",
+                "uart_tx"
+            ],
+            "description": "Digital pin 1, Serial TX (shared with USB)",
+            "voltage_range": [
+                0,
+                5
+            ]
+        },
+        {
+            "id": "d2",
+            "type": "gpio",
+            "number": 2,
+            "caps": [
+                "digital",
+                "interrupt"
+            ],
+            "description": "Digital pin 2, external interrupt INT0",
+            "voltage_range": [
+                0,
+                5
+            ]
+        },
+        {
+            "id": "d3",
+            "type": "gpio",
+            "number": 3,
+            "caps": [
+                "digital",
+                "pwm",
+                "interrupt"
+            ],
+            "description": "Digital pin 3, PWM (~), external interrupt INT1",
+            "voltage_range": [
+                0,
+                5
+            ]
+        },
+        {
+            "id": "d4",
+            "type": "gpio",
+            "number": 4,
+            "caps": [
+                "digital"
+            ],
+            "description": "Digital pin 4",
+            "voltage_range": [
+                0,
+                5
+            ]
+        },
+        {
+            "id": "d5",
+            "type": "gpio",
+            "number": 5,
+            "caps": [
+                "digital",
+                "pwm"
+            ],
+            "description": "Digital pin 5, PWM (~)",
+            "voltage_range": [
+                0,
+                5
+            ]
+        },
+        {
+            "id": "d6",
+            "type": "gpio",
+            "number": 6,
+            "caps": [
+                "digital",
+                "pwm"
+            ],
+            "description": "Digital pin 6, PWM (~)",
+            "voltage_range": [
+                0,
+                5
+            ]
+        },
+        {
+            "id": "d7",
+            "type": "gpio",
+            "number": 7,
+            "caps": [
+                "digital"
+            ],
+            "description": "Digital pin 7",
+            "voltage_range": [
+                0,
+                5
+            ]
+        },
+        {
+            "id": "d8",
+            "type": "gpio",
+            "number": 8,
+            "caps": [
+                "digital"
+            ],
+            "description": "Digital pin 8",
+            "voltage_range": [
+                0,
+                5
+            ]
+        },
+        {
+            "id": "d9",
+            "type": "gpio",
+            "number": 9,
+            "caps": [
+                "digital",
+                "pwm"
+            ],
+            "description": "Digital pin 9, PWM (~)",
+            "voltage_range": [
+                0,
+                5
+            ]
+        },
+        {
+            "id": "d10",
+            "type": "gpio",
+            "number": 10,
+            "caps": [
+                "digital",
+                "pwm"
+            ],
+            "description": "Digital pin 10, PWM (~), SPI SS",
+            "voltage_range": [
+                0,
+                5
+            ]
+        },
+        {
+            "id": "d11",
+            "type": "gpio",
+            "number": 11,
+            "caps": [
+                "digital",
+                "pwm",
+                "spi_mosi"
+            ],
+            "description": "Digital pin 11, PWM (~), SPI MOSI",
+            "voltage_range": [
+                0,
+                5
+            ]
+        },
+        {
+            "id": "d12",
+            "type": "gpio",
+            "number": 12,
+            "caps": [
+                "digital",
+                "spi_miso"
+            ],
+            "description": "Digital pin 12, SPI MISO",
+            "voltage_range": [
+                0,
+                5
+            ]
+        },
+        {
+            "id": "d13",
+            "type": "gpio",
+            "number": 13,
+            "caps": [
+                "digital",
+                "spi_sck"
+            ],
+            "description": "Digital pin 13, SPI SCK, on-board LED",
+            "voltage_range": [
+                0,
+                5
+            ]
+        },
+        {
+            "id": "a0",
+            "type": "gpio",
+            "number": 14,
+            "caps": [
+                "digital",
+                "analog"
+            ],
+            "description": "Analog input A0 (digital pin 14)",
+            "voltage_range": [
+                0,
+                5
+            ]
+        },
+        {
+            "id": "a1",
+            "type": "gpio",
+            "number": 15,
+            "caps": [
+                "digital",
+                "analog"
+            ],
+            "description": "Analog input A1 (digital pin 15)",
+            "voltage_range": [
+                0,
+                5
+            ]
+        },
+        {
+            "id": "a2",
+            "type": "gpio",
+            "number": 16,
+            "caps": [
+                "digital",
+                "analog"
+            ],
+            "description": "Analog input A2 (digital pin 16)",
+            "voltage_range": [
+                0,
+                5
+            ]
+        },
+        {
+            "id": "a3",
+            "type": "gpio",
+            "number": 17,
+            "caps": [
+                "digital",
+                "analog"
+            ],
+            "description": "Analog input A3 (digital pin 17)",
+            "voltage_range": [
+                0,
+                5
+            ]
+        },
+        {
+            "id": "a4",
+            "type": "gpio",
+            "number": 18,
+            "caps": [
+                "digital",
+                "analog",
+                "i2c_sda"
+            ],
+            "description": "Analog input A4 (digital pin 18), I2C SDA",
+            "voltage_range": [
+                0,
+                5
+            ]
+        },
+        {
+            "id": "a5",
+            "type": "gpio",
+            "number": 19,
+            "caps": [
+                "digital",
+                "analog",
+                "i2c_scl"
+            ],
+            "description": "Analog input A5 (digital pin 19), I2C SCL",
+            "voltage_range": [
+                0,
+                5
+            ]
+        },
+        {
+            "id": "5v",
+            "type": "power_out",
+            "voltage_range": [
+                5,
+                5
+            ],
+            "description": "5 V rail (USB or the on-board regulator)"
+        },
+        {
+            "id": "3v3",
+            "type": "power_out",
+            "voltage_range": [
+                3.3,
+                3.3
+            ],
+            "description": "3.3 V regulator output (50 mA)"
+        },
+        {
+            "id": "gnd",
+            "type": "ground",
+            "description": "Ground (power header)"
+        },
+        {
+            "id": "gnd2",
+            "type": "ground",
+            "description": "Ground (power header)"
+        },
+        {
+            "id": "gnd3",
+            "type": "ground",
+            "description": "Ground (next to D13)"
+        },
+        {
+            "id": "vin",
+            "type": "power",
+            "voltage_range": [
+                7,
+                12
+            ],
+            "description": "Supply input to the regulator (barrel jack)"
+        }
+    ],
+    "board": {
+        "fqbn": "arduino:avr:uno",
+        "header_folder": "uno",
+        "logic_voltage": 5,
+        "adc": {
+            "bits": 10,
+            "vref": 5
+        },
+        "analog_write": {
+            "hz": 490,
+            "pins": {
+                "d5": 980,
+                "d6": 980
+            }
+        },
+        "i2c": {
+            "sda": "a4",
+            "scl": "a5",
+            "default_hz": 100000
+        },
+        "spi": {
+            "sck": "d13",
+            "mosi": "d11",
+            "miso": "d12",
+            "max_hz": 8000000
+        },
+        "sources": {
+            "logic_voltage": "datasheet: Arduino Uno R3 product reference (A000066): 5 V operating voltage",
+            "adc": "datasheet: ATmega328P, 10-bit ADC; Arduino core default reference AVcc = 5 V",
+            "analog_write": "Arduino AVR core (wiring.c): timers 1 and 2 at 16 MHz/64/510 = 490 Hz, timer 0 (pins 5, 6) fast PWM 976.6 Hz",
+            "i2c": "Arduino Wire library: TWI_FREQ 100 kHz by default",
+            "spi": "datasheet: ATmega328P, SPI clock up to f_osc/2 = 8 MHz"
+        }
+    },
+    "resources": {
+        "meshes": {},
+        "materials": {}
+    },
+    "kinematics": {
+        "default_body": "base",
+        "bodies": [
+            {
+                "id": "base",
+                "overrideGeom": false,
+                "transform": {
+                    "pos": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "quat": [
+                        1,
+                        0,
+                        0,
+                        0
+                    ]
+                },
+                "geoms": [
+                    {
+                        "id": "pcb",
+                        "type": "box",
+                        "size": [
+                            0.0343,
+                            0.0267,
+                            0.0008
+                        ],
+                        "pos": [
+                            0,
+                            0,
+                            0.0008
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.0,
+                            0.45,
+                            0.55
+                        ],
+                        "mass": 0.014
+                    },
+                    {
+                        "id": "usb",
+                        "type": "box",
+                        "size": [
+                            0.008,
+                            0.006,
+                            0.0055
+                        ],
+                        "pos": [
+                            -0.03,
+                            0.0115,
+                            0.0071
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.75,
+                            0.75,
+                            0.78
+                        ],
+                        "mass": 0.004
+                    },
+                    {
+                        "id": "jack",
+                        "type": "box",
+                        "size": [
+                            0.007,
+                            0.0045,
+                            0.0055
+                        ],
+                        "pos": [
+                            -0.031,
+                            -0.0195,
+                            0.0071
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.08,
+                            0.08,
+                            0.08
+                        ],
+                        "mass": 0.002
+                    },
+                    {
+                        "id": "mcu",
+                        "type": "box",
+                        "size": [
+                            0.0175,
+                            0.0045,
+                            0.0018
+                        ],
+                        "pos": [
+                            0.0125,
+                            -0.0105,
+                            0.0034
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.08,
+                            0.08,
+                            0.08
+                        ],
+                        "mass": 0.002
+                    },
+                    {
+                        "id": "header_digital",
+                        "type": "box",
+                        "size": [
+                            0.027,
+                            0.0013,
+                            0.0043
+                        ],
+                        "pos": [
+                            0.004,
+                            0.0245,
+                            0.0059
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.08,
+                            0.08,
+                            0.08
+                        ],
+                        "mass": 0.0015
+                    },
+                    {
+                        "id": "header_power",
+                        "type": "box",
+                        "size": [
+                            0.0195,
+                            0.0013,
+                            0.0043
+                        ],
+                        "pos": [
+                            0.001,
+                            -0.0245,
+                            0.0059
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.08,
+                            0.08,
+                            0.08
+                        ],
+                        "mass": 0.001
+                    },
+                    {
+                        "id": "header_analog",
+                        "type": "box",
+                        "size": [
+                            0.008,
+                            0.0013,
+                            0.0043
+                        ],
+                        "pos": [
+                            0.023,
+                            -0.0245,
+                            0.0059
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.08,
+                            0.08,
+                            0.08
+                        ],
+                        "mass": 0.0005
+                    }
+                ],
+                "sites": []
+            }
+        ],
+        "joints": []
+    },
+    "connectors": [
+        {
+            "id": "base",
+            "body": "base",
+            "description": "Bottom of the board (stand-offs)",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    90,
+                    180,
+                    270
+                ]
+            },
+            "transform": {
+                "pos": [
+                    0,
+                    0,
+                    0
+                ],
+                "quat": [
+                    0,
+                    1,
+                    0,
+                    0
+                ]
+            }
+        },
+        {
+            "id": "top",
+            "body": "base",
+            "description": "Top of the board (a shield's place)",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    90,
+                    180,
+                    270
+                ]
+            },
+            "transform": {
+                "pos": [
+                    0,
+                    0,
+                    0.0016
+                ],
+                "quat": [
+                    1,
+                    0,
+                    0,
+                    0
+                ]
+            }
+        }
+    ],
+    "devices": {
+        "actuators": [],
+        "sensors": [],
+        "cameras": [],
+        "displays": []
+    },
+    "interface": {
+        "inputs": [],
+        "outputs": []
+    }
+}

@@ -1,5 +1,5 @@
 {
-    "schema": 2,
+    "schema": 3,
     "id": "display_tft_160x128",
     "meta": {
         "hint_class": "display",
@@ -20,6 +20,7 @@
     "pins": [
         {
             "id": "vcc",
+            "type": "power",
             "voltage_range": [
                 3.0,
                 3.3
@@ -28,30 +29,37 @@
         },
         {
             "id": "gnd",
+            "type": "ground",
             "description": "Ground"
         },
         {
             "id": "sck",
+            "type": "spi_sck",
             "description": "SPI clock"
         },
         {
             "id": "mosi",
+            "type": "spi_mosi",
             "description": "SPI data"
         },
         {
             "id": "cs",
+            "type": "digital",
             "description": "SPI chip select"
         },
         {
             "id": "dc",
+            "type": "digital",
             "description": "Data/command select"
         },
         {
             "id": "rst",
+            "type": "digital",
             "description": "Reset"
         },
         {
             "id": "led",
+            "type": "pwm",
             "description": "Backlight"
         }
     ],
@@ -228,8 +236,10 @@
         "type": "display_emulator",
         "source": null,
         "parameters": {
-            "refresh_hz": 30,
-            "transfer_ms": 10
+            "refresh_hz": 30
+        },
+        "parameter_sources": {
+            "refresh_hz": "estimate: ST7735 panels refresh around 60 Hz; 30 Hz is what the viewer needs to see changes"
         }
     }
 }

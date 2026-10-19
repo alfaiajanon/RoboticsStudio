@@ -4,12 +4,23 @@
 #include <QWidget>
 #include <QSyntaxHighlighter>
 #include <QTextCharFormat>
+#include <QTextCursor>
 #include <QRegularExpression>
 
 
 
-class JSHighlighter;
+class SyntaxHighlighter;
 class LineNumberArea;
+
+
+enum class CodeLanguage { JavaScript, Cpp };
+
+// A message the compiler attached to a line (1-based).
+struct LineMarker {
+    int line = 0;
+    bool error = true;      // false: a warning
+    QString message;
+};
 
 
 
@@ -20,9 +31,18 @@ class CodeEditor : public QPlainTextEdit {
 
     public:
         CodeEditor(QWidget *parent = nullptr);
-        
+
         void lineNumberAreaPaintEvent(QPaintEvent *event);
         int lineNumberAreaWidth();
+
+        void setLanguage(CodeLanguage language);
+
+        // Dots in the gutter (tooltip: the messages) and a tinted line. Each
+        // marker follows its line while the text around it is edited.
+        void setLineMarkers(const QList<LineMarker>& markers);
+        void clearLineMarkers();
+        QString markerTextAt(int y) const;   // gutter y -> messages of that line
+        void goToLine(int line);
 
     protected:
         void resizeEvent(QResizeEvent *event) override;
@@ -33,8 +53,17 @@ class CodeEditor : public QPlainTextEdit {
         void updateLineNumberArea(const QRect &rect, int dy);
 
     private:
+        struct Marker {
+            QTextCursor anchor;     // at the start of the line
+            bool error = true;
+            QStringList messages;
+        };
+
         QWidget *lineNumberArea;
-        JSHighlighter *highlighter;
+        SyntaxHighlighter *highlighter;
+        QList<Marker> markers;
+
+        const Marker* markerForBlock(int blockNumber) const;
 };
 
 
@@ -52,6 +81,7 @@ class LineNumberArea : public QWidget {
 
     protected:
         void paintEvent(QPaintEvent *event) override;
+        bool event(QEvent *event) override;   // tooltips for line markers
 
     private:
         CodeEditor *codeEditor;
@@ -63,11 +93,14 @@ class LineNumberArea : public QWidget {
 
 
 
-class JSHighlighter : public QSyntaxHighlighter {
+// Rule-based highlighting for the project's scripts: C++ (firmware sketches,
+// with the Arduino API's names) or JavaScript (stage scripts).
+class SyntaxHighlighter : public QSyntaxHighlighter {
     Q_OBJECT
 
     public:
-        explicit JSHighlighter(QTextDocument* parent = nullptr);
+        explicit SyntaxHighlighter(QTextDocument* parent = nullptr);
+        void setLanguage(CodeLanguage language);
 
     protected:
         void highlightBlock(const QString& text) override;
@@ -78,12 +111,17 @@ class JSHighlighter : public QSyntaxHighlighter {
             QTextCharFormat format;
         };
         QList<HighlightingRule> highlightingRules;
+        CodeLanguage language = CodeLanguage::JavaScript;
 
         QTextCharFormat keywordFormat;
-        QTextCharFormat classFormat;
+        QTextCharFormat typeFormat;
+        QTextCharFormat builtinFormat;
+        QTextCharFormat preprocessorFormat;
         QTextCharFormat singleLineCommentFormat;
         QTextCharFormat multiLineCommentFormat;
         QTextCharFormat quotationFormat;
         QTextCharFormat functionFormat;
         QTextCharFormat numberFormat;
+
+        void buildRules();
 };

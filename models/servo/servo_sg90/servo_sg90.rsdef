@@ -132,21 +132,19 @@
         "actuators": [
             {
                 "ctrlrange": [
-                    -90,
-                    90
+                    -0.264,
+                    0.264
                 ],
                 "forcerange": [
-                    -0.176,
-                    0.176
+                    -0.264,
+                    0.264
                 ],
                 "id": "servo_motor",
-                "kp": 2.5,
-                "kv": 0.03,
                 "target": {
                     "id": "servo_joint",
                     "kind": "joint"
                 },
-                "type": "position"
+                "type": "motor"
             }
         ],
         "sensors": [
@@ -165,16 +163,50 @@
                     "kind": "tendon"
                 },
                 "type": "tendonpos"
+            },
+            {
+                "id": "servo_vel",
+                "type": "jointvel",
+                "target": {
+                    "kind": "joint",
+                    "id": "servo_joint"
+                }
             }
         ]
     },
     "emulator": {
         "parameters": {
-            "noise_stddev": 0.2,
-            "deadband_threshold": 1
+            "pulse_min_us": 1000,
+            "pulse_max_us": 2000,
+            "travel_deg": 180,
+            "frame_period_ms": 20,
+            "deadband_us": 10,
+            "proportional_band_deg": 6,
+            "stall_torque_nm": 0.176,
+            "no_load_speed_dps": 600,
+            "rated_voltage": 4.8,
+            "supply_voltage": 5.0,
+            "pot_noise_deg": 0.3,
+            "center_spread_us": 10,
+            "gain_spread": 0.03
         },
         "source": {},
-        "type": "servo_emulator"
+        "type": "servo_emulator",
+        "parameter_sources": {
+            "pulse_min_us": "datasheet: TowerPro SG90: ~1 ms = -90°, 1.5 ms = 0°, ~2 ms = +90°",
+            "pulse_max_us": "datasheet: TowerPro SG90: ~1 ms = -90°, 1.5 ms = 0°, ~2 ms = +90°",
+            "travel_deg": "datasheet: TowerPro SG90: ~1 ms = -90°, 1.5 ms = 0°, ~2 ms = +90°",
+            "frame_period_ms": "standard hobby servo signal: one pulse every 20 ms (50 Hz)",
+            "deadband_us": "datasheet: TowerPro SG90: dead band width 10 µs",
+            "proportional_band_deg": "estimate: tuned so a 60° step matches the datasheet speed",
+            "stall_torque_nm": "datasheet: TowerPro SG90: 1.8 kgf·cm at 4.8 V",
+            "no_load_speed_dps": "datasheet: TowerPro SG90: 0.1 s/60° at 4.8 V",
+            "rated_voltage": "datasheet: TowerPro SG90: voltage of the torque and speed figures",
+            "supply_voltage": "assumption: 5 V rail, until the power net exists (plan Phase 2)",
+            "pot_noise_deg": "estimate, to be measured (plan task 37)",
+            "center_spread_us": "estimate, to be measured (plan task 37)",
+            "gain_spread": "estimate, to be measured (plan task 37)"
+        }
     },
     "id": "servo_sg90",
     "interface": {
@@ -194,6 +226,16 @@
                     "kind": "joint"
                 },
                 "unit": "degrees"
+            },
+            {
+                "name": "motor_torque",
+                "unit": "N·m",
+                "physical": false,
+                "target": {
+                    "kind": "actuator",
+                    "id": "servo_motor"
+                },
+                "internal": true
             }
         ],
         "outputs": [
@@ -204,7 +246,8 @@
                     "id": "servo_pos",
                     "kind": "sensor"
                 },
-                "unit": "degrees"
+                "unit": "degrees",
+                "internal": true
             },
             {
                 "name": "current_angle_real",
@@ -214,6 +257,37 @@
                     "kind": "sensor"
                 },
                 "unit": "degrees"
+            },
+            {
+                "name": "gear_velocity",
+                "unit": "deg/s",
+                "physical": false,
+                "target": {
+                    "kind": "sensor",
+                    "id": "servo_vel"
+                },
+                "internal": true
+            },
+            {
+                "name": "pot_reading",
+                "physical": false,
+                "target": {
+                    "kind": "emulator"
+                },
+                "channel_type": "scalar",
+                "dim": 1,
+                "unit": "degrees",
+                "internal": true
+            },
+            {
+                "name": "drive",
+                "physical": false,
+                "target": {
+                    "kind": "emulator"
+                },
+                "channel_type": "scalar",
+                "dim": 1,
+                "internal": true
             }
         ]
     },
@@ -315,7 +389,7 @@
                 "body_a": "base",
                 "body_b": "horn",
                 "collision": true,
-                "damping": 0.017,
+                "damping": 0.002,
                 "frictionloss": 0.008,
                 "id": "servo_joint",
                 "range": [
@@ -342,7 +416,7 @@
                 "body_a": "base",
                 "body_b": "horn",
                 "collision": true,
-                "damping": 0,
+                "damping": 0.0005,
                 "frictionloss": 0.0002,
                 "id": "joint",
                 "range": [
@@ -362,7 +436,11 @@
                         0
                     ]
                 },
-                "type": "hinge"
+                "type": "hinge",
+                "sources": {
+                    "range": "estimate: ±2° of play at the horn; to be measured (plan task 37)",
+                    "damping": "estimate: gear grease; the smallest value with which the horn crosses the gap on a load reversal without rebounding (offline harness, 2026-10-19); to be measured (plan task 37)"
+                }
             }
         ],
         "tendons": [
@@ -391,20 +469,23 @@
     },
     "pins": [
         {
-            "description": "Power input pin for servo motor",
             "id": "vcc",
+            "type": "power",
+            "description": "Power input pin for servo motor",
             "voltage_range": [
                 4.800000190734863,
                 6
             ]
         },
         {
-            "description": "PWM signal input pin for controlling servo position",
-            "id": "signal"
+            "id": "signal",
+            "type": "pwm",
+            "description": "PWM signal input pin for controlling servo position"
         },
         {
-            "description": "Ground pin for servo motor",
-            "id": "gnd"
+            "id": "gnd",
+            "type": "ground",
+            "description": "Ground pin for servo motor"
         }
     ],
     "resources": {
@@ -416,7 +497,7 @@
             "sg90_horn": "meshes/sg90_horn.obj"
         }
     },
-    "schema": 2,
+    "schema": 3,
     "specs": {
         "max_speed_rad": 10.47,
         "max_torque_nm": 0.176,

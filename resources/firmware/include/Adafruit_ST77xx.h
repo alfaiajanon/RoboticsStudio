@@ -1,0 +1,50 @@
+/*
+ * Adafruit_ST77xx.h for RoboticsStudio: colours and commands of the ST77xx
+ * family, as in Adafruit's ST7735/ST7789 library.
+ */
+#ifndef ADAFRUIT_ST77XX_H
+#define ADAFRUIT_ST77XX_H
+
+#define ST77XX_NOP     0x00
+#define ST77XX_SWRESET 0x01
+#define ST77XX_SLPIN   0x10
+#define ST77XX_SLPOUT  0x11
+#define ST77XX_NORON   0x13
+#define ST77XX_INVOFF  0x20
+#define ST77XX_INVON   0x21
+#define ST77XX_DISPOFF 0x28
+#define ST77XX_DISPON  0x29
+#define ST77XX_CASET   0x2A
+#define ST77XX_RASET   0x2B
+#define ST77XX_RAMWR   0x2C
+#define ST77XX_MADCTL  0x36
+#define ST77XX_COLMOD  0x3A
+
+#define ST77XX_MADCTL_MY  0x80
+#define ST77XX_MADCTL_MX  0x40
+#define ST77XX_MADCTL_MV  0x20
+#define ST77XX_MADCTL_RGB 0x00
+#define ST7735_MADCTL_BGR 0x08
+
+#define ST77XX_BLACK   0x0000
+#define ST77XX_WHITE   0xFFFF
+#define ST77XX_RED     0xF800
+#define ST77XX_GREEN   0x07E0
+#define ST77XX_BLUE    0x001F
+#define ST77XX_CYAN    0x07FF
+#define ST77XX_MAGENTA 0xF81F
+#define ST77XX_YELLOW  0xFFE0
+#define ST77XX_ORANGE  0xFC00
+
+// Older names, still in Adafruit's ST7735 header.
+#define ST7735_BLACK   ST77XX_BLACK
+#define ST7735_WHITE   ST77XX_WHITE
+#define ST7735_RED     ST77XX_RED
+#define ST7735_GREEN   ST77XX_GREEN
+#define ST7735_BLUE    ST77XX_BLUE
+#define ST7735_CYAN    ST77XX_CYAN
+#define ST7735_MAGENTA ST77XX_MAGENTA
+#define ST7735_YELLOW  ST77XX_YELLOW
+#define ST7735_ORANGE  ST77XX_ORANGE
+
+#endif   // ADAFRUIT_ST77XX_H
