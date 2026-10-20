@@ -1,0 +1,228 @@
+{
+    "schema": 3,
+    "id": "battery_9v",
+    "meta": {
+        "name": "Battery 9V (alkaline)",
+        "version": "1.0.0",
+        "author": "Anon",
+        "icon_path": "",
+        "hint_class": "battery"
+    },
+    "specs": {
+        "type": "6LR61 / PP3 alkaline",
+        "nominal_voltage": 9.0,
+        "weight_kg": 0.045,
+        "size_mm": [
+            48.5,
+            26.5,
+            17.5
+        ]
+    },
+    "pins": [
+        {
+            "id": "plus",
+            "type": "power_out",
+            "voltage_range": [
+                6.0,
+                9.6
+            ],
+            "description": "Battery + (red lead)"
+        },
+        {
+            "id": "minus",
+            "type": "ground",
+            "description": "Battery - (black lead)"
+        }
+    ],
+    "power": {
+        "supplies": [
+            {
+                "pin": "plus",
+                "kind": "battery"
+            }
+        ],
+        "battery": {
+            "capacity_mah": 550,
+            "curve": [
+                [
+                    0,
+                    6.0,
+                    5.0
+                ],
+                [
+                    10,
+                    6.8,
+                    3.5
+                ],
+                [
+                    25,
+                    7.4,
+                    2.8
+                ],
+                [
+                    50,
+                    8.0,
+                    2.2
+                ],
+                [
+                    75,
+                    8.6,
+                    1.9
+                ],
+                [
+                    100,
+                    9.6,
+                    1.7
+                ]
+            ]
+        },
+        "sources": {
+            "supplies.plus": "the battery curve below",
+            "battery": "estimate from the Energizer 522 (9 V alkaline) datasheet: 550 mAh at 25 mA (much less at high drain), internal resistance ~1.7 Ohm fresh; open-circuit curve read off its discharge plots"
+        }
+    },
+    "resources": {
+        "meshes": {},
+        "materials": {}
+    },
+    "kinematics": {
+        "default_body": "base",
+        "bodies": [
+            {
+                "id": "base",
+                "overrideGeom": false,
+                "transform": {
+                    "pos": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "quat": [
+                        1,
+                        0,
+                        0,
+                        0
+                    ]
+                },
+                "geoms": [
+                    {
+                        "id": "body",
+                        "type": "box",
+                        "size": [
+                            0.01325,
+                            0.02425,
+                            0.00875
+                        ],
+                        "pos": [
+                            0,
+                            0,
+                            0.00875
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.15,
+                            0.15,
+                            0.17
+                        ],
+                        "mass": 0.043
+                    },
+                    {
+                        "id": "snap",
+                        "type": "box",
+                        "size": [
+                            0.006,
+                            0.004,
+                            0.002
+                        ],
+                        "pos": [
+                            0,
+                            0.0262,
+                            0.0115
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.1,
+                            0.1,
+                            0.1
+                        ],
+                        "mass": 0.002
+                    }
+                ]
+            }
+        ]
+    },
+    "connectors": [
+        {
+            "id": "base",
+            "body": "base",
+            "description": "Bottom (tape, strap or stand-offs)",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    90,
+                    180,
+                    270
+                ]
+            },
+            "transform": {
+                "pos": [
+                    0,
+                    0,
+                    0
+                ],
+                "quat": [
+                    0,
+                    1,
+                    0,
+                    0
+                ]
+            }
+        },
+        {
+            "id": "top",
+            "body": "base",
+            "description": "Top face",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    90,
+                    180,
+                    270
+                ]
+            },
+            "transform": {
+                "pos": [
+                    0,
+                    0,
+                    0.0175
+                ],
+                "quat": [
+                    1,
+                    0,
+                    0,
+                    0
+                ]
+            }
+        }
+    ],
+    "devices": {
+        "actuators": [],
+        "sensors": [],
+        "cameras": [],
+        "displays": []
+    },
+    "interface": {
+        "inputs": [],
+        "outputs": []
+    }
+}

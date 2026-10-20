@@ -1,0 +1,311 @@
+{
+    "schema": 3,
+    "id": "battery_4xaa",
+    "meta": {
+        "name": "Battery pack 4xAA (alkaline)",
+        "version": "1.0.0",
+        "author": "Anon",
+        "icon_path": "",
+        "hint_class": "battery"
+    },
+    "specs": {
+        "cells": "4 x AA alkaline in series",
+        "nominal_voltage": 6.0,
+        "weight_kg": 0.11,
+        "size_mm": [
+            62,
+            58,
+            16
+        ]
+    },
+    "pins": [
+        {
+            "id": "plus",
+            "type": "power_out",
+            "voltage_range": [
+                4.4,
+                6.4
+            ],
+            "description": "Battery + (red lead)"
+        },
+        {
+            "id": "minus",
+            "type": "ground",
+            "description": "Battery - (black lead)"
+        }
+    ],
+    "power": {
+        "supplies": [
+            {
+                "pin": "plus",
+                "kind": "battery"
+            }
+        ],
+        "battery": {
+            "capacity_mah": 2500,
+            "curve": [
+                [
+                    0,
+                    4.4,
+                    2.0
+                ],
+                [
+                    10,
+                    4.7,
+                    1.2
+                ],
+                [
+                    25,
+                    5.0,
+                    0.9
+                ],
+                [
+                    50,
+                    5.3,
+                    0.75
+                ],
+                [
+                    75,
+                    5.7,
+                    0.65
+                ],
+                [
+                    90,
+                    6.0,
+                    0.6
+                ],
+                [
+                    100,
+                    6.4,
+                    0.6
+                ]
+            ]
+        },
+        "sources": {
+            "supplies.plus": "the battery curve below",
+            "battery": "estimate from the Energizer E91 (AA alkaline) datasheet: 1.6 V fresh, 2500 mAh at moderate drain (less at 1 A), internal resistance 150-300 mOhm per cell rising near empty; 4 cells in series, end at 1.1 V/cell open circuit"
+        }
+    },
+    "resources": {
+        "meshes": {},
+        "materials": {}
+    },
+    "kinematics": {
+        "default_body": "base",
+        "bodies": [
+            {
+                "id": "base",
+                "overrideGeom": false,
+                "transform": {
+                    "pos": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "quat": [
+                        1,
+                        0,
+                        0,
+                        0
+                    ]
+                },
+                "geoms": [
+                    {
+                        "id": "holder",
+                        "type": "box",
+                        "size": [
+                            0.031,
+                            0.029,
+                            0.008
+                        ],
+                        "pos": [
+                            0,
+                            0,
+                            0.008
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.08,
+                            0.08,
+                            0.08
+                        ],
+                        "mass": 0.015
+                    },
+                    {
+                        "id": "cell0",
+                        "type": "box",
+                        "size": [
+                            0.0072,
+                            0.025,
+                            0.0072
+                        ],
+                        "pos": [
+                            -0.0216,
+                            0,
+                            0.0082
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.85,
+                            0.55,
+                            0.1
+                        ],
+                        "mass": 0.0235
+                    },
+                    {
+                        "id": "cell1",
+                        "type": "box",
+                        "size": [
+                            0.0072,
+                            0.025,
+                            0.0072
+                        ],
+                        "pos": [
+                            -0.0072000000000000015,
+                            0,
+                            0.0082
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.85,
+                            0.55,
+                            0.1
+                        ],
+                        "mass": 0.0235
+                    },
+                    {
+                        "id": "cell2",
+                        "type": "box",
+                        "size": [
+                            0.0072,
+                            0.025,
+                            0.0072
+                        ],
+                        "pos": [
+                            0.007199999999999998,
+                            0,
+                            0.0082
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.85,
+                            0.55,
+                            0.1
+                        ],
+                        "mass": 0.0235
+                    },
+                    {
+                        "id": "cell3",
+                        "type": "box",
+                        "size": [
+                            0.0072,
+                            0.025,
+                            0.0072
+                        ],
+                        "pos": [
+                            0.0216,
+                            0,
+                            0.0082
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.85,
+                            0.55,
+                            0.1
+                        ],
+                        "mass": 0.0235
+                    }
+                ]
+            }
+        ]
+    },
+    "connectors": [
+        {
+            "id": "base",
+            "body": "base",
+            "description": "Bottom (tape, strap or stand-offs)",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    90,
+                    180,
+                    270
+                ]
+            },
+            "transform": {
+                "pos": [
+                    0,
+                    0,
+                    0
+                ],
+                "quat": [
+                    0,
+                    1,
+                    0,
+                    0
+                ]
+            }
+        },
+        {
+            "id": "top",
+            "body": "base",
+            "description": "Top face",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    90,
+                    180,
+                    270
+                ]
+            },
+            "transform": {
+                "pos": [
+                    0,
+                    0,
+                    0.016
+                ],
+                "quat": [
+                    1,
+                    0,
+                    0,
+                    0
+                ]
+            }
+        }
+    ],
+    "devices": {
+        "actuators": [],
+        "sensors": [],
+        "cameras": [],
+        "displays": []
+    },
+    "interface": {
+        "inputs": [],
+        "outputs": []
+    }
+}

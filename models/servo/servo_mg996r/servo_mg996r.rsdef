@@ -44,6 +44,18 @@
             "description": "Ground pin for servo motor"
         }
     ],
+    "power": {
+        "loads": [
+            {
+                "pin": "vcc",
+                "current_ma": 10,
+                "min_v": 3.5
+            }
+        ],
+        "sources": {
+            "loads.vcc": "datasheet: TowerPro MG996R idle current 10 mA; the 3.5 V drop-out is an estimate (no datasheet value)"
+        }
+    },
     "kinematics": {
         "default_body": "base",
         "bodies": [
@@ -474,7 +486,8 @@
             "supply_voltage": 5.0,
             "pot_noise_deg": 0.3,
             "center_spread_us": 10,
-            "gain_spread": 0.03
+            "gain_spread": 0.03,
+            "stall_current_a": 2.5
         },
         "parameter_sources": {
             "pulse_min_us": "estimate: 1–2 ms for ±90° (datasheets disagree; measure, plan task 37)",
@@ -489,7 +502,8 @@
             "supply_voltage": "assumption: 5 V rail, until the power net exists (plan Phase 2)",
             "pot_noise_deg": "estimate, to be measured (plan task 37)",
             "center_spread_us": "estimate, to be measured (plan task 37)",
-            "gain_spread": "estimate, to be measured (plan task 37)"
+            "gain_spread": "estimate, to be measured (plan task 37)",
+            "stall_current_a": "datasheet: TowerPro MG996R, stall current 2.5 A at 6 V (running 500-900 mA)"
         }
     }
 }

@@ -1,0 +1,296 @@
+{
+    "schema": 3,
+    "id": "buck_lm2596",
+    "meta": {
+        "name": "Buck converter LM2596 module",
+        "version": "1.0.0",
+        "author": "Anon",
+        "icon_path": "",
+        "hint_class": "part"
+    },
+    "specs": {
+        "chip": "LM2596S-ADJ",
+        "input_v": [
+            4.5,
+            40
+        ],
+        "output_v": "adjustable (trimmer), 5.0 V by default",
+        "weight_kg": 0.012,
+        "size_mm": [
+            43,
+            21,
+            14
+        ]
+    },
+    "pins": [
+        {
+            "id": "in",
+            "type": "power",
+            "voltage_range": [
+                4.5,
+                40
+            ],
+            "description": "IN+"
+        },
+        {
+            "id": "gnd_in",
+            "type": "ground",
+            "description": "IN-"
+        },
+        {
+            "id": "out",
+            "type": "power_out",
+            "voltage_range": [
+                1.25,
+                35
+            ],
+            "description": "OUT+"
+        },
+        {
+            "id": "gnd_out",
+            "type": "ground",
+            "description": "OUT- (common with IN-)"
+        }
+    ],
+    "power": {
+        "regulators": [
+            {
+                "id": "buck",
+                "in": "in",
+                "out": "out",
+                "kind": "buck",
+                "v_out": 5.0,
+                "dropout_v": 1.5,
+                "efficiency": 0.85,
+                "i_max_a": 3.0,
+                "i_limit_a": 4.5,
+                "i_quiescent_ma": 5
+            }
+        ],
+        "sources": {
+            "regulators.buck": "datasheet: TI LM2596 (3 A rated, 4.5-40 V in, ~1.5 V minimum headroom at 3 A, ~5 mA quiescent; switch current limit 3.6-6.9 A, typ 4.5 A, where the output folds back); efficiency ~85 % read off its 5 V-out curve; output set per instance in the Inspector (the module's trimmer)"
+        }
+    },
+    "resources": {
+        "meshes": {},
+        "materials": {}
+    },
+    "kinematics": {
+        "default_body": "base",
+        "bodies": [
+            {
+                "id": "base",
+                "overrideGeom": false,
+                "transform": {
+                    "pos": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "quat": [
+                        1,
+                        0,
+                        0,
+                        0
+                    ]
+                },
+                "geoms": [
+                    {
+                        "id": "pcb",
+                        "type": "box",
+                        "size": [
+                            0.0215,
+                            0.0105,
+                            0.0008
+                        ],
+                        "pos": [
+                            0,
+                            0,
+                            0.0008
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.1,
+                            0.25,
+                            0.6
+                        ],
+                        "mass": 0.004
+                    },
+                    {
+                        "id": "inductor",
+                        "type": "box",
+                        "size": [
+                            0.006,
+                            0.006,
+                            0.0035
+                        ],
+                        "pos": [
+                            0.004,
+                            0,
+                            0.0051
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.15,
+                            0.15,
+                            0.15
+                        ],
+                        "mass": 0.004
+                    },
+                    {
+                        "id": "trimmer",
+                        "type": "box",
+                        "size": [
+                            0.0045,
+                            0.0025,
+                            0.0045
+                        ],
+                        "pos": [
+                            -0.012,
+                            -0.006,
+                            0.0061
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.2,
+                            0.35,
+                            0.9
+                        ],
+                        "mass": 0.001
+                    },
+                    {
+                        "id": "cap_in",
+                        "type": "box",
+                        "size": [
+                            0.003,
+                            0.003,
+                            0.004
+                        ],
+                        "pos": [
+                            -0.015,
+                            0.004,
+                            0.0056
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.1,
+                            0.1,
+                            0.1
+                        ],
+                        "mass": 0.0015
+                    },
+                    {
+                        "id": "cap_out",
+                        "type": "box",
+                        "size": [
+                            0.003,
+                            0.003,
+                            0.004
+                        ],
+                        "pos": [
+                            0.016,
+                            0.004,
+                            0.0056
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.1,
+                            0.1,
+                            0.1
+                        ],
+                        "mass": 0.0015
+                    }
+                ]
+            }
+        ]
+    },
+    "connectors": [
+        {
+            "id": "base",
+            "body": "base",
+            "description": "Bottom (tape, strap or stand-offs)",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    90,
+                    180,
+                    270
+                ]
+            },
+            "transform": {
+                "pos": [
+                    0,
+                    0,
+                    0
+                ],
+                "quat": [
+                    0,
+                    1,
+                    0,
+                    0
+                ]
+            }
+        },
+        {
+            "id": "top",
+            "body": "base",
+            "description": "Top face",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    90,
+                    180,
+                    270
+                ]
+            },
+            "transform": {
+                "pos": [
+                    0,
+                    0,
+                    0.009
+                ],
+                "quat": [
+                    1,
+                    0,
+                    0,
+                    0
+                ]
+            }
+        }
+    ],
+    "devices": {
+        "actuators": [],
+        "sensors": [],
+        "cameras": [],
+        "displays": []
+    },
+    "interface": {
+        "inputs": [],
+        "outputs": []
+    }
+}

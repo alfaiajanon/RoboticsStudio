@@ -334,6 +334,47 @@
             "spi": "datasheet: ESP32 Technical Reference Manual, SPI through the GPIO matrix up to 40 MHz"
         }
     },
+    "power": {
+        "supplies": [
+            {
+                "pin": "5v",
+                "kind": "usb",
+                "voltage": 5.0,
+                "r_internal_ohm": 0.5,
+                "hold_current_a": 0.5
+            }
+        ],
+        "regulators": [
+            {
+                "id": "reg_3v3",
+                "in": "5v",
+                "out": "3v3",
+                "kind": "linear",
+                "v_out": 3.3,
+                "dropout_v": 1.1,
+                "i_max_a": 0.8,
+                "i_quiescent_ma": 5
+            }
+        ],
+        "loads": [
+            {
+                "pin": "3v3",
+                "current_ma": 180
+            }
+        ],
+        "brownout": {
+            "rail": "3v3",
+            "threshold_v": 2.43,
+            "hysteresis_v": 0.05,
+            "restart_ms": 300
+        },
+        "sources": {
+            "supplies.5v": "estimate: fed through an ESP32-CAM-MB / USB-serial adapter from a USB 2.0 port (500 mA budget); cable and adapter ~0.5 ohm",
+            "regulators.reg_3v3": "datasheet: AMS1117-3.3 (on the AI-Thinker board): dropout 1.1 V typ / 1.3 V max at 800 mA, ~5 mA quiescent",
+            "loads.3v3": "datasheet: AI-Thinker ESP32-CAM spec, 180 mA at 5 V with the flash LED off (camera running); Wi-Fi peaks not modelled",
+            "brownout": "datasheet: ESP-IDF brownout detector, default level 0 ~2.43 V; hysteresis is an estimate; restart ~300 ms (ROM + bootloader + app start) is an estimate"
+        }
+    },
     "resources": {
         "meshes": {},
         "materials": {}

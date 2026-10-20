@@ -49,6 +49,18 @@
             "description": "Common ground"
         }
     ],
+    "power": {
+        "loads": [
+            {
+                "pin": "vmot",
+                "current_ma": 0,
+                "min_v": 8.0
+            }
+        ],
+        "sources": {
+            "loads.vmot": "datasheet: A4988 load supply 8-35 V (the built-in driver is an ideal A4988-style chopper); its current comes from the stepper model"
+        }
+    },
     "kinematics": {
         "default_body": "base",
         "bodies": [
@@ -311,13 +323,19 @@
             "holding_torque_nm": 0.4,
             "step_angle_deg": 1.8,
             "microstepping": 1,
-            "pullout_corner_rpm": 300
+            "pullout_corner_rpm": 300,
+            "rated_current_a": 1.7,
+            "phase_resistance_ohm": 1.5,
+            "pullout_voltage": 12.0
         },
         "parameter_sources": {
             "holding_torque_nm": "datasheet: 17HS4401 (typical NEMA17), holding torque 40 N·cm at rated current",
             "step_angle_deg": "datasheet: 17HS4401, 1.8° step angle (200 steps/rev)",
             "microstepping": "driver setting: A4988 with MS1-MS3 LOW = full steps; set 2/4/8/16 to match the driver's MS pins",
-            "pullout_corner_rpm": "estimate: speed where the pull-out torque halves for a NEMA17 on an A4988 at 12 V (from typical torque-speed curves); to be measured (plan task 37)"
+            "pullout_corner_rpm": "estimate: speed where the pull-out torque halves for a NEMA17 on an A4988 at 12 V (from typical torque-speed curves); to be measured (plan task 37)",
+            "rated_current_a": "datasheet: 17HS4401, 1.7 A per phase (an ideal chopper driver set to it)",
+            "phase_resistance_ohm": "datasheet: 17HS4401, 1.5 ohm per phase",
+            "pullout_voltage": "estimate: the supply pullout_corner_rpm was estimated at; the corner scales with the supply (back-EMF limits the current rise)"
         }
     }
 }
