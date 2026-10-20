@@ -54,7 +54,11 @@ Reference: `models/stepper/nema17` (start from a copy of it).
 | `holding_torque_nm` | N·m | 0.40 | datasheet holding torque (17HS4401) |
 | `step_angle_deg` | ° | 1.8 | full step |
 | `microstepping` | | 1 | the driver's MS pins (1, 2, 4, 8, 16) |
-| `pullout_corner_rpm` | rpm | 300 | speed where the pull-out torque has halved (estimate) |
+| `pullout_corner_rpm` | rpm | 300 | speed where the pull-out torque has halved (estimate), at `pullout_voltage` |
+| `pullout_voltage` | V | 12 | supply the corner was estimated at: at the Real level the corner scales with the `vmot` rail's voltage |
+| `rated_current_a`, `phase_resistance_ohm` | A, Ω | 1.7, 1.5 | the chopper keeps this phase current; the driver draws the coils' power (2·I²·R) from `vmot` at the Real level |
+
+**Power** (Real level): `vmot` needs a 9-24 V source (a bench supply, a 2S/3S battery); the built-in driver stops below 8 V (`min_v`, the A4988's minimum). The holding torque doesn't depend on the supply (the driver regulates the current), the top speed does.
 
 **Firmware:** pulse STEP with `digitalWrite` and `delayMicroseconds`, ramping the rate up and down (see `examples/firmware/stepper`). The sketch counts its own steps: there is no position feedback.
 

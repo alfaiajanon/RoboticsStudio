@@ -2238,4 +2238,29 @@ void ComponentEditorWindow::build_data() {
     });
 
     leftLayout->addWidget(pinsBox);
+
+    // ---- power (read-only: edited in the .rsdef, kept on save) ----
+    if (data.power.present) {
+        QGroupBox* powerBox = new QGroupBox("Power (edit in the .rsdef)", this);
+        QVBoxLayout* powerLayout = new QVBoxLayout(powerBox);
+        QStringList lines;
+        for (const SupplyDef& s : data.power.supplies)
+            lines << QString("Supply %1 (%2): %3 V, %4 Ω").arg(s.pin.toUpper(), s.kind)
+                         .arg(s.kind == "battery" && data.power.battery.present ? data.power.battery.at(100).voltage : s.voltage)
+                         .arg(s.kind == "battery" && data.power.battery.present ? data.power.battery.at(100).resistance : s.rInternal);
+        for (const RegulatorDef& r : data.power.regulators)
+            lines << QString("Regulator %1 (%2): %3 -> %4, %5 V, %6 A").arg(r.id, r.kind, r.in.toUpper(), r.out.toUpper())
+                         .arg(r.vOut).arg(r.iMax);
+        for (const PowerLoadDef& l : data.power.loads)
+            lines << QString("Load on %1: %2 mA, works from %3 V").arg(l.pin.toUpper()).arg(l.current * 1000.0).arg(l.minV);
+        if (data.power.battery.present)
+            lines << QString("Battery: %1 mAh, %2 curve points").arg(data.power.battery.capacityAh * 1000.0).arg(data.power.battery.curve.size());
+        if (data.power.brownout.present)
+            lines << QString("Brownout: %1 below %2 V").arg(data.power.brownout.rail.toUpper()).arg(data.power.brownout.threshold);
+        QLabel* powerLabel = new QLabel(lines.join("\n"), powerBox);
+        powerLabel->setWordWrap(true);
+        powerLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        powerLayout->addWidget(powerLabel);
+        leftLayout->addWidget(powerBox);
+    }
 }

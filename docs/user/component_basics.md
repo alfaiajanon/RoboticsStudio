@@ -87,7 +87,7 @@ Turn on the **Connectors** overlay in the editor preview: X red, Y green, Z blue
 
 ## Pins
 
-The part's electrical pins: `{"id": "signal", "type": "pwm", "voltage_range": [4.8, 6]}`. Ids are unique. `type` is one of `pwm`, `digital`, `analog` (signal pins), `i2c_sda`, `i2c_scl`, `spi_sck`, `spi_mosi`, `spi_miso`, `uart_tx`, `uart_rx` (bus lines), `power` (a supply input) or `ground`; leave it out while you don't know yet. I2C parts share the board's I2C bus and answer at their I2C address; SPI parts share its SPI bus and listen while their chip-select (`cs`, a `digital` pin) is LOW. `voltage_range` on a `power` pin is the supply the part takes; the wiring checks compare it with the board's 5V/3V3 and the board's logic level with the part's signal pins.
+The part's electrical pins: `{"id": "signal", "type": "pwm", "voltage_range": [4.8, 6]}`. Ids are unique. `type` is one of `pwm`, `digital`, `analog` (signal pins), `i2c_sda`, `i2c_scl`, `spi_sck`, `spi_mosi`, `spi_miso`, `uart_tx`, `uart_rx` (bus lines), `power` (a supply input) or `ground`; leave it out while you don't know yet. I2C parts share the board's I2C bus and answer at their I2C address; SPI parts share its SPI bus and listen while their chip-select (`cs`, a `digital` pin) is LOW. `voltage_range` on a `power` pin is the supply the part takes; the wiring checks compare it with the voltage of the rail it is wired to, and the board's logic level with the part's signal pins. What a part draws, supplies or converts at the Real level goes in its `power` block: [create_power.md](create_power.md).
 
 Each typed pin except power and ground is wired automatically to the ideal controller of the Prototype level. The firmware reaches it through a generated name, shown in the Inspector under **Pins (ideal board)**: `COMP_6_SIGNAL` (uid 6, pin `signal`), plus `SHOULDER_SIGNAL` when the part's name ("Shoulder") is unique. The number is the part's uid × 100 + the pin's index in this list, so it doesn't change when you add or remove other parts. At the Real level you wire the same pins to a board yourself ([wiring.md](wiring.md)); the names stay, the numbers become the board's.
 
@@ -96,7 +96,7 @@ Each typed pin except power and ground is wired automatically to the ideal contr
 A part with a `"board"` block is a board: it runs a firmware sketch at the Real level. Its pins use two more types and three more fields:
 
 - `"type": "gpio"`: a pin the firmware drives, with `"number"` (what the sketch passes, Uno A0 = 14) and `"caps"`: what it can do (`digital`, `pwm`, `analog`, `interrupt`, `i2c_sda`, `i2c_scl`, `spi_sck`, `spi_mosi`, `spi_miso`, `uart_tx`, `uart_rx`).
-- `"type": "power_out"`: a supply output (5V, 3V3), with its voltage in `voltage_range`.
+- `"type": "power_out"`: a supply output (5V, 3V3), with its voltage in `voltage_range`; its regulator, the board's USB feed and its brownout threshold go in the `power` block ([create_power.md](create_power.md)). Batteries and regulator modules have `power_out` pins too.
 - `"internal": true` (with a `number`): a pin wired on the board's PCB to an on-board part, like the ESP32-CAM's camera pins. It can't take a wire; the sketch sees it as `<BOARD NAME>_<PIN>`.
 
 ```json

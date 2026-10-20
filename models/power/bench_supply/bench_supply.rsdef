@@ -1,0 +1,216 @@
+{
+    "schema": 3,
+    "id": "bench_supply",
+    "meta": {
+        "name": "Bench power supply",
+        "version": "1.0.0",
+        "author": "Anon",
+        "icon_path": "",
+        "hint_class": "battery"
+    },
+    "specs": {
+        "type": "adjustable lab supply, constant voltage / constant current",
+        "note": "the supply stands off the robot; the part is the terminal block its leads go to",
+        "weight_kg": 0.005
+    },
+    "pins": [
+        {
+            "id": "plus",
+            "type": "power_out",
+            "voltage_range": [
+                0,
+                30
+            ],
+            "description": "Supply + (red lead)"
+        },
+        {
+            "id": "minus",
+            "type": "ground",
+            "description": "Supply - (black lead)"
+        }
+    ],
+    "power": {
+        "supplies": [
+            {
+                "pin": "plus",
+                "kind": "supply",
+                "voltage": 5.0,
+                "r_internal_ohm": 0.0,
+                "current_limit_a": 3.0
+            }
+        ],
+        "sources": {
+            "supplies.plus": "an ideal lab supply: voltage and current limit set per instance in the Inspector (defaults 5.0 V, 3 A); leads assumed ideal"
+        }
+    },
+    "resources": {
+        "meshes": {},
+        "materials": {}
+    },
+    "kinematics": {
+        "default_body": "base",
+        "bodies": [
+            {
+                "id": "base",
+                "overrideGeom": false,
+                "transform": {
+                    "pos": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "quat": [
+                        1,
+                        0,
+                        0,
+                        0
+                    ]
+                },
+                "geoms": [
+                    {
+                        "id": "terminal",
+                        "type": "box",
+                        "size": [
+                            0.008,
+                            0.006,
+                            0.005
+                        ],
+                        "pos": [
+                            0,
+                            0,
+                            0.005
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.1,
+                            0.45,
+                            0.15
+                        ],
+                        "mass": 0.004
+                    },
+                    {
+                        "id": "red",
+                        "type": "box",
+                        "size": [
+                            0.0025,
+                            0.0025,
+                            0.002
+                        ],
+                        "pos": [
+                            -0.003,
+                            0,
+                            0.012
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.8,
+                            0.1,
+                            0.1
+                        ],
+                        "mass": 0.0005
+                    },
+                    {
+                        "id": "black",
+                        "type": "box",
+                        "size": [
+                            0.0025,
+                            0.0025,
+                            0.002
+                        ],
+                        "pos": [
+                            0.003,
+                            0,
+                            0.012
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.05,
+                            0.05,
+                            0.05
+                        ],
+                        "mass": 0.0005
+                    }
+                ]
+            }
+        ]
+    },
+    "connectors": [
+        {
+            "id": "base",
+            "body": "base",
+            "description": "Bottom (tape, strap or stand-offs)",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    90,
+                    180,
+                    270
+                ]
+            },
+            "transform": {
+                "pos": [
+                    0,
+                    0,
+                    0
+                ],
+                "quat": [
+                    0,
+                    1,
+                    0,
+                    0
+                ]
+            }
+        },
+        {
+            "id": "top",
+            "body": "base",
+            "description": "Top face",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    90,
+                    180,
+                    270
+                ]
+            },
+            "transform": {
+                "pos": [
+                    0,
+                    0,
+                    0.014
+                ],
+                "quat": [
+                    1,
+                    0,
+                    0,
+                    0
+                ]
+            }
+        }
+    ],
+    "devices": {
+        "actuators": [],
+        "sensors": [],
+        "cameras": [],
+        "displays": []
+    },
+    "interface": {
+        "inputs": [],
+        "outputs": []
+    }
+}

@@ -11,6 +11,7 @@
 #include "Simulation/MujocoContext.h"
 #include "Simulation/Controller/PinBus.h"
 #include "Simulation/Controller/DeviceBus.h"
+#include "Simulation/Power/PowerSystem.h"
 #include <QSet>
 
 class ComponentInstance;
@@ -101,6 +102,17 @@ class SimulationManager : public QObject {
     // models don't run and their actuators get no drive, like a dead part.
     QSet<int> unpoweredUids;
 
+    // Real level: the power network during the run (physics thread). Parts
+    // whose supply sags below their min_v are off: not updated, no drive,
+    // silent on the buses (offEmulators); deadUids = unpowered + off.
+    PowerSystem power;
+    QSet<Emulator*> offEmulators;
+    QSet<int> deadUids;
+    QHash<int, int> powerCutsLogged;   // uid -> power cuts reported (capped)
+    void startPower(ComponentInstance* root);
+    void applyPower(double now, double dt);
+    void setPartPowered(ComponentInstance* comp, bool powered, double now = 0.0);
+
     // Renders camera frames off the physics thread; created on the UI thread
     // (GLFW windows must be), lives as long as the manager.
     CameraRenderer* cameraRenderer = nullptr;
@@ -145,6 +157,8 @@ class SimulationManager : public QObject {
         CameraRenderer* getCameraRenderer() { return cameraRenderer; }
         PinBus* getPinBus() { return &pinBus; }
         DeviceBus* getDeviceBus() { return &deviceBus; }
+        // Real level, physics thread (telemetry capture): the run's power state.
+        const PowerSystem& getPowerSystem() const { return power; }
 
         // Swaps in a new model and re-resolves every signal's MuJoCo id. Takes
         // physicsMutex itself. The single entry point for model reloads, so the

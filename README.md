@@ -73,6 +73,7 @@ tools/fetch_wasi_sdk.sh   # one-time: firmware compiler
 | **Realistic parts** | Each part follows its real mechanism: deadband, backlash, noise, torque limits, lost steps. Parameters come from datasheets or measurements. |
 | **C++ firmware** | Arduino sketches compiled in the app and run in lockstep with the physics. |
 | **Prototype and Real levels** | Prototype wires everything automatically. Real uses an actual board, wired pin by pin, with checks for common wiring mistakes. |
+| **Power** | At the Real level supplies sag under load: batteries, bench supplies, regulators and the boards' USB feed. A stalling servo can brown out the board, which then resets as a real one does. |
 | **Stage** | Environment, floor and props, driven by a JavaScript stage script. |
 | **Live telemetry** | Real-time plots of any input, output or body motion. |
 | **Component editor** | Create custom parts as `.rsdef` JSON files. |
@@ -82,6 +83,7 @@ tools/fetch_wasi_sdk.sh   # one-time: firmware compiler
 | Category | Parts |
 | --- | --- |
 | Boards | Arduino Uno, ESP32-CAM |
+| Power | 4×AA pack, 9 V battery, 2S LiPo, bench supply, LM2596 buck converter |
 | Actuators | SG90 and MG996R servos, 60 RPM DC gear motor, NEMA 17 stepper |
 | Sensors | MPU6050 IMU, OV7670 camera, depth camera |
 | Displays | 160x128 ST7735 TFT |
@@ -132,7 +134,7 @@ Each demo in [`demo/`](demo) is provided at both levels.
 | Firmware | [firmware.md](docs/user/firmware.md) |
 | Levels, boards and wiring | [wiring.md](docs/user/wiring.md) |
 | Stage | [stage.md](docs/user/stage.md) |
-| Creating parts | [Basics](docs/user/component_basics.md) · [Servo](docs/user/create_servo.md) · [Stepper](docs/user/create_stepper.md) · [DC motor](docs/user/create_dc_motor.md) · [IMU](docs/user/create_imu.md) · [Structural](docs/user/create_structural.md) · [Camera](docs/user/create_camera.md) · [Display](docs/user/create_display.md) |
+| Creating parts | [Basics](docs/user/component_basics.md) · [Power block](docs/user/create_power.md) · [Servo](docs/user/create_servo.md) · [Stepper](docs/user/create_stepper.md) · [DC motor](docs/user/create_dc_motor.md) · [IMU](docs/user/create_imu.md) · [Structural](docs/user/create_structural.md) · [Camera](docs/user/create_camera.md) · [Display](docs/user/create_display.md) |
 | Developer docs | [docs/dev](docs/dev/overview.md) |
 
 ## Roadmap
@@ -143,7 +145,7 @@ Each demo in [`demo/`](demo) is provided at both levels.
 | Done | Device models along the real signal path |
 | Done | C++ firmware with the Arduino API |
 | Done | Boards and wiring (Uno, ESP32-CAM) |
-| Planned | Power budget: supply sag and brownout |
+| Done | Power: supply sag, current budget, brownout resets, batteries |
 | Planned | Multiple boards linked over UART |
 | Planned | Interface boards: PCA9685, motor drivers |
 | Planned | Built-in robotics library: kinematics, IK, PID, filters |

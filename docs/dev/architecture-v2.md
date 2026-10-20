@@ -113,6 +113,8 @@ flowchart LR
 3. The motor draws current from the 5V net. At stall the net sags; the servo's torque drops, and if the voltage falls below the MCU's brownout threshold, the MCU resets. No special-case code is needed for this classic failure.
 4. A missing GND wire is flagged by the design-rule check before Play.
 
+**Built (Phase 2, power pass):** `Document/PowerNetwork` (rails, supplies, regulators, loads, ground domains; a few-pass DC solve) and `Simulation/Power/PowerSystem` (per step, with the parts' live currents; part on/off at `min_v`; MCU brownout reset and restart; battery charge). Parts: the boards' USB feed and regulators, 4×AA, 9 V, 2S LiPo, bench supply, LM2596 buck. Design rules: back-feeding, ranges on every rail, regulator headroom, typical/peak budget, brownout at peak, common ground. User guides: [wiring.md](../user/wiring.md#power), [create_power.md](../user/create_power.md). Not yet: the DC motor's supply (with driver parts), pin output strength, polyfuse trip.
+
 ## 5. Boards
 
 A board is a component like any other, with many pins and a **firmware slot** (the sketch it runs, a file in the project). At the Real level the user adds boards from the component library like any other part, as many as the robot needs. Its `.rsdef` lists the pin capabilities: PWM-capable pins, interrupt pins, ADC channels and resolution, I2C/SPI/UART pins, logic voltage (3.3 V / 5 V), and regulator current.

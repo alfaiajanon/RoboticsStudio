@@ -223,6 +223,13 @@ class DisplayEmulatorCpp : public Emulator, public SPIDevice {
         }
 
         // Blank panel: no published frame.
+        // Power cut: the controller comes back asleep, its GRAM lost.
+        void powerCut() override {
+            resetController();
+            std::fill(gram.begin(), gram.end(), uint16_t(0));
+            reset();
+        }
+
         void reset() override {
             publishedSeq = 0;
             if (!signal.isEmpty()) {

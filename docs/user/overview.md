@@ -70,7 +70,7 @@ Press **▶ PLAY** at the bottom-left of the central area. Unsaved script edits 
 - The firmware runs in lockstep with the physics, like a microcontroller wired to the robot: the physics waits while your code runs, and your code waits during `delay()`. Heavy code makes the whole simulation run slower, never changes what the firmware sees.
 - Runs are repeatable: noise, dropped frames and other random effects come from the project's **Random Seed** (Inspector, project selected). The same seed gives exactly the same run; change it to try different luck.
 - Parts behave like cheap hardware: servos have deadband and noise, cameras drop frames and have latency, and so on.
-- At the Real level the active board runs its firmware slot with its own limits, the wiring checks go to the Output panel, and a part without power or ground stays dead ([wiring.md](wiring.md)).
+- At the Real level the active board runs its firmware slot with its own limits, the wiring checks go to the Output panel, and a part without power or ground stays dead. Supplies sag under load and a board resets on a brownout ([wiring.md](wiring.md#power)).
 - **⏸ PAUSE** freezes physics, the firmware and the stage script (a running `delay()` resumes where it left off); **▶ RESUME** continues.
 - **⬛ STOP** returns to edit mode, resets the physics and the emulators, and stops the firmware and the stage script. Firmware crashes and stage script errors appear in the Output panel and stop that code until the next Play.
 

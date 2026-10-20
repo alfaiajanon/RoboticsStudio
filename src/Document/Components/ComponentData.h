@@ -64,6 +64,72 @@ struct BoardDef {
     QMap<QString, QString> sources;   // field -> datasheet / estimate
 };
 
+// The part's electrical side at the Real level ("power" block, any part): what
+// it supplies, what it converts, what it draws. Numbers in SI units (V, A, Ω,
+// s); the JSON keys say their unit (current_ma, restart_ms, ...).
+struct SupplyDef {             // a source on a power_out pin
+    QString pin;
+    QString kind;              // usb (a board's default feed), battery, supply (bench supply)
+    double voltage = 0.0;      // open circuit (battery: from the discharge curve)
+    double rInternal = 0.0;    // Ω
+    double currentLimit = 0.0; // A; supply: constant-current limit; 0 = none
+    double holdCurrent = 0.0;  // A; usb: the polyfuse's hold current (warnings); 0 = none
+
+    static const QStringList& kinds();
+};
+
+struct RegulatorDef {          // in (a power or power_out pin) -> out (a power_out pin)
+    QString id;
+    QString in, out;
+    QString kind = "linear";   // linear, buck
+    double vOut = 0.0;
+    double dropout = 0.0;      // linear: V below the input; buck: minimum headroom
+    double efficiency = 0.85;  // buck
+    double iMax = 0.0;         // A, rated output current (the budget check)
+    double iLimit = 0.0;       // A, where the output folds back (its current limit); 0 = iMax
+    double iQuiescent = 0.0;   // A, drawn from the input on top of the output
+
+    static const QStringList& kinds();
+};
+
+struct PowerLoadDef {          // static draw of a power pin
+    QString pin;
+    double current = 0.0;      // A, typical
+    double minV = 0.0;         // the part works at or above this supply voltage
+};
+
+struct BrownoutDef {           // boards: the MCU resets when its rail drops below
+    bool present = false;
+    QString rail;              // pin id of the MCU's supply rail
+    double threshold = 0.0;    // V
+    double hysteresis = 0.0;   // V; released at threshold + hysteresis
+    double restart = 0.0;      // s from release to setup()
+};
+
+struct BatteryDef {            // battery parts: state of charge
+    bool present = false;
+    double capacityAh = 0.0;
+    // Discharge curve: (charge %, open-circuit V, internal Ω), sorted by charge.
+    struct Point { double percent, voltage, resistance; };
+    QList<Point> curve;
+
+    Point at(double percent) const;   // interpolated, clamped to the curve
+};
+
+struct PowerDef {
+    bool present = false;
+    QList<SupplyDef> supplies;
+    QList<RegulatorDef> regulators;
+    QList<PowerLoadDef> loads;
+    BrownoutDef brownout;
+    BatteryDef battery;
+    QMap<QString, QString> sources;   // field -> datasheet / estimate
+
+    const PowerLoadDef* loadOn(const QString& pin) const;
+    // The pin is driven by this part's supply or regulator output.
+    bool sourcesPin(const QString& pin) const;
+};
+
 struct ConnectorDef {
     QString id;
     QString body;
@@ -190,6 +256,7 @@ struct ComponentData {
     QMap<QString, InterfaceDef> interfaceOutputs;   // keyed by signal name
     EmulatorDef emulatorDef;
     BoardDef board;
+    PowerDef power;
 
     // Set by fromJson. On failure the returned data is otherwise empty.
     bool isValid = true;

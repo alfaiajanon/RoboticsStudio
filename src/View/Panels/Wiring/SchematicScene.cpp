@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include "Document/Project.h"
+#include "Document/PowerNetwork.h"
 #include "Document/Components/ComponentBlueprint.h"
 #include "Document/Components/ComponentInstance.h"
 #include "View/Theme.h"
@@ -274,6 +275,9 @@ void SchematicScene::rebuild(Project* project, const QList<RuleIssue>& issues) {
 
     nets = project->netlist().nets();
     netOf = Netlist::indexOf(nets);
+    // Rail voltages at rest, for the power pins' tooltips.
+    const PowerNetwork power = PowerNetwork::build(*project);
+    const PowerNetwork::Solution atRest = power.solveStatic();
 
     // Design-rule findings per part and per pin (worst severity wins).
     QHash<int, QStringList> partIssues;
@@ -328,6 +332,24 @@ void SchematicScene::rebuild(Project* project, const QList<RuleIssue>& issues) {
             if (p->type == "gpio") tip << QString("Board pin %1 (%2)").arg(p->number).arg(p->caps.join(", "));
             else tip << "Type: " + p->type;
             if (p->voltageRange.second > 0) tip << QString("%1-%2 V").arg(p->voltageRange.first).arg(p->voltageRange.second);
+            if (p->isPower()) {
+                const PowerDef& pw = bp->power;
+                for (const SupplyDef& s : pw.supplies) {
+                    if (s.pin != p->id) continue;
+                    if (s.kind == "usb") tip << QString("Source: the board's USB feed, %1 V (holds %2 A); dropped when something else feeds this rail").arg(s.voltage).arg(s.holdCurrent);
+                    else if (s.kind == "battery") tip << "Source: battery (voltage from its charge, see the Inspector)";
+                    else tip << "Source: bench supply (voltage and current limit in the Inspector)";
+                }
+                for (const RegulatorDef& r : pw.regulators) {
+                    if (r.out == p->id) tip << QString("Source: %1 regulator from %2, %3 V, up to %4 A").arg(r.kind, r.in.toUpper()).arg(r.vOut).arg(r.iMax);
+                    if (r.in == p->id) tip << QString("Feeds the %1 regulator (needs %2 V or more)").arg(r.out.toUpper()).arg(r.vOut + r.dropout);
+                }
+                if (const PowerLoadDef* l = pw.loadOn(p->id))
+                    tip << QString("Draws %1 mA%2").arg(l->current * 1000.0, 0, 'g', 3).arg(l->minV > 0 ? QString(", works from %1 V").arg(l->minV) : QString());
+                const int node = power.nodeOf(pin->ref);
+                if (node >= 0 && project->getLevel() == ProjectLevel::Real)
+                    tip << (power.nodes[node].live ? QString("Rail at rest: %1 V").arg(atRest.voltage[node], 0, 'f', 2) : QString("Rail: no source"));
+            }
             const int net = netOf.value(pin->ref, -1);
             tip << (net >= 0 ? QString("Net with %1 pin(s)").arg(nets[net].pins.size()) : QString("Not wired"));
             for (const RuleIssue& i : issues) if (i.uid == comp->uid && i.pin == p->id) tip << "! " + i.message;

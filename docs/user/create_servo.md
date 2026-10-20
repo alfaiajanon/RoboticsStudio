@@ -72,11 +72,14 @@ A hobby servo has **no feedback wire**, so the firmware can't read any of these;
 | `stall_torque_nm` | N·m | 0.176 | 1.08 | at `rated_voltage` |
 | `no_load_speed_dps` | °/s | 600 | 428 | at `rated_voltage` (0.1 s/60° = 600 °/s) |
 | `rated_voltage` | V | 4.8 | 6.0 | voltage the two figures above are given at |
-| `supply_voltage` | V | 5.0 | 5.0 | what the servo runs at (torque and speed scale with it) |
+| `supply_voltage` | V | 5.0 | 5.0 | what the servo runs at at the Prototype level (torque and speed scale with it); at the Real level the voltage of the rail its `vcc` is wired to |
+| `stall_current_a` | A | 0.65 | 2.5 | current at stall at `rated_voltage`: the motor's current is drawn from the `vcc` rail at the Real level ([wiring.md](wiring.md#power)) |
 | `pot_noise_deg` | ° | 0.3 | 0.3 | pot reading noise (stddev) |
 | `center_spread_us`, `gain_spread` | µs, fraction | 10, 0.03 | 10, 0.03 | unit-to-unit spread (stddev) |
 
 The spreads and the pot noise are estimates until measured on real units.
+
+**Power** (Real level): the `vcc` pin's load in the part's `power` block gives the idle current and the lowest supply the electronics work at (`min_v`, SG90 3.0 V, MG996R 3.5 V, estimates); below it the servo goes limp until the rail recovers, then waits for the next pulse frame. See [create_power.md](create_power.md).
 
 Firmware: `Servo.write(0..180)` (90 = centre) or `writeMicroseconds(us)`. `read()` returns the last angle written, not the horn's position: a real SG90 or MG996R can't tell you where it is. Keep track of what you commanded, or add a sensor.
 

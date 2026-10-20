@@ -378,6 +378,57 @@
             "spi": "datasheet: ATmega328P, SPI clock up to f_osc/2 = 8 MHz"
         }
     },
+    "power": {
+        "supplies": [
+            {
+                "pin": "5v",
+                "kind": "usb",
+                "voltage": 5.0,
+                "r_internal_ohm": 0.5,
+                "hold_current_a": 0.5
+            }
+        ],
+        "regulators": [
+            {
+                "id": "reg_5v",
+                "in": "vin",
+                "out": "5v",
+                "kind": "linear",
+                "v_out": 5.0,
+                "dropout_v": 1.1,
+                "i_max_a": 1.0,
+                "i_quiescent_ma": 5
+            },
+            {
+                "id": "reg_3v3",
+                "in": "5v",
+                "out": "3v3",
+                "kind": "linear",
+                "v_out": 3.3,
+                "dropout_v": 0.3,
+                "i_max_a": 0.15
+            }
+        ],
+        "loads": [
+            {
+                "pin": "5v",
+                "current_ma": 45
+            }
+        ],
+        "brownout": {
+            "rail": "5v",
+            "threshold_v": 2.7,
+            "hysteresis_v": 0.05,
+            "restart_ms": 65
+        },
+        "sources": {
+            "supplies.5v": "datasheet: Arduino Uno R3 schematic, USB 5 V through the MF-MSMF050 polyfuse (Bourns: hold 0.5 A, trip 1.0 A, 0.15-1.0 ohm) and an FDN340P switch; 0.5 ohm with a typical USB cable is an estimate",
+            "regulators.reg_5v": "datasheet: NCP1117ST50T3G (on the R3 schematic): 1 A, dropout ~1.1 V at full load, ~5 mA quiescent (typ)",
+            "regulators.reg_3v3": "datasheet: LP2985-33DBVR (on the R3 schematic): 150 mA, dropout ~0.3 V at 150 mA; Arduino rates the 3V3 pin at 50 mA",
+            "loads.5v": "estimate: an idle Uno R3 (ATmega328P + ATmega16U2 + power LED) is commonly measured at 45-50 mA",
+            "brownout": "datasheet: ATmega328P V_BOT 2.5-2.9 V (typ 2.7 V) at BODLEVEL 2.7 V, the Uno's extended fuse 0xFD; hysteresis 50 mV; start-up 16K CK + 65 ms (low fuse 0xFF); Optiboot only runs after an external reset"
+        }
+    },
     "resources": {
         "meshes": {},
         "materials": {}

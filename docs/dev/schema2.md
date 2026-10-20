@@ -61,7 +61,7 @@ Dotted arrows are references by `target {kind, id}`: signals point at devices (o
 What schema 3 adds (all optional, so a schema 2 file is a valid schema 3 file apart from the version number):
 
 - **Pin types** `spi_miso`, `uart_tx`, `uart_rx` for parts; `gpio` and `power_out` for boards.
-- **Board pin fields**: `number` (required on `gpio` and `internal` pins, unique per board), `caps` (gpio only), `internal`. `gpio`, `power_out` and `internal` are only allowed with a `board` block.
+- **Board pin fields**: `number` (required on `gpio` and `internal` pins, unique per board), `caps` (gpio only), `internal`. `gpio` and `internal` are only allowed with a `board` block; `power_out` on a board, or as a source the part's `power` block describes.
 - **The `board` block** (`BoardDef` in `ComponentData.h`). Pin references in `i2c`, `spi` and `analog_write.pins` must name gpio pins with the matching capability. The validator warns about board fields without a `sources` entry, like emulator parameters.
 
 The **`.rsproj`** gets, at the top level:
@@ -73,6 +73,8 @@ The **`.rsproj`** gets, at the top level:
 | `wiring` | `{"wires": [{"a": {"uid", "pin"}, "b": {...}}], "layout": {"<uid>": [x, y]}}`: two-point wires (grouped into nets at load, `Document/Netlist`) and the Wiring page's block positions |
 
 and a board's component entry gets `"firmware": "<sketch>.ino"`, its firmware slot. `script.current` stays the ideal board's sketch (Prototype). Wires to pins that no longer exist are dropped at load with a warning. On save at the Real level the active board's `robot_pins.h` is written to `<project>/<header_folder>/`.
+
+**The `power` block** (any part, `PowerDef` in `ComponentData.h`; user guide [create_power.md](../user/create_power.md)): `supplies` (on `power_out` pins: `usb`, `battery`, `supply`), `regulators` (`in` → `out`, `linear` or `buck`, rated `i_max_a`, optional current limit `i_limit_a`), `loads` (static current and `min_v` of a pin), `brownout` (boards only) and `battery` (capacity and discharge curve). A `power_out` pin on a part that isn't a board must be one of its supplies or regulator outputs. Every number needs a `power.sources` entry (`supplies.<pin>`, `regulators.<id>`, `loads.<pin>`, `brownout`, `battery`); the validator warns otherwise. Per-instance settings (bench supply voltage and limit, buck output, battery charge and drain) are `.rsproj` component `parameters` with `power.` keys.
 
 The design-rule checks on the wiring live in `Document/DesignRules` (no widgets); the runtime side (one `PinBus` pin per net, `DeviceBus::restrictTo`, `BoardProfile` in `FirmwareRuntime`) is in [sim-to-real.md](sim-to-real.md).
 

@@ -147,6 +147,32 @@
                 "parameters": {
                 },
                 "uid": 19
+            },
+            {
+                "connection": {
+                    "parent_connector": "battery",
+                    "parent_uid": 18,
+                    "self_connector": "base",
+                    "snap_angle": 90
+                },
+                "model_id": "battery_lipo_2s",
+                "name": "LiPo 2S",
+                "parameters": {
+                },
+                "uid": 20
+            },
+            {
+                "connection": {
+                    "parent_connector": "top",
+                    "parent_uid": 20,
+                    "self_connector": "base",
+                    "snap_angle": 0
+                },
+                "model_id": "buck_lm2596",
+                "name": "Buck 5V",
+                "parameters": {
+                },
+                "uid": 21
             }
         ],
         "constraints": [
@@ -364,6 +390,14 @@
                 0,
                 0
             ],
+            "20": [
+                360,
+                0
+            ],
+            "21": [
+                360,
+                160
+            ],
             "6": [
                 -320,
                 120
@@ -458,6 +492,46 @@
                 "b": {
                     "pin": "gnd",
                     "uid": 11
+                }
+            },
+            {
+                "a": {
+                    "pin": "plus",
+                    "uid": 20
+                },
+                "b": {
+                    "pin": "in",
+                    "uid": 21
+                }
+            },
+            {
+                "a": {
+                    "pin": "minus",
+                    "uid": 20
+                },
+                "b": {
+                    "pin": "gnd_in",
+                    "uid": 21
+                }
+            },
+            {
+                "a": {
+                    "pin": "out",
+                    "uid": 21
+                },
+                "b": {
+                    "pin": "5v",
+                    "uid": 19
+                }
+            },
+            {
+                "a": {
+                    "pin": "gnd_out",
+                    "uid": 21
+                },
+                "b": {
+                    "pin": "gnd",
+                    "uid": 19
                 }
             }
         ]

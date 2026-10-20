@@ -4,6 +4,7 @@
 #include <QHash>
 #include <QSet>
 #include <QString>
+#include <atomic>
 #include <vector>
 #include "Simulation/Controller/RobotController.h"
 
@@ -64,8 +65,9 @@ class FirmwareRuntime : public RobotController {
     wasm_module_inst_t instance = nullptr;
     wasm_exec_env_t execEnv = nullptr;
 
-    // Controller thread (and load(), while idle).
+    // Controller thread (and load()/restart(), while it is out of the firmware).
     bool setupDone = false;
+    std::atomic<bool> held{false};   // in reset (brownout): stopped until restart()
     QByteArray serialLine, stdoutLine, stderrLine;
 
     // Pins the firmware configured or complained about (controller thread).
@@ -93,6 +95,16 @@ class FirmwareRuntime : public RobotController {
 
         bool runCycle() override;
         void stop() override;
+
+        // Physics thread, between steps: the board's supply fell below its
+        // brownout threshold. The MCU is held in reset: the firmware stops
+        // where it is (as stop()). False if nothing was running.
+        bool holdInReset();
+        // Physics thread, while held: the MCU starts again at sim time
+        // `simTime`: global objects are constructed again, then setup(), and
+        // millis() counts from 0. The compiled module is kept.
+        bool restart(double simTime);
+        bool isHeld() const { return held; }
 
         // ---- for the native functions (controller thread) ----
         LockstepGate& clock() { return gate; }

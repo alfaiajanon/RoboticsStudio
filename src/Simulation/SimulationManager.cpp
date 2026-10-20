@@ -2,6 +2,7 @@
 #include "MujocoContext.h"
 
 #include <chrono>
+#include <functional>
 #include <limits>
 #include <qobject.h>
 #include "Utils/Log.h"
@@ -13,6 +14,7 @@
 #include "Document/Components/Units.h"
 #include "Telemetry/TelemetryRegistry.h"
 #include "Simulation/ErrorSystem/Emulator.h"
+#include "Simulation/Firmware/FirmwareRuntime.h"
 #include "Simulation/Rendering/CameraRenderer.h"
 #include "Simulation/Rendering/DisplayTextures.h"
 #include "mujoco/mjdata.h"
@@ -129,6 +131,7 @@ void SimulationManager::play() {
     }
     initEmulators(root);
     buildSchedule(root);
+    startPower(root);
 
     // The robot runs its compiled firmware. A .js robot script from before
     // firmware is refused: physics runs, the robot stays idle (physics never
@@ -181,6 +184,10 @@ void SimulationManager::edit() {
     for (const auto& h : project->getStage()->getHandles()) h->resetRuntime();
 
     ComponentInstance* root = project->getRootComponent();
+    for (const QString& line : power.summary()) Log::info("Power: " + line);
+    power.clear();
+    offEmulators.clear();
+    deadUids.clear();
     clearSchedule();
     resetEmulators(root);
     deviceBus.reset(&pinBus);
@@ -402,6 +409,7 @@ void SimulationManager::initEmulators(ComponentInstance* comp) {
         comp->emulator->setSeed(mixSeed(mixSeed(projectSeed) ^ quint64(comp->uid)));
         comp->emulator->setPins(&pinBus);
         comp->emulator->setBuses(&deviceBus);
+        comp->emulator->setSupply(-1.0);   // ideal until the power model says otherwise
         comp->emulator->init();
     }
     for (ComponentInstance* child : comp->children) {
@@ -492,13 +500,106 @@ void SimulationManager::runDueAsync(double now) {
     double earliest = std::numeric_limits<double>::infinity();
     for (ScheduledEmulator& s : asyncEmulators) {
         if (now >= s.nextDue) {
-            s.emulator->sample(ctx);
+            if (!offEmulators.contains(s.emulator)) s.emulator->sample(ctx);
             s.nextDue = advanceDeadline(s.nextDue, s.periodSec, now);
         }
         earliest = std::min(earliest, s.nextDue);
     }
     nextAsyncDue = earliest;
 }
+
+
+/*
+ * Real level, at Play (under stepMutex, after the emulators' init): the power
+ * network for this run. Parts that start without enough supply start off.
+ */
+void SimulationManager::startPower(ComponentInstance* root) {
+    deadUids = unpoweredUids;
+    offEmulators.clear();
+    powerCutsLogged.clear();
+    QHash<int, Emulator*> emulators;
+    std::function<void(ComponentInstance*)> collect = [&](ComponentInstance* comp) {
+        if (!comp) return;
+        if (comp->emulator && !unpoweredUids.contains(comp->uid)) emulators.insert(comp->uid, comp->emulator);
+        for (ComponentInstance* child : comp->children) collect(child);
+    };
+    collect(root);
+    power.build(*project, emulators);
+    if (!power.isActive()) return;
+
+    for (const PowerSystem::Part& p : power.parts()) {
+        if (unpoweredUids.contains(p.uid)) continue;
+        if (p.emulator) p.emulator->setSupply(p.volts);
+        if (!p.on) {
+            setPartPowered(project->getComponentByUid(p.uid), false);
+            Log::warning(QString("Power: %1 starts without enough supply (%2 V, it needs %3 V): it stays off")
+                             .arg(p.name).arg(p.volts, 0, 'f', 2).arg(p.minV, 0, 'f', 2));
+        }
+    }
+}
+
+
+// A part loses or regains its supply during the run.
+void SimulationManager::setPartPowered(ComponentInstance* comp, bool powered, double now) {
+    if (!comp || !comp->emulator) return;
+    Emulator* e = comp->emulator;
+    auto devices = [&](bool on) {
+        if (auto* d = dynamic_cast<I2CDevice*>(e)) deviceBus.setPowered(d, on);
+        if (auto* d = dynamic_cast<SPIDevice*>(e)) deviceBus.setPowered(d, on);
+        if (auto* d = dynamic_cast<CameraDevice*>(e)) deviceBus.setPowered(d, on);
+    };
+    if (!powered) {
+        e->powerCut();
+        offEmulators.insert(e);
+        deadUids.insert(comp->uid);
+        devices(false);
+    } else {
+        offEmulators.remove(e);
+        if (!unpoweredUids.contains(comp->uid)) deadUids.remove(comp->uid);
+        devices(true);
+        e->powerRestored(now);
+    }
+}
+
+
+/*
+ * Real level, once per physics tick after the emulators (physicsMutex held):
+ * solve the power network with this step's currents, hand every part its
+ * supply for the next step, switch parts off/on, and hold or release the
+ * board in reset (brownout).
+ */
+void SimulationManager::applyPower(double now, double dt) {
+    static constexpr int kCutsLogged = 5;   // per part, then only the summary at Stop
+    const PowerSystem::Events ev = power.step(now, dt);
+    for (const PowerSystem::Part& p : power.parts()) {
+        if (p.emulator) p.emulator->setSupply(p.volts);
+    }
+    for (int uid : ev.switchedOff) {
+        ComponentInstance* comp = project->getComponentByUid(uid);
+        setPartPowered(comp, false);
+        const int n = ++powerCutsLogged[uid];
+        if (n <= kCutsLogged && comp)
+            Log::warning(QString("Power: %1 lost its supply at %2 s (%3 V)%4").arg(comp->name).arg(now, 0, 'f', 3)
+                             .arg(power.supplyOf(uid), 0, 'f', 2).arg(n == kCutsLogged ? "; further cuts of this part not logged" : ""));
+    }
+    for (int uid : ev.switchedOn) setPartPowered(project->getComponentByUid(uid), true, now);
+
+    // Only the active board runs firmware; idle boards only count their resets.
+    ComponentInstance* activeBoard = project->getLevel() == ProjectLevel::Real ? project->activeBoard() : nullptr;
+    FirmwareRuntime* fw = project->getFirmware();
+    for (int uid : ev.brownedOut) {
+        ComponentInstance* board = project->getComponentByUid(uid);
+        const QString name = board ? board->name : QString::number(uid);
+        Log::warning(QString("MCU: %1 brownout reset at %2 s (%3 V on its supply rail)")
+                         .arg(name).arg(now, 0, 'f', 3).arg(power.boardRailVolts(uid), 0, 'f', 2));
+        if (board && board == activeBoard && robotController == fw && fw->holdInReset()) pinBus.releaseBoardPins();
+    }
+    for (int uid : ev.released) {
+        if (activeBoard && activeBoard->uid == uid && robotController == fw && fw->isHeld() && fw->restart(now))
+            Log::info(QString("MCU: %1 starts again at %2 s (setup())").arg(activeBoard->name).arg(now, 0, 'f', 3));
+    }
+}
+
 
 
 /*
@@ -510,6 +611,7 @@ void SimulationManager::runEmulators(double now) {
     const mjModel* m = mujocoContext.getModel();
     const mjData* d = mujocoContext.getData();
     for (Emulator* e : syncEmulators) {
+        if (offEmulators.contains(e)) continue;
         e->setSimTime(now);
         e->setPhysics(m, d);
         e->update();
@@ -517,11 +619,12 @@ void SimulationManager::runEmulators(double now) {
     for (ScheduledEmulator& s : throttledEmulators) {
         if (now >= s.nextDue) {
             s.emulator->setSimTime(now);
-            s.emulator->update();
+            if (!offEmulators.contains(s.emulator)) s.emulator->update();
             s.nextDue = advanceDeadline(s.nextDue, s.periodSec, now);
         }
     }
     for (ScheduledEmulator& s : asyncEmulators) {
+        if (offEmulators.contains(s.emulator)) continue;
         s.emulator->setSimTime(now);
         s.emulator->update();
     }
@@ -563,7 +666,7 @@ bool SimulationManager::stepOnce() {
     mjData* d = mj->getData();
     ComponentInstance* root = project->getRootComponent();
 
-    syncToMujocoActuator(root, m, d, unpoweredUids);
+    syncToMujocoActuator(root, m, d, deadUids);
     syncToMujocoProps(project->getStage(), m, d);
     mj->step();
     // Async devices sample at the exact step that reaches their deadline.
@@ -574,6 +677,7 @@ bool SimulationManager::stepOnce() {
     syncFromMujocoProps(project->getStage(), m, d);
 
     runEmulators(d->time); // position it here to capture both sensor and actuator properly
+    if (power.isActive()) applyPower(d->time, m->opt.timestep);
 
     if (d->time >= nextTelemetryDue - 1e-9) {
         TelemetryRegistry::getInstance().captureAll(d->time);

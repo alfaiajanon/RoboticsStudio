@@ -155,6 +155,12 @@ void PinBus::release(int h) {
 
 
 
+void PinBus::releaseBoardPins() {
+    for (int h : byNumber) release(h);
+}
+
+
+
 double PinBus::voltage(int h) const {
     return valid(h) ? states[h].voltage : 0.0;
 }

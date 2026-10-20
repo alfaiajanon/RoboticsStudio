@@ -1,0 +1,254 @@
+{
+    "schema": 3,
+    "id": "battery_lipo_2s",
+    "meta": {
+        "name": "Battery LiPo 2S 2000 mAh",
+        "version": "1.0.0",
+        "author": "Anon",
+        "icon_path": "",
+        "hint_class": "battery"
+    },
+    "specs": {
+        "cells": "2S1P LiPo",
+        "nominal_voltage": 7.4,
+        "capacity_mah": 2000,
+        "weight_kg": 0.105,
+        "size_mm": [
+            100,
+            34,
+            14
+        ]
+    },
+    "pins": [
+        {
+            "id": "plus",
+            "type": "power_out",
+            "voltage_range": [
+                6.6,
+                8.4
+            ],
+            "description": "Battery + (red lead)"
+        },
+        {
+            "id": "minus",
+            "type": "ground",
+            "description": "Battery - (black lead)"
+        }
+    ],
+    "power": {
+        "supplies": [
+            {
+                "pin": "plus",
+                "kind": "battery"
+            }
+        ],
+        "battery": {
+            "capacity_mah": 2000,
+            "curve": [
+                [
+                    0,
+                    6.6,
+                    0.08
+                ],
+                [
+                    10,
+                    7.3,
+                    0.05
+                ],
+                [
+                    20,
+                    7.42,
+                    0.04
+                ],
+                [
+                    30,
+                    7.52,
+                    0.035
+                ],
+                [
+                    40,
+                    7.6,
+                    0.032
+                ],
+                [
+                    50,
+                    7.7,
+                    0.03
+                ],
+                [
+                    60,
+                    7.84,
+                    0.03
+                ],
+                [
+                    70,
+                    7.98,
+                    0.03
+                ],
+                [
+                    80,
+                    8.12,
+                    0.03
+                ],
+                [
+                    90,
+                    8.26,
+                    0.03
+                ],
+                [
+                    100,
+                    8.4,
+                    0.03
+                ]
+            ]
+        },
+        "sources": {
+            "supplies.plus": "the battery curve below",
+            "battery": "estimate: a typical LiPo cell's resting voltage vs charge (4.20 V full, ~3.85 V at 50 %, 3.3 V empty), two in series; ~15 mOhm per cell for a small 20C pack, rising near empty. Real packs vary: measure yours"
+        }
+    },
+    "resources": {
+        "meshes": {},
+        "materials": {}
+    },
+    "kinematics": {
+        "default_body": "base",
+        "bodies": [
+            {
+                "id": "base",
+                "overrideGeom": false,
+                "transform": {
+                    "pos": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "quat": [
+                        1,
+                        0,
+                        0,
+                        0
+                    ]
+                },
+                "geoms": [
+                    {
+                        "id": "pack",
+                        "type": "box",
+                        "size": [
+                            0.017,
+                            0.05,
+                            0.007
+                        ],
+                        "pos": [
+                            0,
+                            0,
+                            0.007
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.15,
+                            0.25,
+                            0.6
+                        ],
+                        "mass": 0.1
+                    },
+                    {
+                        "id": "plug",
+                        "type": "box",
+                        "size": [
+                            0.004,
+                            0.003,
+                            0.003
+                        ],
+                        "pos": [
+                            0,
+                            0.0535,
+                            0.006
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.9,
+                            0.75,
+                            0.1
+                        ],
+                        "mass": 0.005
+                    }
+                ]
+            }
+        ]
+    },
+    "connectors": [
+        {
+            "id": "base",
+            "body": "base",
+            "description": "Bottom (tape, strap or stand-offs)",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    90,
+                    180,
+                    270
+                ]
+            },
+            "transform": {
+                "pos": [
+                    0,
+                    0,
+                    0
+                ],
+                "quat": [
+                    0,
+                    1,
+                    0,
+                    0
+                ]
+            }
+        },
+        {
+            "id": "top",
+            "body": "base",
+            "description": "Top face",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    90,
+                    180,
+                    270
+                ]
+            },
+            "transform": {
+                "pos": [
+                    0,
+                    0,
+                    0.014
+                ],
+                "quat": [
+                    1,
+                    0,
+                    0,
+                    0
+                ]
+            }
+        }
+    ],
+    "devices": {
+        "actuators": [],
+        "sensors": [],
+        "cameras": [],
+        "displays": []
+    },
+    "interface": {
+        "inputs": [],
+        "outputs": []
+    }
+}

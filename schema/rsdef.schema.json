@@ -97,6 +97,78 @@
                 "sources": { "type": "object", "additionalProperties": { "type": "string" }, "description": "field -> where its value comes from (datasheet, estimate)" }
             }
         },
+        "power": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "The part's electrical side at the Real level: what it supplies, converts and draws. Pin references: supplies and regulator outputs on power_out pins, loads on power pins, regulator inputs on either. Not used at the Prototype level (ideal power).",
+            "properties": {
+                "supplies": {
+                    "type": "array",
+                    "items": {
+                        "type": "object", "required": ["pin", "kind"], "additionalProperties": false,
+                        "properties": {
+                            "pin": { "type": "string" },
+                            "kind": { "enum": ["usb", "battery", "supply"], "description": "usb: a board's default feed, dropped when another source drives its net; battery: voltage and resistance from the 'battery' curve; supply: a bench supply (per-instance voltage and current limit)" },
+                            "voltage": { "type": "number", "description": "Open-circuit volts (not for batteries)" },
+                            "r_internal_ohm": { "type": "number", "minimum": 0 },
+                            "current_limit_a": { "type": "number", "minimum": 0, "description": "supply: constant-current limit" },
+                            "hold_current_a": { "type": "number", "minimum": 0, "description": "usb: the polyfuse's hold current (warnings)" }
+                        }
+                    }
+                },
+                "regulators": {
+                    "type": "array",
+                    "items": {
+                        "type": "object", "required": ["id", "in", "out", "v_out", "i_max_a"], "additionalProperties": false,
+                        "properties": {
+                            "id": { "type": "string" },
+                            "in": { "type": "string", "description": "a power pin, or a power_out rail feeding the next regulator" },
+                            "out": { "type": "string", "description": "a power_out pin" },
+                            "kind": { "enum": ["linear", "buck"] },
+                            "v_out": { "type": "number" },
+                            "dropout_v": { "type": "number", "minimum": 0, "description": "linear: volts below the input at full load; buck: minimum headroom" },
+                            "efficiency": { "type": "number", "exclusiveMinimum": 0, "maximum": 1, "description": "buck" },
+                            "i_max_a": { "type": "number", "exclusiveMinimum": 0, "description": "rated output current (the budget check)" },
+                            "i_limit_a": { "type": "number", "exclusiveMinimum": 0, "description": "current limit: above it the output folds back (default i_max_a)" },
+                            "i_quiescent_ma": { "type": "number", "minimum": 0 }
+                        }
+                    }
+                },
+                "loads": {
+                    "type": "array",
+                    "items": {
+                        "type": "object", "required": ["pin"], "additionalProperties": false,
+                        "properties": {
+                            "pin": { "type": "string" },
+                            "current_ma": { "type": "number", "minimum": 0, "description": "typical static draw; motors add their own current" },
+                            "min_v": { "type": "number", "minimum": 0, "description": "the part works at or above this supply voltage; below it is off" }
+                        }
+                    }
+                },
+                "brownout": {
+                    "type": "object", "required": ["rail", "threshold_v"], "additionalProperties": false,
+                    "description": "Boards: the MCU resets when this rail drops below the threshold",
+                    "properties": {
+                        "rail": { "type": "string" },
+                        "threshold_v": { "type": "number" },
+                        "hysteresis_v": { "type": "number", "minimum": 0 },
+                        "restart_ms": { "type": "number", "minimum": 0, "description": "from release to setup()" }
+                    }
+                },
+                "battery": {
+                    "type": "object", "required": ["capacity_mah", "curve"], "additionalProperties": false,
+                    "properties": {
+                        "capacity_mah": { "type": "number", "exclusiveMinimum": 0 },
+                        "curve": {
+                            "type": "array", "minItems": 2,
+                            "items": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "type": "number" } },
+                            "description": "[charge %, open-circuit V, internal ohm] points from 0 to 100 %, interpolated"
+                        }
+                    }
+                },
+                "sources": { "type": "object", "additionalProperties": { "type": "string" }, "description": "supplies.<pin>, regulators.<id>, loads.<pin>, brownout, battery -> where the numbers come from (datasheet, measurement, estimate)" }
+            }
+        },
         "kinematics": {
             "type": "object",
             "required": ["default_body", "bodies"],
