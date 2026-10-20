@@ -1,0 +1,54 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project
+
+RoboticsStudio: a drag-and-drop robotics simulator (Qt 6 / C++17 / MuJoCo 3.3.7, Linux). Users assemble components (servos, IMUs, brackets, wheels) from a library, program them with C++ Arduino sketches (compiled to wasm in the app, transferable to a real board), and watch live telemetry. Components emulate cheap, flawed hardware (backlash, noise).
+
+## Build / run
+
+```bash
+./run.sh   # configure Debug into build/, build -j2, run with QT_QPA_PLATFORM=xcb
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build -j2   # build only
+python3 tools/validate_rsdef.py [file-or-dir ...]   # validate .rsdef files (default: models/)
+tools/fetch_wasi_sdk.sh   # once: the pinned wasi-sdk into extern/wasi-sdk (firmware compiler for .ino sketches)
+```
+
+- There is no automated test suite. Verify by building, running the app, and running `validate_rsdef.py`.
+- `CMakeLists.txt` uses `file(GLOB_RECURSE ...)` without `CONFIGURE_DEPENDS`: **re-run the CMake configure step after adding/removing source files**.
+- WAMR (`extern/wamr`, trimmed to `core/` + `build-scripts/`) is vendored and built by `cmake/wamr/`. wasi-sdk is not in git: `tools/fetch_wasi_sdk.sh` (pinned, sha256) puts it in `extern/wasi-sdk`; `tools/stage_firmware_toolchain.sh AppDir` copies a trimmed copy (~165 MB) plus `resources/firmware` into an AppDir (`usr/lib/roboticsstudio/wasi-sdk`, `usr/share/roboticsstudio/firmware`, where `FirmwareCompiler` looks).
+- MuJoCo (`extern/mujoco-3.3.7`) and QCustomPlot (`extern/qcustomplot`) are vendored; Qt6 (Xml, Widgets, OpenGL, OpenGLWidgets, Qml, PrintSupport, Network) and glfw come from the system. CI (`.github/workflows/build-appimage.yml`) builds a Release AppImage with Qt 6.10.2: fetches wasi-sdk (cached), deploys with linuxdeploy, stages the firmware toolchain after it, packs with appimagetool, and reports the sizes in the job summary.
+- Version is `APP_VERSION` in `CMakeLists.txt`, injected via `src/Application/Version.h.in`.
+
+## Architecture
+
+Layers under `src/`: **Document / Commands / View**, plus **Simulation** and **Telemetry**.
+
+- `Document/` (`Project`, `ComponentData`, `ComponentBlueprint`, `ComponentInstance`, `LibraryManager`): no widgets. `LibraryManager` loads one `ComponentBlueprint` per model id from `models/Catalog.json`; the blueprint extends `ComponentData` and builds the kinematic graph and asset XML. `Project` parses `.rsproj` assemblies into a `ComponentInstance` tree and **generates one MuJoCo MJCF XML string** (`generateMujocoXML`) by asking each blueprint for tree/actuator/sensor/contact XML fragments.
+- `Commands/`: `QUndoCommand`s. The View mutates authored document state **only** through commands (pushed on the undo stack owned by `Application`); commands mutate the document, then reload the simulation and refresh panels. See `docs/dev/command.md` (partly outdated).
+- `Simulation/`: `SimulationManager` runs a physics thread (`physicsLoop`, guarded by `physicsMutex`) and a firmware thread (the robot's `FirmwareRuntime`) plus a stage thread (`MicroController`, `QJSEngine` running the stage script: `setup()` once, then `loop()`). The lockstep hand-off, sim clock, charged costs and watchdog are in `Simulation/Controller/LockstepGate`; `RobotController` is the base the manager drives (`runCycle`/`runStep`/`stop`), implemented by `Simulation/Firmware/FirmwareRuntime` for the robot (a C++ sketch compiled to wasm, run in the embedded WAMR interpreter, `extern/wamr` built by `cmake/wamr/`) and by `MicroController` for the stage script. JavaScript robot scripts were removed: a `.js` robot script (`Project::usesFirmware` false) is refused at Play with an Output message, physics runs and the robot stays idle. The firmware's imports (`resources/firmware/include/rs_abi.h`, plus a few WASI calls) are served by `FirmwareRuntime`: time from the gate, pins from `PinBus`, Serial/stdout to the Output panel; nothing reaches the host OS. On Play, `EditorWindow` compiles a firmware script first with `Simulation/Firmware/FirmwareCompiler` (bundled wasi-sdk clang via `QProcess`, core objects and sketch builds cached under `~/.cache/Anon Engineering/Robotics Studio/firmware`), and starts the run only if that succeeds. Part inputs go through `Simulation/Controller/PinBus`, built at Play by level: **Prototype** from `Document/IdealBoard` (every typed part pin gets `uid*100+index`); **Real** from `Document/RealBoard` + `Document/Netlist` (one pin per net, the active board's numbers; the active board's `BoardProfile` sets PWM caps/frequency, ADC and bus time in `FirmwareRuntime`; `DeviceBus::restrictTo` keeps devices off the bus unless wired to the board's I2C/SPI pins; parts that `Document/DesignRules::unpoweredParts` finds without supply/ground are not run and drive 0). The servo reads its `signal` pin; parts with untyped pins get an off-board pin that firmware can't reach. Bus parts register on `Simulation/Controller/DeviceBus` (I2C devices by address: the MPU6050; SPI devices by CS pin: the ST7735 display; cameras by their SCCB pin), which the firmware's `Wire`/`SPI`/`esp_camera` reach through `FirmwareRuntime` natives. Device models compose `Steps.h` blocks in code (shared helpers in `EmulatorIO.h`); `Emulator::setPhysics` gives update() read access to the model/data (the stepper reads its driven inertia). Examples per part: `examples/firmware` (also checked by `tools/check_transfer.sh`). `MujocoContext` wraps the model/data. `ErrorSystem/` emulators (`Emulator` QObject subclasses, one per device family) have no script API: firmware reaches them only through `PinBus`/`DeviceBus`. Physics loop: sync actuator values to MuJoCo → `mj_step` × N (async emulators `sample()` at their sim-time deadline inside this loop) → sync sensors back → run emulators per their `Cadence` (Synchronous / Throttled / Async, flattened at `play()`) → telemetry capture. Edit mode only lerps `qpos` and calls `mj_forward` (no stepping).
+- Cameras: `CameraRenderer` (`Simulation/Rendering/`) owns a hidden GLFW window + its own `mjrContext` on a worker thread; the physics thread only builds the camera's `mjvScene` and queues it, never waits. Image signals use `ImageIOValue` (shared immutable pixels) on `ComponentInstance`. Reload the model only through `SimulationManager::reloadModel` (it invalidates the renderer's queued work and rebuilds `DisplayTextures`).
+- Displays: each gets a generated visual-only quad mesh (`comp_<uid>_<id>_quad/_mat/_tex`, per instance) on its required `surface`; `DisplayTextures` uploads frames into every GL context's texture (never via `m->tex_data`).
+- Stage: `Document/Stage` holds the world around the robot (environment, floor, props, `"stage"` in the .rsproj) and emits its MJCF fragments for `generateMujocoXML`. Controlled props are upright character bodies driven by a separate stage script on `Project::stageController` (a `MicroController`, own thread); it sees only `prop_<id>` (`PropHandle`) and `robot` (`RobotPose`). Edited in `View/Panels/StagePanel` via whole-stage `GenericCommand` snapshots. User guide: `docs/user/stage.md`.
+- `Telemetry/`: `TelemetryRegistry` (string-keyed) with `TelemetrySource`s (`ComponentIOSource`, `BodyMotionSource`) and storage buffers; consumed by `View/Panels` (`PlotPanel`, `Canvas`) via QCustomPlot. Channels only record while subscribed. See `docs/dev/telemetry.md` (partly outdated).
+- `View/`: panels, viewports (MuJoCo rendering via OpenGL), windows (`LauncherWindow`, `EditorWindow`, `ComponentEditorWindow`).
+
+Rules to preserve:
+- `Document/` and `Simulation/` must not include `Application/Application.h`; inject dependencies instead.
+- Per-instance runtime value maps in `ComponentInstance` (`joints`, `actuators`, `sensors` of `BasicIOValue`) are guarded by `ioMutex`; the physics, MCU and UI threads all touch them. Runtime writes from Simulation are not undoable.
+
+## Component format (.rsdef, schema 2)
+
+Files are `"schema": 3`; the loader (`ComponentData::fromJson`) also reads schema 2 unchanged (schema 3 only adds optional fields: pin types `gpio`/`power_out`/`spi_miso`/`uart_*`, pin `number`/`caps`/`internal`, the top-level `board` block that makes a part a board) and rejects anything else. `tools/convert_schema3.py` bumps files. `.rsproj` schema 3 adds `schema`, `level` (prototype/real), `wiring {wires, layout}` and a board entry's `firmware` slot; a file without `schema` loads as a Prototype project. Layout: `id`, `meta`, `resources`, `specs`, `pins`, `kinematics` (bodies, joints, tendons), `connectors`, `devices` (actuators, sensors, cameras, displays as separate top-level lists, not nested in joints/sites), `interface` (inputs/outputs exposed to scripts), `emulator`.
+
+- Formal schemas: `schema/rsdef.schema.json`, `schema/rsproj.schema.json`. JSON Schema cannot express cross-references (unique ids, target resolution, mass rule); those are enforced in `ComponentData::fromJson` and mirrored in `tools/validate_rsdef.py`. Keep the two in sync, along with the device table in `src/Document/Components/DeviceTypes.cpp`.
+- Format reference: `docs/dev/schema2.md` (schemas 2 and 3); real examples in `models/` (boards in `models/board/`). New components must be listed in `models/Catalog.json`.
+- Frames: joint and connector transforms are in the **component root frame**; site and geom transforms are in the **parent body's local frame**. Body field is `overrideGeom` (camelCase); `mass`/`inertia` only when it is true.
+
+## Notes
+
+- v2 direction and settled decisions (sim-time lockstep, netlist/boards, device models, C++/WASM firmware, Prototype/Real levels) are in `docs/dev/architecture-v2.md`; the phased task list is `temp/plan.md`. It describes the target state, not today's code.
+- `README.md` is the user-facing front page; user guides (app usage, component creation, firmware in `docs/user/firmware.md`) are in `docs/user/`, developer docs in `docs/dev/`. Keep `docs/user/` in sync when emulator APIs/parameters or the .rsdef format change.
+- Demos (`.rsproj` + `.ino` firmware, stage scripts in JS) live in `demo/`, each as a Prototype copy and a Real copy (`Robot arm (ESP32-CAM)`, `Servo Comparison (Uno)`: Real level, board wired). A Real project writes its board's `robot_pins.h` into its board folder (`uno/`, `esp32cam/`) on save and Play; a demo or example with a board folder must also compile for that board: `tools/check_transfer.sh` (arduino-cli; CI job `transfer-check`).
+- Real level UI: the Wiring page (`View/Panels/Wiring/`, schematic canvas, Ctrl+3, only at Real), wiring edits/level/board firmware slot as commands in `Commands/WiringCommands.h`; user guide `docs/user/wiring.md`.
