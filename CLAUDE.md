@@ -13,6 +13,7 @@ RoboticsStudio: a drag-and-drop robotics simulator (Qt 6 / C++17 / MuJoCo 3.3.7,
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build -j2   # build only
 python3 tools/validate_rsdef.py [file-or-dir ...]   # validate .rsdef files (default: models/)
 tools/fetch_wasi_sdk.sh   # once: the pinned wasi-sdk into extern/wasi-sdk (firmware compiler for .ino sketches)
+tools/setup_dev_env.sh    # fresh Ubuntu 24.04 / cloud container: apt deps, wasi-sdk, arduino-cli + cores, build (idempotent; --no-arduino, --no-build)
 ```
 
 - There is no automated test suite. Verify by building, running the app, and running `validate_rsdef.py`.
