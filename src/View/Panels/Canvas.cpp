@@ -25,6 +25,9 @@
 #include <qobject.h>
 #include "Document/Components/ComponentBlueprint.h"
 #include "Telemetry/Sources/ComponentIOSource.h"
+#include "Telemetry/Sources/FunctionSource.h"
+#include "Document/PowerNetwork.h"
+#include "Simulation/SimulationManager.h"
 
 
 
@@ -772,6 +775,48 @@ void CanvasDockItem::mouseReleaseEvent(QMouseEvent* event) {
     QWidget::mouseReleaseEvent(event);
 }
 
+// The power model's values of a part at the Real level, plotted like signals
+// named "power.*" (simulation-only: the firmware can't read them).
+struct PowerSignal { QString key, unit, tip; };
+
+static QList<PowerSignal> powerSignals(Project* project, ComponentInstance* comp) {
+    QList<PowerSignal> out;
+    ComponentBlueprint* bp = comp ? comp->getBlueprint() : nullptr;
+    if (!project || !bp || project->getLevel() != ProjectLevel::Real) return out;
+    if (bp->board.present) {
+        for (const PinDef& p : bp->pins)
+            if (p.isPower()) out.append({"power." + p.id + "_v", "V", QString("Voltage of the board's %1 rail").arg(p.id.toUpper())});
+    } else if (bp->power.battery.present) {
+        out.append({"power.charge", "%", "State of charge"});
+        out.append({"power.battery_v", "V", "Voltage at the terminals"});
+        out.append({"power.battery_a", "A", "Current drawn from the battery"});
+    } else if (!PowerNetwork::supplyPin(comp).isEmpty()) {
+        out.append({"power.supply_v", "V", "Voltage on the part's supply pin"});
+        out.append({"power.supply_a", "A", "Current the part draws (motors included)"});
+    }
+    return out;
+}
+
+// Physics thread (telemetry capture): one power value of a part, or false
+// when the power model isn't running.
+static bool readPowerSignal(int uid, const QString& signal, double& v) {
+    SimulationManager* sim = Application::getInstance()->getSimulationManager();
+    if (!sim) return false;
+    const PowerSystem& ps = sim->getPowerSystem();
+    if (!ps.isActive()) return false;
+    const QString what = signal.mid(6);   // after "power."
+    double pct = 0, volts = 0, amps = 0;
+    if (what == "supply_v") { v = ps.supplyOf(uid); return v >= 0.0; }
+    if (what == "supply_a") { v = ps.partCurrent(uid); return true; }
+    if (what == "charge" || what == "battery_v" || what == "battery_a") {
+        if (!ps.battery(uid, &pct, &volts, &amps)) return false;
+        v = what == "charge" ? pct : what == "battery_v" ? volts : amps;
+        return true;
+    }
+    if (what.endsWith("_v")) { v = ps.railVolts(uid, what.chopped(2)); return v >= 0.0; }
+    return false;
+}
+
 void CanvasDockItem::showAddTargetDialog() {
     QDialog dialog(this);
     dialog.setWindowTitle("Select Channel Target");
@@ -840,6 +885,27 @@ void CanvasDockItem::showAddTargetDialog() {
         addGroup(bp->interfaceOutputs, false);
         if (internalItem) parentItem->addChild(internalItem);   // after the I/O rows, collapsed
 
+        // Real level: the part's supply as the power model sees it.
+        if (wantedShape == SignalShape::Scalar) {
+            QTreeWidgetItem* powerItem = nullptr;
+            for (const PowerSignal& ps : powerSignals(Application::getInstance()->getProject(), comp)) {
+                if (subscribedSources.contains(QString("io:%1:%2").arg(uid).arg(ps.key))) continue;
+                if (!powerItem) {
+                    powerItem = new QTreeWidgetItem();
+                    powerItem->setText(0, "Power (simulation-only)");
+                    powerItem->setFlags(Qt::ItemIsEnabled);
+                    powerItem->setToolTip(0, "Supply voltage and current from the power model (Real level); the firmware can't read them");
+                }
+                QTreeWidgetItem* item = new QTreeWidgetItem(powerItem);
+                item->setText(0, ps.key);
+                item->setIcon(0, makeTargetIcon(false, false));
+                item->setData(0, Qt::UserRole, uid);
+                item->setData(0, Qt::UserRole + 1, ps.key);
+                item->setToolTip(0, QString("%1 [%2]").arg(ps.tip, ps.unit));
+            }
+            if (powerItem) parentItem->addChild(powerItem);
+        }
+
         if (parentItem->childCount() == 0) { delete parentItem; continue; }
         tree->addTopLevelItem(parentItem);
         parentItem->setExpanded(true);
@@ -881,15 +947,22 @@ bool CanvasDockItem::attachIoTarget(int uid, const QString& signal, const QColor
     ComponentBlueprint* bp = comp ? comp->getBlueprint() : nullptr;
     if (!bp) return false;
 
+    const bool isPower = signal.startsWith("power.");
+    if (isPower) {
+        bool known = false;
+        for (const PowerSignal& ps : powerSignals(project, comp)) known = known || ps.key == signal;
+        if (!known) return false;
+    }
     const bool isInput = bp->interfaceInputs.contains(signal);
-    if (!isInput && !bp->interfaceOutputs.contains(signal)) return false;
+    if (!isPower && !isInput && !bp->interfaceOutputs.contains(signal)) return false;
 
     const QString key = QString("io:%1:%2").arg(uid).arg(signal);
     if (subscribedSources.contains(key)) return false;
 
     auto source = TelemetryRegistry::getInstance().getOrCreateSource(
         key,
-        [comp, signal, isInput]() {
+        [comp, signal, isInput, isPower, uid]() -> std::shared_ptr<TelemetrySource> {
+            if (isPower) return std::make_shared<FunctionSource>([uid, signal](double& v) { return readPowerSignal(uid, signal, v); });
             return std::make_shared<ComponentIOSource>(comp, signal, isInput);
         }
     );

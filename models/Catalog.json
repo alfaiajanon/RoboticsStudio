@@ -18,6 +18,29 @@
             "name": "Boards"
         },
         {
+            "id": "power",
+            "items": [
+                "power/battery_4xaa/battery_4xaa.rsdef",
+                "power/battery_9v/battery_9v.rsdef",
+                "power/battery_lipo_2s/battery_lipo_2s.rsdef",
+                "power/bench_supply/bench_supply.rsdef",
+                "power/buck_lm2596/buck_lm2596.rsdef"
+            ],
+            "keys": [
+                "power",
+                "battery",
+                "supply",
+                "lipo",
+                "aa",
+                "9v",
+                "buck",
+                "regulator",
+                "lm2596",
+                "bench"
+            ],
+            "name": "Power"
+        },
+        {
             "id": "dc_motor",
             "items": [
                 "motor/dc_gear_60rpm/dc_gear_60rpm.rsdef"

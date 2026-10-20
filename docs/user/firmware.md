@@ -131,6 +131,8 @@ MCU:   #01: 0x000c - rs_loop
 
 The physics keeps running; press **⬛ STOP** and **▶ PLAY** to start again. A `loop()` that never returns or calls `delay()` is stopped after 2 seconds of real time.
 
+**Brownout** (Real level): when the board's supply rail sags below its brownout threshold (a stalled servo on the same 5 V, a weak battery), the board resets like a real one: the sketch stops, its pins let go, and once the rail recovers it starts again from scratch (global objects constructed again, then `setup()`, `millis()` from 0). Output shows `MCU: <board> brownout reset at ...`. See [wiring.md](wiring.md#power).
+
 ## 8. Move it to a real board
 
 The sketch is ordinary Arduino code. To run it on a real Uno:

@@ -79,6 +79,7 @@ class PinBus {
         void writePulseUs(int h, double us, double periodUs = 0.0);
         bool pulse(int h, double* us) const;   // false unless pulses are being sent
         void release(int h);                   // stop driving (pulses stop, input floats)
+        void releaseBoardPins();               // every pin the firmware reaches (an MCU in reset: Hi-Z)
 
         void writeLevel(int h, int level);
         int level(int h) const;

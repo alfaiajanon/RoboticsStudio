@@ -82,5 +82,9 @@ QImage OffscreenSim::render(std::mutex* sceneLock){
     mjr_readPixels(pixelBuffer.data(), nullptr, viewport, ctx->getContext());
     QImage img(pixelBuffer.data(), width, height, width * 3, QImage::Format_RGB888);
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 9, 0)
     return img.flipped(Qt::Vertical);
+#else
+    return img.mirrored(false, true);   // Qt < 6.9 has no flipped()
+#endif
 }

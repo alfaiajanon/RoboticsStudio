@@ -24,7 +24,22 @@ void LockstepGate::reset() {
     releaseTime = 0.0;
     stepEnd = 0.0;
     mcuTime = 0.0;
+    origin = 0.0;
     sliceEnd = 0.0;
+}
+
+
+
+void LockstepGate::restartAt(double simTime) {
+    std::lock_guard<std::mutex> lock(mutex);
+    stopFlag = false;
+    watchdogFlag = false;
+    state = State::Waiting;
+    wakeTime = simTime;
+    releaseTime = simTime;
+    mcuTime = simTime;
+    origin = simTime;
+    sliceEnd = simTime;
 }
 
 
@@ -152,12 +167,12 @@ void LockstepGate::wait(double seconds) {
 
 double LockstepGate::millis() {
     charge(kTimeCallCost);
-    return std::floor(mcuTime * 1000.0 + kTimeEpsilon);
+    return std::floor((mcuTime - origin) * 1000.0 + kTimeEpsilon);
 }
 
 
 
 double LockstepGate::micros() {
     charge(kTimeCallCost);
-    return std::floor(mcuTime * 1e6 + kTimeEpsilon);
+    return std::floor((mcuTime - origin) * 1e6 + kTimeEpsilon);
 }

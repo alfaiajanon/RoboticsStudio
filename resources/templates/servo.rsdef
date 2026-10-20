@@ -35,6 +35,18 @@
             "description": "Ground pin for servo motor"
         }
     ],
+    "power": {
+        "loads": [
+            {
+                "pin": "vcc",
+                "current_ma": 6,
+                "min_v": 3.0
+            }
+        ],
+        "sources": {
+            "loads.vcc": "estimate: SG90-class servo idle ~6 mA, electronics stop around 3 V"
+        }
+    },
     "kinematics": {
         "default_body": "base",
         "bodies": [
@@ -351,7 +363,8 @@
             "supply_voltage": 5.0,
             "pot_noise_deg": 0.3,
             "center_spread_us": 10,
-            "gain_spread": 0.03
+            "gain_spread": 0.03,
+            "stall_current_a": 0.65
         },
         "parameter_sources": {
             "pulse_min_us": "datasheet: TowerPro SG90: ~1 ms = -90°, 1.5 ms = 0°, ~2 ms = +90°",
@@ -366,7 +379,8 @@
             "supply_voltage": "assumption: 5 V rail, until the power net exists (plan Phase 2)",
             "pot_noise_deg": "estimate, to be measured (plan task 37)",
             "center_spread_us": "estimate, to be measured (plan task 37)",
-            "gain_spread": "estimate, to be measured (plan task 37)"
+            "gain_spread": "estimate, to be measured (plan task 37)",
+            "stall_current_a": "estimate: SG90-class servo, 0.6-0.7 A at 4.8-5 V"
         }
     }
 }

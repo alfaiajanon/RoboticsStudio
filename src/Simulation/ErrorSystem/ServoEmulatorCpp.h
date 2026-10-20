@@ -25,6 +25,9 @@
  *                    horn sits anywhere in it and sags under load
  *   duty             error / proportional_band, saturated
  *   DcMotor          torque-speed line at the supply voltage -> motor actuator
+ *                    (Real level: the voltage of the net on `vcc`, so a
+ *                    sagging supply weakens it; the motor's current is drawn
+ *                    from that net)
  *
  * The comparator of an analog servo is continuous, so this runs after every
  * mj_step; the torque reaches MuJoCo on the next step.
@@ -47,6 +50,7 @@
  *   deadband_us                              full dead band width
  *   proportional_band_deg                    error giving full drive
  *   stall_torque_nm, no_load_speed_dps, rated_voltage, supply_voltage
+ *   stall_current_a                          at rated_voltage (supply current)
  *   pot_noise_deg                            pot reading noise (stddev)
  *   center_spread_us, gain_spread            unit-to-unit spread (stddev)
  */
@@ -60,7 +64,9 @@ class ServoEmulatorCpp : public Emulator {
         double pulseCenter() const { return 0.5 * (pulseMin + pulseMax); }
 
         double proportionalBand = 5.0;
-        double supplyVoltage = 5.0;
+        double supplyVoltage = 5.0;    // Prototype (ideal power)
+        double stallCurrent = 0.0;
+        double drawn = 0.0;            // supply current of the last update
         double rangeMin = -90.0, rangeMax = 90.0;   // target clamp: the joint's range
 
         Steps::Rng rng;
@@ -92,6 +98,7 @@ class ServoEmulatorCpp : public Emulator {
             travelDeg = std::max(1.0, param(p, "travel_deg", 180.0));
             proportionalBand = std::max(0.1, param(p, "proportional_band_deg", 5.0));
             supplyVoltage = param(p, "supply_voltage", 5.0);
+            stallCurrent = param(p, "stall_current_a", 0.0);
 
             deadband.halfWidth = 0.5 * param(p, "deadband_us", 0.0) / usPerDeg();
             potNoise.stddev = param(p, "pot_noise_deg", 0.0);
@@ -135,8 +142,9 @@ class ServoEmulatorCpp : public Emulator {
                 if (!deadband.inside(error)) duty = std::clamp(error / proportionalBand, -1.0, 1.0);
 
                 double omega = EmulatorIO::readOutput(component, "gear_velocity") * M_PI / 180.0;
-                torque = motor.torque(duty, supplyVoltage, omega);
+                torque = motor.torque(duty, supplyVolts >= 0.0 ? supplyVolts : supplyVoltage, omega);
             }
+            drawn = motor.supplyCurrent(duty, torque, stallCurrent);
 
             EmulatorIO::writeScalar(component, "motor_torque", torque, true);
             EmulatorIO::writeScalar(component, "target_angle", target, true);
@@ -144,8 +152,15 @@ class ServoEmulatorCpp : public Emulator {
             EmulatorIO::writeScalar(component, "drive", duty, false);
         }
 
+        double supplyCurrent() const override { return drawn; }
+
+        // Power back: the control IC restarts and takes the first pulse of
+        // the next full frame (an estimate: no datasheet gives it).
+        void powerRestored(double now) override { latch.reset(now + latch.period); }
+
         // The pins are rebuilt (undriven) at every Play.
         void reset() override {
+            drawn = 0.0;
             latch.reset(0.0);
             EmulatorIO::writeScalar(component, "motor_torque", 0.0, true);
             EmulatorIO::writeScalar(component, "drive", 0.0, false);

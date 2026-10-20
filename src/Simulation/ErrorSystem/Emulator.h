@@ -71,6 +71,10 @@ class Emulator : public QObject {
         const mjModel* physicsModel = nullptr;
         const mjData* physicsData = nullptr;
         quint64 instanceSeed = 0;   // set before init(); see seed()
+        // Real level: the voltage on the part's supply pin, set before each
+        // update() by the power model. Negative = ideal power (Prototype, or
+        // a part without a supply pin): use the part's supply_voltage parameter.
+        double supplyVolts = -1.0;
 
     public:
         explicit Emulator(ComponentInstance* comp, QObject* parent = nullptr)
@@ -93,6 +97,16 @@ class Emulator : public QObject {
         void setBuses(DeviceBus* b) { buses = b; }
         void setPhysics(const mjModel* m, const mjData* d) { physicsModel = m; physicsData = d; }
         void setSeed(quint64 s) { instanceSeed = s; }
+        void setSupply(double volts) { supplyVolts = volts; }
+
+        // Current drawn from the supply pin on top of the part's static load
+        // (a motor's), A, as of the last update(). Read by the power model.
+        virtual double supplyCurrent() const { return 0.0; }
+        // The part's supply went away: it loses its state and starts from its
+        // power-on state when the supply returns (init() is not called again).
+        virtual void powerCut() { reset(); }
+        // The supply is back at sim time `now` (after a powerCut()).
+        virtual void powerRestored(double now) { (void)now; }
 
         // Reproducible per-instance seed (from the project seed and the uid);
         // seed every random generator from it in init(), never from random_device.

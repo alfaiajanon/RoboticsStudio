@@ -69,6 +69,116 @@ def check_target(errs, owner, target, allowed, ids):
         errs.add(f"{owner}: target {kind} '{target.get('id')}' does not exist")
 
 
+def power_source_pins(d):
+    pw = d.get("power") or {}
+    return ({s.get("pin") for s in pw.get("supplies", [])} |
+            {r.get("out") for r in pw.get("regulators", [])})
+
+
+SUPPLY_KINDS = ("usb", "battery", "supply")
+REGULATOR_KINDS = ("linear", "buck")
+
+
+def check_power(errs, d):
+    """Mirrors parsePower in ComponentData.cpp."""
+    pw = d.get("power")
+    if pw is None:
+        return
+    if not isinstance(pw, dict):
+        errs.add("power: must be an object")
+        return
+    types = {p.get("id"): p.get("type") for p in d.get("pins", [])}
+
+    def pin(where, pin_id, allowed):
+        if not pin_id:
+            errs.add(f"{where}: missing pin")
+        elif pin_id not in types:
+            errs.add(f"{where}: pin '{pin_id}' does not exist")
+        elif types[pin_id] not in allowed:
+            errs.add(f"{where}: pin '{pin_id}' must be {' or '.join(allowed)}, is '{types[pin_id]}'")
+
+    batteries = 0
+    for i, s in enumerate(pw.get("supplies", [])):
+        where = f"power.supplies[{i}]"
+        pin(where, s.get("pin"), ("power_out",))
+        kind = s.get("kind")
+        if kind not in SUPPLY_KINDS:
+            errs.add(f"{where}: kind '{kind}' is not one of {SUPPLY_KINDS}")
+        if kind == "battery":
+            batteries += 1
+        elif not s.get("voltage", 0) > 0:
+            errs.add(f"{where}: 'voltage' must be > 0")
+        for key in ("r_internal_ohm", "current_limit_a", "hold_current_a"):
+            if s.get(key, 0) < 0:
+                errs.add(f"{where}: '{key}' is negative")
+    reg_ids = set()
+    for i, r in enumerate(pw.get("regulators", [])):
+        where = f"power.regulators[{i}]"
+        for key in ("id", "in", "out", "v_out", "i_max_a"):
+            if key not in r:
+                errs.add(f"{where}: missing '{key}'")
+        pin(where + ".in", r.get("in"), ("power", "power_out"))
+        pin(where + ".out", r.get("out"), ("power_out",))
+        if r.get("kind", "linear") not in REGULATOR_KINDS:
+            errs.add(f"{where}: kind '{r.get('kind')}' is not one of {REGULATOR_KINDS}")
+        if not (r.get("v_out", 0) > 0 and r.get("i_max_a", 0) > 0):
+            errs.add(f"{where}: 'v_out' and 'i_max_a' must be > 0")
+        if "i_limit_a" in r and r["i_limit_a"] < r.get("i_max_a", 0):
+            errs.add(f"{where}: 'i_limit_a' must be at least 'i_max_a'")
+        if not 0 < r.get("efficiency", 0.85) <= 1:
+            errs.add(f"{where}: 'efficiency' must be in (0, 1]")
+        if r.get("id") in reg_ids:
+            errs.add(f"{where}: duplicate id '{r.get('id')}'")
+        reg_ids.add(r.get("id"))
+    load_pins = set()
+    for i, l in enumerate(pw.get("loads", [])):
+        where = f"power.loads[{i}]"
+        pin(where, l.get("pin"), ("power", "power_out"))
+        if l.get("current_ma", 0) < 0 or l.get("min_v", 0) < 0:
+            errs.add(f"{where}: negative value")
+        if l.get("pin") in load_pins:
+            errs.add(f"{where}: pin '{l.get('pin')}' already has a load")
+        load_pins.add(l.get("pin"))
+    if "brownout" in pw:
+        b = pw["brownout"]
+        for key in ("rail", "threshold_v"):
+            if key not in b:
+                errs.add(f"power.brownout: missing '{key}'")
+        pin("power.brownout.rail", b.get("rail"), ("power", "power_out"))
+        if d.get("board") is None:
+            errs.add("power.brownout: only boards have a brownout detector")
+    if "battery" in pw:
+        b = pw["battery"]
+        if not b.get("capacity_mah", 0) > 0:
+            errs.add("power.battery: 'capacity_mah' must be > 0")
+        curve = b.get("curve", [])
+        if any(not isinstance(pt, list) or len(pt) != 3 for pt in curve):
+            errs.add("power.battery.curve: each point is [charge %, open-circuit V, internal ohm]")
+        else:
+            pts = sorted(curve)
+            if len(pts) < 2:
+                errs.add("power.battery.curve: needs at least 2 points")
+            elif pts[0][0] != 0 or pts[-1][0] != 100:
+                errs.add("power.battery.curve: must span 0 to 100 %")
+            if any(pt[1] <= 0 or pt[2] < 0 for pt in pts):
+                errs.add("power.battery.curve: voltages must be > 0, resistances >= 0")
+            if len({pt[0] for pt in pts}) != len(pts):
+                errs.add("power.battery.curve: duplicate charge level")
+        if batteries != 1:
+            errs.add("power.battery: needs exactly one supply of kind 'battery'")
+    elif batteries:
+        errs.add("power: a supply of kind 'battery' needs a 'battery' block")
+
+
+def power_source_keys(pw):
+    """The power block's numbers that need a source, as sources keys."""
+    keys = [f"supplies.{s.get('pin')}" for s in pw.get("supplies", [])]
+    keys += [f"regulators.{r.get('id')}" for r in pw.get("regulators", [])]
+    keys += [f"loads.{l.get('pin')}" for l in pw.get("loads", [])]
+    keys += [k for k in ("brownout", "battery") if k in pw]
+    return keys
+
+
 def check_pins(errs, d):
     pins = d.get("pins", [])
     board = d.get("board")
@@ -86,8 +196,10 @@ def check_pins(errs, d):
             errs.add(f"pin '{pid}': a gpio pin needs a number")
         if p.get("internal") and "number" not in p:
             errs.add(f"pin '{pid}': an internal pin needs a number")
-        if board is None and (ptype in ("gpio", "power_out") or p.get("internal")):
-            errs.add(f"pin '{pid}': gpio, power_out and internal pins are only on boards (add a \"board\" block)")
+        if board is None and (ptype == "gpio" or p.get("internal")):
+            errs.add(f"pin '{pid}': gpio and internal pins are only on boards (add a \"board\" block)")
+        if board is None and ptype == "power_out" and pid not in power_source_pins(d):
+            errs.add(f"pin '{pid}': a power_out pin needs a supply or regulator in the \"power\" block")
         if "number" in p:
             if p["number"] in numbers:
                 errs.add(f"pins '{numbers[p['number']]}' and '{pid}' have the same number {p['number']}")
@@ -173,6 +285,7 @@ def validate(d):
 
     unique(errs, [p.get("id") for p in d.get("pins", [])], "pin")
     check_pins(errs, d)
+    check_power(errs, d)
     for j in joints:
         for key in ("actuator", "sensor"):
             if key in j:
@@ -323,6 +436,13 @@ def warnings(d):
         for key in ("logic_voltage", "adc", "analog_write", "i2c", "spi"):
             if key in board and not str(bsrc.get(key, "")).strip():
                 out.append(f"board '{key}' has no source (datasheet, measurement or 'estimate: ...')")
+    pw = d.get("power")
+    if isinstance(pw, dict):
+        psrc = pw.get("sources", {}) if isinstance(pw.get("sources"), dict) else {}
+        keys = power_source_keys(pw)
+        out += [f"power '{k}' has no source (datasheet, measurement or 'estimate: ...')"
+                for k in keys if not str(psrc.get(k, "")).strip()]
+        out += [f"power.sources: '{k}' names nothing in the power block" for k in psrc if k not in keys]
     # A joint stacked on another joint's bodies is a play gap (backlash): an
     # error-model parameter in all but name, so its range needs a source.
     joints = (d.get("kinematics") or {}).get("joints", [])

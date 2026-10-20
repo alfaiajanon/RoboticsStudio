@@ -25,6 +25,10 @@
 #include "Commands/AddComponentCommand.h"
 #include "Commands/RemoveComponentCommand.h"
 #include "Commands/WiringCommands.h"
+#include "Commands/GenericCommand.h"
+#include "Document/PowerNetwork.h"
+#include <QCheckBox>
+#include <QDoubleSpinBox>
 #include "Simulation/SimulationManager.h"
 #include "Utils/Log.h"
 #include "View/Widgets/Toast.h"
@@ -278,6 +282,7 @@ void InspectorPanel::buildUI() {
         build_connectors(comp);
     }
     build_pins(comp);
+    if (comp->getBlueprint()->power.present) build_power(comp);
 
     mainLayout->addStretch();
 }
@@ -612,6 +617,98 @@ void InspectorPanel::build_board(ComponentInstance* comp) {
     }
     if (rb.pins().isEmpty()) pinsForm->addRow(createShrinkableLabel("Nothing wired yet: open the Wiring page (Ctrl+3).", pinsBox));
     mainLayout->addWidget(pinsBox);
+}
+
+
+// Supplies, batteries and regulator modules: their per-instance settings
+// (ComponentInstance::parameters, "power." keys), and what the part draws.
+void InspectorPanel::build_power(ComponentInstance* comp) {
+    Project* project = Application::getInstance()->getProject();
+    const PowerDef& pw = comp->getBlueprint()->power;
+    QGroupBox* box = new QGroupBox("Power", this);
+    QFormLayout* form = new QFormLayout(box);
+    if (project->getLevel() != ProjectLevel::Real)
+        form->addRow(createShrinkableLabel("Used at the Real level; at the Prototype level power is ideal.", box));
+
+    const int uid = comp->uid;
+    // One undoable edit of a power setting; the wiring checks refresh with it.
+    auto setParam = [uid](const char* key, const QVariant& value, const QString& text) {
+        ComponentInstance* c = Application::getInstance()->getProject()->getComponentByUid(uid);
+        if (!c) return;
+        const bool had = c->parameters.contains(key);
+        const QVariant old = c->parameters.value(key);
+        if (had && old == value) return;
+        const QString k = key;
+        auto apply = [uid, k](bool set, const QVariant& v) {
+            if (ComponentInstance* i = Application::getInstance()->getProject()->getComponentByUid(uid)) {
+                if (set) i->parameters.insert(k, v); else i->parameters.remove(k);
+            }
+        };
+        Application::getInstance()->getUndoStack()->push(new GenericCommand(
+            [apply, value]() { apply(true, value); }, [apply, had, old]() { apply(had, old); }, text));
+    };
+    auto spin = [&](double value, double lo, double hi, double step, int decimals, const QString& suffix) {
+        QDoubleSpinBox* s = new QDoubleSpinBox(box);
+        s->setRange(lo, hi);
+        s->setSingleStep(step);
+        s->setDecimals(decimals);
+        s->setSuffix(suffix);
+        s->setValue(value);
+        s->setKeyboardTracking(false);
+        return s;
+    };
+    auto param = [comp](const char* key, double def) { return comp->parameters.value(key, def).toDouble(); };
+
+    for (const SupplyDef& s : pw.supplies) {
+        if (s.kind == "supply") {
+            QDoubleSpinBox* volts = spin(param(PowerNetwork::kVoltage, s.voltage), 0.0, 30.0, 0.1, 2, " V");
+            QDoubleSpinBox* limit = spin(param(PowerNetwork::kCurrentLimit, s.currentLimit), 0.0, 10.0, 0.1, 2, " A");
+            limit->setToolTip("Over this current the supply drops its voltage (constant current); 0 = no limit");
+            form->addRow("Voltage:", volts);
+            form->addRow("Current limit:", limit);
+            connect(volts, &QDoubleSpinBox::editingFinished, this, [setParam, volts]() {
+                setParam(PowerNetwork::kVoltage, volts->value(), "Set supply voltage");
+            });
+            connect(limit, &QDoubleSpinBox::editingFinished, this, [setParam, limit]() {
+                setParam(PowerNetwork::kCurrentLimit, limit->value(), "Set supply current limit");
+            });
+        } else if (s.kind == "battery" && pw.battery.present) {
+            const double pct = param(PowerNetwork::kChargePercent, 100.0);
+            QDoubleSpinBox* charge = spin(pct, 0.0, 100.0, 5.0, 0, " %");
+            const BatteryDef::Point pt = pw.battery.at(pct);
+            charge->setToolTip(QString("At this charge: %1 V open circuit, %2 Ω inside (%3 mAh when full)")
+                                   .arg(pt.voltage, 0, 'f', 2).arg(pt.resistance, 0, 'f', 3).arg(pw.battery.capacityAh * 1000.0));
+            QCheckBox* drains = new QCheckBox("Drains during the run", box);
+            drains->setChecked(comp->parameters.value(PowerNetwork::kDrains, false).toBool());
+            drains->setToolTip("On: the charge goes down with the current drawn (sim time), and the voltage with it. "
+                               "Every Play starts from the charge set here.");
+            form->addRow("Charge:", charge);
+            form->addRow(createShrinkableLabel(QString("%1 V open circuit at this charge").arg(pt.voltage, 0, 'f', 2), box));
+            form->addRow(drains);
+            connect(charge, &QDoubleSpinBox::editingFinished, this, [setParam, charge]() {
+                setParam(PowerNetwork::kChargePercent, charge->value(), "Set battery charge");
+            });
+            connect(drains, &QCheckBox::toggled, this, [setParam](bool on) {
+                setParam(PowerNetwork::kDrains, on, on ? "Battery drains" : "Battery doesn't drain");
+            });
+        }
+    }
+    for (const RegulatorDef& r : pw.regulators) {
+        if (r.kind != "buck") continue;
+        QDoubleSpinBox* out = spin(param(PowerNetwork::kVOut, r.vOut), 1.25, 35.0, 0.1, 2, " V");
+        out->setToolTip(QString("The module's output (its trimmer); up to %1 A, needs %2 V above it at the input").arg(r.iMax).arg(r.dropout));
+        form->addRow("Output:", out);
+        connect(out, &QDoubleSpinBox::editingFinished, this, [setParam, out]() {
+            setParam(PowerNetwork::kVOut, out->value(), "Set buck output voltage");
+        });
+    }
+    for (const PowerLoadDef& l : pw.loads) {
+        QString text = QString("%1 mA").arg(l.current * 1000.0, 0, 'g', 3);
+        if (l.minV > 0.0) text += QString(", works from %1 V").arg(l.minV);
+        form->addRow(QString("Draws (%1):").arg(l.pin.toUpper()), createShrinkableLabel(text, box));
+    }
+    if (form->rowCount() == 0) { delete box; return; }
+    mainLayout->addWidget(box);
 }
 
 

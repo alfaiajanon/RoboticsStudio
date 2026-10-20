@@ -54,6 +54,7 @@ class LockstepGate {
 
         // Controller thread only (and reset(), while the controller is idle).
         double mcuTime = 0.0;       // the controller's clock, sim seconds
+        double origin = 0.0;        // sim time of the controller's last (re)start: millis() counts from here
         double sliceEnd = 0.0;      // copy of stepEnd for the current release
 
         void yieldUntil(double simTime);
@@ -68,6 +69,10 @@ class LockstepGate {
         void reset();
         // Any thread. Due on the first step, at sim time 0.
         void start();
+        // Any thread, while the controller is out of its code (stopped): start
+        // again at sim time `simTime`, as a reset MCU does: the clocks it
+        // reports (millis(), micros(), now()) count from there.
+        void restartAt(double simTime);
         // Any thread. Leaves the gate idle and wakes a blocked wait(); the
         // controller still has to interrupt its own code.
         void stop();
@@ -97,5 +102,5 @@ class LockstepGate {
         double millis();
         double micros();
         // Controller thread: the clock, uncharged.
-        double now() const { return mcuTime; }
+        double now() const { return mcuTime - origin; }
 };

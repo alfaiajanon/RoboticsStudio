@@ -5,6 +5,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QSet>
+#include <algorithm>
 #include <cmath>
 
 
@@ -997,6 +998,230 @@ static QJsonObject boardToJson(const BoardDef& b) {
 
 
 
+const QStringList& SupplyDef::kinds() {
+    static const QStringList k{"usb", "battery", "supply"};
+    return k;
+}
+
+const QStringList& RegulatorDef::kinds() {
+    static const QStringList k{"linear", "buck"};
+    return k;
+}
+
+BatteryDef::Point BatteryDef::at(double percent) const {
+    if (curve.isEmpty()) return {percent, 0.0, 0.0};
+    if (percent <= curve.first().percent) return curve.first();
+    if (percent >= curve.last().percent) return curve.last();
+    for (int i = 1; i < curve.size(); ++i) {
+        const Point& a = curve[i - 1];
+        const Point& b = curve[i];
+        if (percent > b.percent) continue;
+        const double f = (percent - a.percent) / (b.percent - a.percent);
+        return {percent, a.voltage + f * (b.voltage - a.voltage), a.resistance + f * (b.resistance - a.resistance)};
+    }
+    return curve.last();
+}
+
+const PowerLoadDef* PowerDef::loadOn(const QString& pin) const {
+    for (const PowerLoadDef& l : loads) if (l.pin == pin) return &l;
+    return nullptr;
+}
+
+bool PowerDef::sourcesPin(const QString& pin) const {
+    for (const SupplyDef& s : supplies) if (s.pin == pin) return true;
+    for (const RegulatorDef& r : regulators) if (r.out == pin) return true;
+    return false;
+}
+
+
+// The "power" block. Pin references must name pins of the right type:
+// supplies and regulator outputs on power_out pins, loads on power pins,
+// regulator inputs on either (a board's 5V rail feeds its 3V3 regulator).
+static PowerDef parsePower(const QJsonObject& o, const QList<PinDef>& pins, bool isBoard, LoadError& err) {
+    PowerDef pw;
+    pw.present = true;
+    auto pinType = [&](const QString& id) -> QString {
+        for (const PinDef& p : pins) if (p.id == id) return p.type;
+        return QString();
+    };
+    auto checkPin = [&](const QString& id, const QStringList& types, const QString& where) {
+        if (err.has()) return;
+        if (id.isEmpty()) { err.set(QString("%1: missing 'pin'").arg(where)); return; }
+        const QString t = pinType(id);
+        bool exists = false;
+        for (const PinDef& p : pins) exists = exists || p.id == id;
+        if (!exists) err.set(QString("%1: pin '%2' does not exist").arg(where, id));
+        else if (!types.contains(t)) err.set(QString("%1: pin '%2' must be %3, is '%4'").arg(where, id, types.join(" or "), t));
+    };
+
+    const QJsonArray supplies = readArray(o, "supplies", "power", err);
+    for (int i = 0; i < supplies.size() && !err.has(); ++i) {
+        const QString path = QString("power.supplies[%1]").arg(i);
+        const QJsonObject s = readObject(supplies[i], path, err);
+        SupplyDef d;
+        d.pin = readString(s, "pin", path, err, true);
+        d.kind = readString(s, "kind", path, err, true);
+        d.voltage = readNumber(s, "voltage", path, err, false, 0.0);
+        d.rInternal = readNumber(s, "r_internal_ohm", path, err, false, 0.0);
+        d.currentLimit = readNumber(s, "current_limit_a", path, err, false, 0.0);
+        d.holdCurrent = readNumber(s, "hold_current_a", path, err, false, 0.0);
+        checkPin(d.pin, {"power_out"}, path);
+        if (err.has()) break;
+        if (!SupplyDef::kinds().contains(d.kind)) err.set(QString("%1: kind '%2' is not one of: %3").arg(path, d.kind, SupplyDef::kinds().join(", ")));
+        else if (d.kind != "battery" && d.voltage <= 0.0) err.set(QString("%1: 'voltage' must be > 0").arg(path));
+        else if (d.rInternal < 0.0 || d.currentLimit < 0.0 || d.holdCurrent < 0.0) err.set(QString("%1: negative value").arg(path));
+        pw.supplies.append(d);
+    }
+
+    const QJsonArray regs = readArray(o, "regulators", "power", err);
+    for (int i = 0; i < regs.size() && !err.has(); ++i) {
+        const QString path = QString("power.regulators[%1]").arg(i);
+        const QJsonObject r = readObject(regs[i], path, err);
+        RegulatorDef d;
+        d.id = readString(r, "id", path, err, true);
+        d.in = readString(r, "in", path, err, true);
+        d.out = readString(r, "out", path, err, true);
+        d.kind = readString(r, "kind", path, err, false, "linear");
+        d.vOut = readNumber(r, "v_out", path, err, true);
+        d.dropout = readNumber(r, "dropout_v", path, err, false, 0.0);
+        d.efficiency = readNumber(r, "efficiency", path, err, false, 0.85);
+        d.iMax = readNumber(r, "i_max_a", path, err, true);
+        d.iLimit = readNumber(r, "i_limit_a", path, err, false, 0.0);
+        d.iQuiescent = readNumber(r, "i_quiescent_ma", path, err, false, 0.0) / 1000.0;
+        checkPin(d.in, {"power", "power_out"}, path + ".in");   // a rail can feed the next regulator
+        checkPin(d.out, {"power_out"}, path + ".out");
+        if (err.has()) break;
+        if (!RegulatorDef::kinds().contains(d.kind)) err.set(QString("%1: kind '%2' is not one of: %3").arg(path, d.kind, RegulatorDef::kinds().join(", ")));
+        else if (d.vOut <= 0.0 || d.iMax <= 0.0) err.set(QString("%1: 'v_out' and 'i_max_a' must be > 0").arg(path));
+        else if (d.efficiency <= 0.0 || d.efficiency > 1.0) err.set(QString("%1: 'efficiency' must be in (0, 1]").arg(path));
+        else if (d.iLimit != 0.0 && d.iLimit < d.iMax) err.set(QString("%1: 'i_limit_a' must be at least 'i_max_a'").arg(path));
+        for (const RegulatorDef& other : pw.regulators)
+            if (other.id == d.id) err.set(QString("%1: duplicate id '%2'").arg(path, d.id));
+        pw.regulators.append(d);
+    }
+
+    const QJsonArray loads = readArray(o, "loads", "power", err);
+    for (int i = 0; i < loads.size() && !err.has(); ++i) {
+        const QString path = QString("power.loads[%1]").arg(i);
+        const QJsonObject l = readObject(loads[i], path, err);
+        PowerLoadDef d;
+        d.pin = readString(l, "pin", path, err, true);
+        d.current = readNumber(l, "current_ma", path, err, false, 0.0) / 1000.0;
+        d.minV = readNumber(l, "min_v", path, err, false, 0.0);
+        checkPin(d.pin, {"power", "power_out"}, path);
+        if (!err.has() && (d.current < 0.0 || d.minV < 0.0)) err.set(QString("%1: negative value").arg(path));
+        for (const PowerLoadDef& other : pw.loads)
+            if (other.pin == d.pin) err.set(QString("%1: pin '%2' already has a load").arg(path, d.pin));
+        pw.loads.append(d);
+    }
+
+    if (o.contains("brownout") && !err.has()) {
+        const QJsonObject b = readObject(o["brownout"], "power.brownout", err);
+        pw.brownout.present = true;
+        pw.brownout.rail = readString(b, "rail", "power.brownout", err, true);
+        pw.brownout.threshold = readNumber(b, "threshold_v", "power.brownout", err, true);
+        pw.brownout.hysteresis = readNumber(b, "hysteresis_v", "power.brownout", err, false, 0.0);
+        pw.brownout.restart = readNumber(b, "restart_ms", "power.brownout", err, false, 0.0) / 1000.0;
+        checkPin(pw.brownout.rail, {"power", "power_out"}, "power.brownout.rail");
+        if (!err.has() && !isBoard) err.set("power.brownout: only boards have a brownout detector");
+    }
+
+    if (o.contains("battery") && !err.has()) {
+        const QJsonObject b = readObject(o["battery"], "power.battery", err);
+        pw.battery.present = true;
+        pw.battery.capacityAh = readNumber(b, "capacity_mah", "power.battery", err, true) / 1000.0;
+        for (const QJsonValue& v : readArray(b, "curve", "power.battery", err)) {
+            const QJsonArray pt = v.toArray();
+            if (pt.size() != 3) { err.set("power.battery.curve: each point is [charge %, open-circuit V, internal ohm]"); break; }
+            pw.battery.curve.append({pt[0].toDouble(), pt[1].toDouble(), pt[2].toDouble()});
+        }
+        std::sort(pw.battery.curve.begin(), pw.battery.curve.end(),
+                  [](const BatteryDef::Point& a, const BatteryDef::Point& b) { return a.percent < b.percent; });
+        if (!err.has()) {
+            if (pw.battery.capacityAh <= 0.0) err.set("power.battery: 'capacity_mah' must be > 0");
+            else if (pw.battery.curve.size() < 2) err.set("power.battery.curve: needs at least 2 points");
+            else if (pw.battery.curve.first().percent != 0.0 || pw.battery.curve.last().percent != 100.0)
+                err.set("power.battery.curve: must span 0 to 100 %");
+            for (int i = 0; i < pw.battery.curve.size() && !err.has(); ++i) {
+                const BatteryDef::Point& p = pw.battery.curve[i];
+                if (p.voltage <= 0.0 || p.resistance < 0.0) err.set("power.battery.curve: voltages must be > 0, resistances >= 0");
+                else if (i > 0 && p.percent == pw.battery.curve[i - 1].percent) err.set("power.battery.curve: duplicate charge level");
+            }
+        }
+    }
+    for (const SupplyDef& s : pw.supplies) {
+        if (err.has()) break;
+        if (s.kind == "battery" && !pw.battery.present)
+            err.set(QString("power: supply on '%1' is a battery but there is no 'battery' block").arg(s.pin));
+    }
+    if (!err.has() && pw.battery.present) {
+        int batteries = 0;
+        for (const SupplyDef& s : pw.supplies) batteries += s.kind == "battery";
+        if (batteries != 1) err.set("power.battery: needs exactly one supply of kind 'battery'");
+    }
+
+    const QJsonObject src = o["sources"].toObject();
+    for (auto it = src.begin(); it != src.end(); ++it) pw.sources[it.key()] = it.value().toString();
+    return pw;
+}
+
+static QJsonObject powerToJson(const PowerDef& pw) {
+    QJsonObject o;
+    if (!pw.supplies.isEmpty()) {
+        QJsonArray arr;
+        for (const SupplyDef& s : pw.supplies) {
+            QJsonObject e{{"pin", s.pin}, {"kind", s.kind}};
+            if (s.voltage > 0.0) e["voltage"] = s.voltage;
+            if (s.rInternal > 0.0) e["r_internal_ohm"] = s.rInternal;
+            if (s.currentLimit > 0.0) e["current_limit_a"] = s.currentLimit;
+            if (s.holdCurrent > 0.0) e["hold_current_a"] = s.holdCurrent;
+            arr.append(e);
+        }
+        o["supplies"] = arr;
+    }
+    if (!pw.regulators.isEmpty()) {
+        QJsonArray arr;
+        for (const RegulatorDef& r : pw.regulators) {
+            QJsonObject e{{"id", r.id}, {"in", r.in}, {"out", r.out}, {"kind", r.kind}, {"v_out", r.vOut}, {"i_max_a", r.iMax}};
+            if (r.dropout > 0.0) e["dropout_v"] = r.dropout;
+            if (r.iLimit > 0.0) e["i_limit_a"] = r.iLimit;
+            if (r.kind == "buck") e["efficiency"] = r.efficiency;
+            if (r.iQuiescent > 0.0) e["i_quiescent_ma"] = r.iQuiescent * 1000.0;
+            arr.append(e);
+        }
+        o["regulators"] = arr;
+    }
+    if (!pw.loads.isEmpty()) {
+        QJsonArray arr;
+        for (const PowerLoadDef& l : pw.loads) {
+            QJsonObject e{{"pin", l.pin}};
+            if (l.current > 0.0) e["current_ma"] = l.current * 1000.0;
+            if (l.minV > 0.0) e["min_v"] = l.minV;
+            arr.append(e);
+        }
+        o["loads"] = arr;
+    }
+    if (pw.brownout.present) {
+        QJsonObject b{{"rail", pw.brownout.rail}, {"threshold_v", pw.brownout.threshold}};
+        if (pw.brownout.hysteresis > 0.0) b["hysteresis_v"] = pw.brownout.hysteresis;
+        if (pw.brownout.restart > 0.0) b["restart_ms"] = pw.brownout.restart * 1000.0;
+        o["brownout"] = b;
+    }
+    if (pw.battery.present) {
+        QJsonArray curve;
+        for (const BatteryDef::Point& p : pw.battery.curve) curve.append(QJsonArray{p.percent, p.voltage, p.resistance});
+        o["battery"] = QJsonObject{{"capacity_mah", pw.battery.capacityAh * 1000.0}, {"curve", curve}};
+    }
+    if (!pw.sources.isEmpty()) {
+        QJsonObject src;
+        for (auto it = pw.sources.begin(); it != pw.sources.end(); ++it) src[it.key()] = it.value();
+        o["sources"] = src;
+    }
+    return o;
+}
+
+
+
 
 static ComponentData loadFailure(const QString& modelId, const QString& msg) {
     ComponentData bad;
@@ -1048,9 +1273,17 @@ ComponentData ComponentData::fromJson(const QJsonObject& mainJson, const QString
         data.board = parseBoard(readObject(mainJson["board"], "board", err), data.pins, err);
         if (err.has()) return loadFailure(data.modelId, err.msg);
     }
+    if (mainJson.contains("power")) {
+        data.power = parsePower(readObject(mainJson["power"], "power", err), data.pins, data.board.present, err);
+        if (err.has()) return loadFailure(data.modelId, err.msg);
+    }
     for (const PinDef& p : data.pins) {
-        if (!data.board.present && (p.type == "gpio" || p.type == "power_out" || p.internal))
-            return loadFailure(data.modelId, QString("pin '%1': gpio, power_out and internal pins are only on boards (add a \"board\" block)").arg(p.id));
+        if (!data.board.present && (p.type == "gpio" || p.internal))
+            return loadFailure(data.modelId, QString("pin '%1': gpio and internal pins are only on boards (add a \"board\" block)").arg(p.id));
+        // A part's power_out pin is a source its power block describes (a
+        // battery's +, a regulator module's output); boards' rails may be plain.
+        if (!data.board.present && p.type == "power_out" && !data.power.sourcesPin(p.id))
+            return loadFailure(data.modelId, QString("pin '%1': a power_out pin needs a supply or regulator in the \"power\" block").arg(p.id));
         if (p.internal && p.number < 0)
             return loadFailure(data.modelId, QString("pin '%1': an internal pin needs a number").arg(p.id));
     }
@@ -1218,6 +1451,7 @@ QJsonObject ComponentData::toJson() const {
     root["specs"] = specs;
     root["pins"] = pinsToJson(pins);
     if (board.present) root["board"] = boardToJson(board);
+    if (power.present) root["power"] = powerToJson(power);
 
     // Resource paths are stored absolute in memory (resolved against
     // basePath on load) -- converted back to relative here so a saved

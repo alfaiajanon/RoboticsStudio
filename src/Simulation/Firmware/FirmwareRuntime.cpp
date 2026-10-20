@@ -403,6 +403,7 @@ bool FirmwareRuntime::load(const QByteArray& wasm, PinBus* pinBus, DeviceBus* de
     }
     flushText();
     unload();
+    held = false;
     gate.reset();
     pins = pinBus;
     devices = deviceBus;
@@ -467,6 +468,44 @@ void FirmwareRuntime::stop() {
     // thread makes WAMR walk the running thread's frames (call-stack dump),
     // which races with that thread and crashed a Stop during normal running.
     if (instance && !gate.waitUntilOutOfCall(std::chrono::milliseconds(100))) wasm_runtime_terminate(instance);
+}
+
+
+bool FirmwareRuntime::holdInReset() {
+    if (!instance || held) return false;
+    held = true;
+    stop();
+    return true;
+}
+
+
+bool FirmwareRuntime::restart(double simTime) {
+    if (!held || !module) return false;
+    if (!gate.waitUntilOutOfCall(LockstepGate::kWatchdog)) {
+        Log::error(tag + ": the firmware did not stop for the reset; it stays off");
+        return false;
+    }
+    // A fresh instance of the same module: the MCU's RAM starts over.
+    if (execEnv) wasm_runtime_destroy_exec_env(execEnv);
+    if (instance) wasm_runtime_deinstantiate(instance);
+    execEnv = nullptr;
+    char err[256] = {};
+    instance = wasm_runtime_instantiate(module, kWasmStack, 0, err, sizeof err);
+    if (instance) execEnv = wasm_runtime_create_exec_env(instance, kExecEnvStack);
+    if (!instance || !execEnv) {
+        Log::error(tag + ": firmware can't be restarted: " + QString::fromUtf8(err));
+        return false;
+    }
+    wasm_runtime_set_user_data(execEnv, this);
+    pinModes.clear();
+    cameraFormats.clear();
+    cameraLastSeq.clear();
+    i2cHz = board.i2cDefaultHz;
+    spiHz = 4000000.0;
+    setupDone = false;
+    held = false;
+    gate.restartAt(simTime);
+    return true;
 }
 
 

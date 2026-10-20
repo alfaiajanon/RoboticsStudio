@@ -188,7 +188,8 @@
             "supply_voltage": 5.0,
             "pot_noise_deg": 0.3,
             "center_spread_us": 10,
-            "gain_spread": 0.03
+            "gain_spread": 0.03,
+            "stall_current_a": 0.65
         },
         "source": {},
         "type": "servo_emulator",
@@ -205,7 +206,8 @@
             "supply_voltage": "assumption: 5 V rail, until the power net exists (plan Phase 2)",
             "pot_noise_deg": "estimate, to be measured (plan task 37)",
             "center_spread_us": "estimate, to be measured (plan task 37)",
-            "gain_spread": "estimate, to be measured (plan task 37)"
+            "gain_spread": "estimate, to be measured (plan task 37)",
+            "stall_current_a": "estimate: TowerPro gives no stall current for the SG90; commonly measured 0.6-0.7 A at 4.8-5 V"
         }
     },
     "id": "servo_sg90",
@@ -488,6 +490,18 @@
             "description": "Ground pin for servo motor"
         }
     ],
+    "power": {
+        "loads": [
+            {
+                "pin": "vcc",
+                "current_ma": 6,
+                "min_v": 3.0
+            }
+        ],
+        "sources": {
+            "loads.vcc": "estimate: idle (electronics, no drive) ~6 mA; the servo's control IC stops working somewhere around 3 V (no datasheet value)"
+        }
+    },
     "resources": {
         "materials": {
             "servo_body_texture": "textures/servo_body_texture.png"

@@ -17,6 +17,24 @@
                     0
                 ]
             }
+        },
+        {
+            "body": "body_1",
+            "description": "Top face beside the arm (battery pack)",
+            "id": "battery",
+            "transform": {
+                "pos": [
+                    0,
+                    0.032,
+                    0.0051
+                ],
+                "quat": [
+                    1,
+                    0,
+                    0,
+                    0
+                ]
+            }
         }
     ],
     "emulator": {

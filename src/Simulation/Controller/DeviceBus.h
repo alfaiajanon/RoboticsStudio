@@ -2,6 +2,7 @@
 
 #include <QList>
 #include <QMap>
+#include <QSet>
 #include <QString>
 #include <cstdint>
 #include <memory>
@@ -72,6 +73,8 @@ class DeviceBus {
     // pins aren't on them is not on the bus. Unrestricted on the ideal board.
     bool restricted = false;
     int i2cSda = -1, i2cScl = -1, spiSck = -1, spiMosi = -1;
+    // Devices whose part has no supply right now (Real level): they don't answer.
+    QSet<const void*> unpowered;
 
     public:
         void reset(PinBus* pinBus);
@@ -83,7 +86,15 @@ class DeviceBus {
         void addI2C(int address, I2CDevice* device, const QString& who, int sdaHandle, int sclHandle);
         void addSPI(int csHandle, SPIDevice* device, const QString& who, int sckHandle, int mosiHandle);
         void addCamera(int sdaHandle, CameraDevice* camera) { cameras.insert(sdaHandle, camera); }
-        CameraDevice* camera(int sdaHandle) const { return cameras.value(sdaHandle, nullptr); }
+        CameraDevice* camera(int sdaHandle) const {
+            CameraDevice* c = cameras.value(sdaHandle, nullptr);
+            return unpowered.contains(c) ? nullptr : c;
+        }
+        // Physics thread, between steps: a device's part lost (or regained)
+        // its supply. Pass the device as the bus interface it registered with.
+        void setPowered(const void* device, bool powered) {
+            if (powered) unpowered.remove(device); else unpowered.insert(device);
+        }
 
         // Firmware side (Wire / SPI). i2cWrite returns Wire's
         // endTransmission() status: 0 = ok, 2 = no device at the address.

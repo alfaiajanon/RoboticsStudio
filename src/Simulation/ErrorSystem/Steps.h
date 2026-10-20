@@ -110,6 +110,17 @@ struct DcMotor {
         return std::clamp(stallTorque * (v - omega / noLoadSpeed), -limit, limit);
     }
 
+    // Supply current (A) for a drive that gave `torque` at `duty` (a
+    // chopped H-bridge: the motor's current flows from the supply only while
+    // the switches are on, so the average is |duty| x motor current; current
+    // the motor pushes back while braking is not returned). stallCurrent is
+    // at ratedVoltage: torque per amp = stallTorque / stallCurrent.
+    double supplyCurrent(double duty, double torque, double stallCurrent) const {
+        if (stallTorque <= 0.0 || stallCurrent <= 0.0 || duty == 0.0) return 0.0;
+        const double motorCurrent = torque * stallCurrent / stallTorque;
+        return std::abs(duty) * std::max(0.0, duty > 0.0 ? motorCurrent : -motorCurrent);
+    }
+
     double brakeTorque(double omega) const {
         if (stallTorque <= 0.0 || noLoadSpeed <= 0.0) return 0.0;
         return -stallTorque * omega / noLoadSpeed;
