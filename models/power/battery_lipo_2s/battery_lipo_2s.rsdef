@@ -43,68 +43,105 @@
             }
         ],
         "battery": {
+            "cells": 2,
             "capacity_mah": 2000,
             "curve": [
                 [
-                    0,
-                    6.6,
+                    -2.5,
+                    1.5,
+                    0.5
+                ],
+                [
+                    -1.5,
+                    2.5,
                     0.08
                 ],
                 [
-                    10,
-                    7.3,
-                    0.05
+                    -1,
+                    2.8,
+                    0.06
                 ],
                 [
-                    20,
-                    7.42,
-                    0.04
-                ],
-                [
-                    30,
-                    7.52,
+                    0,
+                    3.05,
                     0.035
                 ],
                 [
+                    2,
+                    3.42,
+                    0.025
+                ],
+                [
+                    5,
+                    3.61,
+                    0.02
+                ],
+                [
+                    10,
+                    3.69,
+                    0.018
+                ],
+                [
+                    20,
+                    3.73,
+                    0.016
+                ],
+                [
+                    30,
+                    3.77,
+                    0.016
+                ],
+                [
                     40,
-                    7.6,
-                    0.032
+                    3.8,
+                    0.015
                 ],
                 [
                     50,
-                    7.7,
-                    0.03
+                    3.84,
+                    0.015
                 ],
                 [
                     60,
-                    7.84,
-                    0.03
+                    3.87,
+                    0.015
                 ],
                 [
                     70,
-                    7.98,
-                    0.03
+                    3.95,
+                    0.015
                 ],
                 [
                     80,
-                    8.12,
-                    0.03
+                    4.02,
+                    0.015
                 ],
                 [
                     90,
-                    8.26,
-                    0.03
+                    4.11,
+                    0.015
                 ],
                 [
                     100,
-                    8.4,
-                    0.03
+                    4.2,
+                    0.015
                 ]
-            ]
+            ],
+            "rate": {
+                "available_fraction": 0.348,
+                "rate_constant_per_h": 17.85
+            },
+            "over_discharge_v": 3.0,
+            "protection": {
+                "cutoff_v": 2.4,
+                "delay_ms": 40
+            }
         },
         "sources": {
-            "supplies.plus": "the battery curve below",
-            "battery": "estimate: a typical LiPo cell's resting voltage vs charge (4.20 V full, ~3.85 V at 50 %, 3.3 V empty), two in series; ~15 mOhm per cell for a small 20C pack, rising near empty. Real packs vary: measure yours"
+            "supplies.plus": "the battery block below",
+            "battery": "per cell, a typical LiCoO2 LiPo (estimate: no datasheet for a generic 2S RC pack). Rest voltages 100..5 %: 4.20, 4.11, 4.02, 3.95, 3.87, 3.84, 3.80, 3.77, 3.73, 3.69, 3.61 V (voltagebasics.com 'Lithium polymer battery voltage chart'); 0 % = the rated cut-off, 3.0 V at the terminals at 0.2 C (cell datasheet convention), so 3.05 V here (the ~3.27 V such charts give for 0 % is after the cell has rested, a relaxation this model leaves out); below 0 %: the knee to ~2.5 V within ~1.5 % more charge (estimate). Resistance ~15 mOhm per cell for a small 20C pack, rising near empty (estimate). Over-discharge: below 3.0 V per cell a LiPo is damaged (common RC practice; a warning, no damage model)",
+            "battery.rate": "fitted with tools/fit_battery.py (the simulation's own model) to typical LiPo rate capability (estimate, the shape of cell datasheets' rate charts): 100 % at 0.2 C, 97 % at 1 C, 95 % at 2 C, to 3.0 V; rms error 0.4 %. Time constant ~45 s: also gives a little of the voltage recovery after a load stops",
+            "battery.protection": "a DW01A-class protection IC (the common one on Li-ion protection boards): over-discharge detection 2.40 V (2.30-2.50) per cell, delay 40 ms typical (40-100 ms), release 3.0 V only with a charger connected (DW01A datasheets). An RC LiPo pack has none fitted by default: the Inspector's 'Protection circuit (BMS)' adds one"
         }
     },
     "resources": {

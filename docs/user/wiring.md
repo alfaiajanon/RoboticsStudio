@@ -82,7 +82,7 @@ At the Real level every supply has a voltage and an internal resistance, and eve
 | Part | What it is | Set in the Inspector |
 |---|---|---|
 | A board's **USB feed** | The board's own 5 V (Uno: through its 0.5 A polyfuse; ESP32-CAM: through its programmer). Dropped as soon as another source drives that rail | — |
-| **Battery pack 4×AA**, **Battery 9V**, **LiPo 2S** | Voltage and internal resistance follow the battery's discharge curve | **Charge** (%), **Drains during the run** |
+| **Battery pack 4×AA**, **Battery 9V**, **LiPo 2S** | Voltage and internal resistance follow the battery's discharge curve (per cell, from its datasheet) | **Charge** (%), **Drains during the run**; LiPo: **Protection circuit (BMS)** |
 | **Bench power supply** | Constant voltage up to its current limit, then the voltage drops | **Voltage**, **Current limit** |
 | **Buck converter LM2596** | Steps a higher input down (≈ 85 % efficient); needs ~1.5 V of headroom; folds back above its current limit (4.5 A, rated 3 A) | **Output** |
 
@@ -93,19 +93,25 @@ Boards carry their own regulators: the Uno makes 5V from VIN (needs about 6.1 V 
 - **Too little supply**: a part switches off below its minimum voltage (an MG996R's electronics stop around 3.5 V) and starts again from its power-on state when the rail comes back.
 - **Brownout**: when a board's MCU rail falls below its brownout threshold (Uno 2.7 V on 5V, ESP32 2.43 V on 3V3), the board resets. Its pins let go (servos go limp), and once the rail is back the sketch starts again from `setup()` (`millis()` from 0). Output: `MCU: ESP32-CAM brownout reset at 0.348 s (2.37 V on its supply rail)`. Too many servos on one small supply give exactly the real failure: the board keeps resetting whenever they start moving.
 - **USB**: more than 0.5 A from a board's USB feed for over a second gets a warning (a real polyfuse cuts out; that cut itself isn't simulated).
-- **Batteries**: with **Drains during the run** on, the charge goes down with the current drawn and the voltage follows the discharge curve (at Max speed you can watch a pack run down). Every Play starts from the charge set in the Inspector.
+- **Batteries**: with **Drains during the run** on, the charge goes down with the current drawn and the voltage follows the discharge curve (at Max speed you can watch a pack run down). Every Play starts from the charge set in the Inspector. They behave like the real chemistry:
+  - **The shape**: an alkaline pack has no flat part, its voltage slopes down all the way; a LiPo stays flat, then falls steeply in its last few %.
+  - **Heavy loads empty it sooner**: the voltage reaches the cut-off before the rated charge is used. A 4×AA pack at 0.5 A is done with about half its charge left on the gauge; a LiPo loses only a few %. After the load stops the voltage recovers a little.
+  - **0 % is not the end**: 0 % is the rated cut-off, where a fuel gauge would read empty. Past it the pack keeps discharging and its voltage collapses (the gauge stays at 0 %). Output says when a pack reads 0 %, when a LiPo is over-discharged (below 3.0 V per cell: a real one is damaged) and when it is completely flat.
+  - **Protection circuit**: a hobby LiPo pack has none, so it runs down until the electronics give up. Tick **Protection circuit (BMS)** to add one (DW01A-class: cuts the pack off below 2.4 V per cell for 40 ms, until Stop).
+  - A draining Robot arm (ESP32-CAM) ends as a real one does: the LiPo sags below the buck's ~6.5 V headroom, the 5V rail follows it down, the servos get weaker, the pack becomes over-discharged, and finally the ESP32-CAM goes into a brownout loop (it resets every time the servos start).
 - At **Stop**, Output lists each supply's lowest voltage and highest current, each battery's charge left and each board's brownout resets.
 
-**Plots**: in a scalar plot's target list, each part has a **Power (simulation-only)** group: `power.supply_v` and `power.supply_a` for a part, every rail (`power.5v_v`, ...) for a board, `power.charge`, `power.battery_v` and `power.battery_a` for a battery.
+**Plots**: in a scalar plot's target list, each part has a **Power (simulation-only)** group: `power.supply_v` and `power.supply_a` for a part, every rail (`power.5v_v`, ...) for a board, `power.charge`, `power.charge_available` (what the cell can give right now), `power.battery_v` and `power.battery_a` for a battery.
 
 **The budget check** works with datasheet numbers: what each supply carries at rest, and with every motor stalled (the worst case, e.g. all servos starting at once). The stalled case is rare but real: if the check says a board's rail would brown out, give the motors their own supply, with a common ground.
 
-**Simplifications:** the rails are solved with the currents of the step before (a 2 ms lag, like a rail's capacitors); no ripple or transients; a battery at 0 % stays at its cut-off voltage; the DC motor still runs on its built-in ideal driver at a fixed voltage until motor driver parts arrive.
+**Simplifications:** the rails are solved with the currents of the step before (a 2 ms lag, like a rail's capacitors); no ripple or transients; a battery's quick voltage rebound in the first seconds after a load stops isn't modelled (only the slower recovery); temperature doesn't change a battery; the DC motor still runs on its built-in ideal driver at a fixed voltage until motor driver parts arrive.
 
 ## Not modelled yet
 
 - Several boards talking to each other (UART), and interface boards (PCA9685, motor drivers, level shifters).
-- A real polyfuse's cut-out, and damage (a pin or a part driven past its absolute maximum).
+- A real polyfuse's cut-out, and damage (a pin or a part driven past its absolute maximum, a LiPo over-discharged: only a warning).
+- A protection circuit's over-current and short-circuit cut-outs (only its under-voltage cut-out is modelled), and charging.
 - A guided Prototype → Real migration that maps the ideal wiring onto a board for you.
 
 ## Demos

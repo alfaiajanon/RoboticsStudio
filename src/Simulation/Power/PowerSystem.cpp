@@ -14,6 +14,10 @@ static constexpr double kOnHysteresis = 0.05;
 static constexpr double kDeadRail = 0.05;
 // USB over its hold current for this long gets a warning (a polyfuse trips in ~1 s at 2x hold).
 static constexpr double kOverHoldWarnAfter = 1.0;
+// A pack cut off by its protection circuit: an open switch (no current).
+static constexpr double kCutOhms = 1e6;
+// "Completely flat": this close to the dead point (% of rated).
+static constexpr double kFlatPercent = 0.05;
 
 
 
@@ -82,9 +86,14 @@ void PowerSystem::build(Project& project, const QHash<int, Emulator*>& emulators
         b.supply = i;
         b.uid = s.uid;
         b.name = comp->name;
-        b.curve = comp->getBlueprint()->power.battery;
-        b.percent = std::clamp(comp->parameters.value(PowerNetwork::kChargePercent, 100.0).toDouble(), 0.0, 100.0);
+        b.def = comp->getBlueprint()->power.battery;
+        const double start = std::clamp(comp->parameters.value(PowerNetwork::kChargePercent, 100.0).toDouble(), 0.0, 100.0);
+        const double above = start - b.def.deadPercent();   // both wells level at the start
+        b.available = above * b.def.availableFraction;
+        b.bound = above - b.available;
         b.drains = comp->parameters.value(PowerNetwork::kDrains, false).toBool();
+        b.protection = b.def.protection.present &&
+                       comp->parameters.value(PowerNetwork::kProtection, b.def.protection.fitted).toBool();
         batteryList.append(b);
     }
     supplyExtremes = QVector<Extremes>(net.supplies.size());
@@ -112,25 +121,23 @@ PowerSystem::Events PowerSystem::step(double now, double dt) {
         extra[p.node] += p.amps - p.staticLoad;   // the network already counts the static load
     }
 
-    // ---- batteries at their present charge ----
+    // ---- batteries at the level of their available charge ----
     for (Battery& b : batteryList) {
-        const BatteryDef::Point pt = b.curve.at(b.percent);
-        net.supplies[b.supply].voc = pt.voltage;
-        net.supplies[b.supply].r = pt.resistance;
+        PowerNetwork::Supply& sp = net.supplies[b.supply];
+        if (b.cut) {   // open circuit: the protection's switch is off
+            sp.voc = 0.0;
+            sp.r = kCutOhms;
+            continue;
+        }
+        const BatteryDef::Point pt = b.def.packAt(b.level());
+        sp.voc = pt.voltage;
+        sp.r = pt.resistance;
     }
 
     last = net.solve(extra, solved ? &last : nullptr);
     solved = true;
 
-    for (Battery& b : batteryList) {
-        if (!b.drains || b.curve.capacityAh <= 0.0) continue;
-        b.percent = std::max(0.0, b.percent - last.supplyCurrent[b.supply] * dt / 3600.0 / b.curve.capacityAh * 100.0);
-        if (b.percent <= 0.0 && !b.reportedEmpty) {
-            b.reportedEmpty = true;
-            Log::warning(QString("Power: %1 is empty at %2 s (it stays at its cut-off voltage; a real one drops further)")
-                             .arg(b.name).arg(now, 0, 'f', 3));
-        }
-    }
+    for (Battery& b : batteryList) stepBattery(b, now, dt);
 
     // ---- extremes and USB over its hold current ----
     for (int i = 0; i < net.supplies.size(); ++i) {
@@ -203,6 +210,69 @@ PowerSystem::Events PowerSystem::step(double now, double dt) {
 
 
 
+void PowerSystem::stepBattery(Battery& b, double now, double dt) {
+    const PowerNetwork::Supply& sp = net.supplies[b.supply];
+    const BatteryDef& d = b.def;
+    const double cellV = last.voltage[sp.node] / d.cells;   // at the terminals, under load
+
+    // The loads are solved as constant currents; a cell can't give more than
+    // its short-circuit current (open-circuit voltage over internal resistance).
+    double amps = std::max(0.0, last.supplyCurrent[b.supply]);
+    if (b.cut) amps = 0.0;
+    else if (sp.r > 0.0) amps = std::min(amps, sp.voc / sp.r);
+
+    if (b.drains && d.capacityAh > 0.0) {
+        const double drawn = amps * dt / 3600.0 / d.capacityAh * 100.0;   // % of rated
+        double flow = 0.0;   // bound -> available
+        if (d.availableFraction < 1.0) {
+            const double hAvail = b.available / d.availableFraction, hBound = b.bound / (1.0 - d.availableFraction);
+            flow = d.rateConstant * (hBound - hAvail) * dt / 3600.0;
+        }
+        b.available = std::max(0.0, b.available - drawn + flow);
+        b.bound = std::max(0.0, b.bound - flow);
+    }
+
+    // ---- protection circuit: under its threshold for its delay -> off until Stop ----
+    if (b.protection && !b.cut) {
+        if (cellV < d.protection.cutoffV) {
+            if (b.belowSince < 0.0) b.belowSince = now;
+            if (now - b.belowSince >= d.protection.delay - 1e-9) {
+                b.cut = true;
+                b.cutAt = now;
+                Log::warning(QString("Power: %1's protection circuit cut the pack off at %2 s (%3 V per cell under load, "
+                                     "below its %4 V); it stays off until Stop (a real one needs a charger)")
+                                 .arg(b.name).arg(now, 0, 'f', 3).arg(cellV, 0, 'f', 2).arg(d.protection.cutoffV, 0, 'f', 2));
+            }
+        } else {
+            b.belowSince = -1.0;
+        }
+    }
+    if (!b.drains) return;
+
+    // ---- what a real pack would tell you ----
+    const double restV = d.at(b.level()).voltage;   // per cell, open circuit
+    if (!b.reportedZero && b.total() <= 0.0) {
+        b.reportedZero = true;
+        Log::info(QString("Power: %1 reads 0 %: its rated charge is used up at %2 s (%3 V per cell under load). "
+                          "It keeps discharging if nothing stops it")
+                      .arg(b.name).arg(now, 0, 'f', 3).arg(cellV, 0, 'f', 2));
+    }
+    if (!b.reportedOverDischarge && d.overDischargeV > 0.0 && restV < d.overDischargeV) {
+        b.reportedOverDischarge = true;
+        Log::warning(QString("Power: %1 is over-discharged at %2 s (%3 V per cell at rest; below %4 V a real pack is damaged: "
+                             "lost capacity, swelling). Stop earlier: it needs a low-voltage cut-off or alarm%5")
+                         .arg(b.name).arg(now, 0, 'f', 3).arg(restV, 0, 'f', 3).arg(d.overDischargeV, 0, 'f', 2)
+                         .arg(d.protection.present ? QString(" (a protection circuit only cuts at %1 V per cell)").arg(d.protection.cutoffV, 0, 'f', 2)
+                                                   : QString()));
+    }
+    if (!b.reportedFlat && b.total() <= d.deadPercent() + kFlatPercent) {
+        b.reportedFlat = true;
+        Log::warning(QString("Power: %1 is completely flat at %2 s").arg(b.name).arg(now, 0, 'f', 3));
+    }
+}
+
+
+
 double PowerSystem::supplyOf(int uid) const {
     const int i = partIndex.value(uid, -1);
     return i >= 0 ? partList[i].volts : -1.0;
@@ -227,11 +297,12 @@ double PowerSystem::partCurrent(int uid) const {
 }
 
 
-bool PowerSystem::battery(int uid, double* percent, double* volts, double* amps) const {
+bool PowerSystem::battery(int uid, double* percent, double* volts, double* amps, double* available) const {
     for (const Battery& b : batteryList) {
         if (b.uid != uid) continue;
         const PowerNetwork::Supply& s = net.supplies[b.supply];
-        if (percent) *percent = b.percent;
+        if (percent) *percent = b.charge();
+        if (available) *available = b.availableCharge();
         if (volts) *volts = solved ? last.voltage[s.node] : s.voc;
         if (amps) *amps = solved ? last.supplyCurrent[b.supply] : 0.0;
         return true;
@@ -262,8 +333,14 @@ QStringList PowerSystem::summary() const {
                    .arg(supplyName(i)).arg(x.minV, 0, 'f', 2).arg(x.minVAt, 0, 'f', 3)
                    .arg(x.peakI, 0, 'f', 2).arg(x.peakIAt, 0, 'f', 3);
     }
-    for (const Battery& b : batteryList)
-        out << QString("%1: %2 % charge left%3").arg(b.name).arg(b.percent, 0, 'f', 1).arg(b.drains ? "" : " (not draining)");
+    for (const Battery& b : batteryList) {
+        QString note;
+        if (!b.drains) note = " (not draining)";
+        else if (b.total() < 0.0)
+            note = QString(" (past its rated cut-off: %1 V per cell at rest)").arg(b.def.at(b.level()).voltage, 0, 'f', 2);
+        if (b.cut) note += QString(", cut off by its protection circuit at %1 s").arg(b.cutAt, 0, 'f', 3);
+        out << QString("%1: %2 % charge left%3").arg(b.name).arg(b.charge(), 0, 'f', 1).arg(note);
+    }
     for (int i = 0; i < boardList.size(); ++i) {
         const Board& b = boardList[i];
         const Extremes& x = boardExtremes[i];

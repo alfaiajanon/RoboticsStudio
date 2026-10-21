@@ -675,16 +675,31 @@ void InspectorPanel::build_power(ComponentInstance* comp) {
         } else if (s.kind == "battery" && pw.battery.present) {
             const double pct = param(PowerNetwork::kChargePercent, 100.0);
             QDoubleSpinBox* charge = spin(pct, 0.0, 100.0, 5.0, 0, " %");
-            const BatteryDef::Point pt = pw.battery.at(pct);
-            charge->setToolTip(QString("At this charge: %1 V open circuit, %2 Ω inside (%3 mAh when full)")
-                                   .arg(pt.voltage, 0, 'f', 2).arg(pt.resistance, 0, 'f', 3).arg(pw.battery.capacityAh * 1000.0));
+            const BatteryDef& bat = pw.battery;
+            const BatteryDef::Point pt = bat.packAt(pct);
+            const QString perCell = bat.cells > 1 ? QString(" (%1 V per cell)").arg(pt.voltage / bat.cells, 0, 'f', 2) : QString();
+            charge->setToolTip(QString("As a fuel gauge reads it: 0 % is the rated cut-off. At this charge: %1 V open circuit%2, "
+                                       "%3 Ω inside (%4 mAh rated)")
+                                   .arg(pt.voltage, 0, 'f', 2).arg(perCell).arg(pt.resistance, 0, 'f', 3).arg(bat.capacityAh * 1000.0));
             QCheckBox* drains = new QCheckBox("Drains during the run", box);
             drains->setChecked(comp->parameters.value(PowerNetwork::kDrains, false).toBool());
             drains->setToolTip("On: the charge goes down with the current drawn (sim time), and the voltage with it. "
-                               "Every Play starts from the charge set here.");
+                               "Heavy loads empty it sooner, a rest lets it recover a little, and past 0 % its voltage "
+                               "collapses. Every Play starts from the charge set here.");
             form->addRow("Charge:", charge);
-            form->addRow(createShrinkableLabel(QString("%1 V open circuit at this charge").arg(pt.voltage, 0, 'f', 2), box));
+            form->addRow(createShrinkableLabel(QString("%1 V open circuit at this charge%2").arg(pt.voltage, 0, 'f', 2).arg(perCell), box));
             form->addRow(drains);
+            if (bat.protection.present) {
+                QCheckBox* bms = new QCheckBox("Protection circuit (BMS)", box);
+                bms->setChecked(comp->parameters.value(PowerNetwork::kProtection, bat.protection.fitted).toBool());
+                bms->setToolTip(QString("On: below %1 V per cell at the terminals for %2 ms the pack cuts itself off "
+                                        "(0 V) until Stop, as a protection board does. Off: a bare pack keeps discharging.")
+                                    .arg(bat.protection.cutoffV, 0, 'f', 2).arg(bat.protection.delay * 1000.0, 0, 'f', 0));
+                form->addRow(bms);
+                connect(bms, &QCheckBox::toggled, this, [setParam](bool on) {
+                    setParam(PowerNetwork::kProtection, on, on ? "Battery protection on" : "Battery protection off");
+                });
+            }
             connect(charge, &QDoubleSpinBox::editingFinished, this, [setParam, charge]() {
                 setParam(PowerNetwork::kChargePercent, charge->value(), "Set battery charge");
             });

@@ -517,6 +517,7 @@ void SimulationManager::startPower(ComponentInstance* root) {
     deadUids = unpoweredUids;
     offEmulators.clear();
     powerCutsLogged.clear();
+    resetsLogged.clear();
     QHash<int, Emulator*> emulators;
     std::function<void(ComponentInstance*)> collect = [&](ComponentInstance* comp) {
         if (!comp) return;
@@ -570,6 +571,7 @@ void SimulationManager::setPartPowered(ComponentInstance* comp, bool powered, do
  */
 void SimulationManager::applyPower(double now, double dt) {
     static constexpr int kCutsLogged = 5;   // per part, then only the summary at Stop
+    static constexpr int kResetsLogged = 10;   // per board
     const PowerSystem::Events ev = power.step(now, dt);
     for (const PowerSystem::Part& p : power.parts()) {
         if (p.emulator) p.emulator->setSupply(p.volts);
@@ -590,12 +592,16 @@ void SimulationManager::applyPower(double now, double dt) {
     for (int uid : ev.brownedOut) {
         ComponentInstance* board = project->getComponentByUid(uid);
         const QString name = board ? board->name : QString::number(uid);
-        Log::warning(QString("MCU: %1 brownout reset at %2 s (%3 V on its supply rail)")
-                         .arg(name).arg(now, 0, 'f', 3).arg(power.boardRailVolts(uid), 0, 'f', 2));
+        const int n = ++resetsLogged[uid];
+        if (n <= kResetsLogged)
+            Log::warning(QString("MCU: %1 brownout reset at %2 s (%3 V on its supply rail)%4")
+                             .arg(name).arg(now, 0, 'f', 3).arg(power.boardRailVolts(uid), 0, 'f', 2)
+                             .arg(n == kResetsLogged ? "; further resets not logged (the count is in the summary at Stop)" : ""));
         if (board && board == activeBoard && robotController == fw && fw->holdInReset()) pinBus.releaseBoardPins();
     }
     for (int uid : ev.released) {
-        if (activeBoard && activeBoard->uid == uid && robotController == fw && fw->isHeld() && fw->restart(now))
+        if (activeBoard && activeBoard->uid == uid && robotController == fw && fw->isHeld() && fw->restart(now)
+            && resetsLogged.value(uid) <= kResetsLogged)
             Log::info(QString("MCU: %1 starts again at %2 s (setup())").arg(activeBoard->name).arg(now, 0, 'f', 3));
     }
 }

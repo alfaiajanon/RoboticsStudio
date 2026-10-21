@@ -49,16 +49,46 @@ The static draw of a pin (`current_ma`, typical) and the lowest supply the part 
 
 ```json
 "supplies": [{"pin": "plus", "kind": "battery"}],
-"battery": {"capacity_mah": 2000,
-            "curve": [[0, 6.6, 0.08], [50, 7.7, 0.03], [100, 8.4, 0.03]]}
+"battery": {"cells": 2, "capacity_mah": 2000,
+            "curve": [[-2.5, 1.50, 0.50], [-1.5, 2.50, 0.08], [0, 3.05, 0.035], [5, 3.61, 0.020], [50, 3.84, 0.015], [100, 4.20, 0.015]],
+            "rate": {"available_fraction": 0.348, "rate_constant_per_h": 17.85},
+            "over_discharge_v": 3.0,
+            "protection": {"cutoff_v": 2.4, "delay_ms": 40}}
 ```
 
-`curve` points are `[charge %, open-circuit V, internal Ω]`, from 0 to 100 %, interpolated. Read them off the datasheet's discharge curves (or measure your pack). The Inspector sets the starting charge and whether it drains during the run. A battery's `−` is a `ground` pin.
+| Field | Meaning |
+|---|---|
+| `cells` | cells in series (default 1). The curve and the thresholds are **per cell**, as in datasheets; the pack has `cells` times the voltage and the resistance |
+| `capacity_mah` | the rated capacity: what the datasheet gives at its stated drain down to its cut-off voltage. That cut-off is **0 %** |
+| `curve` | `[charge %, open-circuit V, internal Ω]` per cell, interpolated. It must reach 100 % and have a point at 0 %. Points **below 0 %** are the charge a real cell still gives past its rated cut-off, down to its dead point (a few %): the voltage collapses and the resistance climbs there |
+| `rate` | optional: the rate-capacity and recovery effects (below). Without it the whole charge is available at any current |
+| `over_discharge_v` | optional, per cell, open circuit: below it a real cell is damaged (LiPo: 3.0 V). The run warns once; there is no damage model |
+| `protection` | optional: the protection circuit (BMS) this pack can have. Below `cutoff_v` per cell **at the terminals** for `delay_ms`, the pack cuts itself off (0 V) until Stop (a real one needs a charger to release). `fitted` (default false) is the Inspector's default for "Protection circuit (BMS)" |
+
+**How the charge moves (Kinetic Battery Model).** The charge sits in two wells. The load draws from the *available* well (`available_fraction` of the charge); the *bound* charge flows into it at `rate_constant_per_h` × (bound level − available level) per hour. The curve is read at the **available** level:
+- at rest both levels are the same, so the voltage is the curve's;
+- under a heavy load the available level falls faster than the charge does, so the voltage reaches the cut-off **before** the rated charge is used: an alkaline pack driving servos is "flat" with half its charge still in it;
+- when the load stops, the bound charge flows back and the voltage **recovers** (the toy that works again after a rest).
+
+This is the classic two-well model (Manwell & McGowan); it has one time constant, so it gives the slow part of a cell's recovery, not the quick rebound in the first seconds after a load stops.
+
+**Fitting `rate`:** take the datasheet's capacities at two or three constant currents to one cut-off, and let `tools/fit_battery.py` fit the two numbers with the simulation's own model:
+
+```bash
+python3 tools/fit_battery.py models/power/battery_4xaa/battery_4xaa.rsdef \
+    --point 0.025 2900 0.8 --point 0.1 2200 0.8 --point 0.5 1400 0.8
+```
+
+It prints the `rate` block and how far the model is from each point (`--check` adds points not used in the fit; `--trace A` prints a discharge at that current). Put the points you used in `power.sources` under `battery.rate`.
+
+**What the gauge shows.** The Inspector, the plots and Output give the charge as a fuel gauge on the pack would: 0..100 %, 0 % at the rated cut-off. Past it the gauge stays at 0 % while the voltage keeps falling (plot `power.battery_v`). `power.charge_available` shows the available well.
+
+The Inspector sets the starting charge, whether the pack drains during the run, and (with a `protection` block) whether a protection circuit is fitted. A battery's `−` is a `ground` pin.
 
 ## Rules
 
 - A `power_out` pin on a part that isn't a board must be one of its supplies or a regulator's output.
-- Every number needs a source in `power.sources`, keyed `supplies.<pin>`, `regulators.<id>`, `loads.<pin>`, `brownout`, `battery`; `tools/validate_rsdef.py` warns otherwise.
+- Every number needs a source in `power.sources`, keyed `supplies.<pin>`, `regulators.<id>`, `loads.<pin>`, `brownout`, `battery`, `battery.rate`, `battery.protection`; `tools/validate_rsdef.py` warns otherwise.
 - All of a part's `ground` pins count as one (common inside the part), as on a buck module's IN− and OUT−.
 
 Examples: `models/board/arduino_uno`, `models/board/esp32_cam`, `models/power/*`, and the servos' `vcc` loads.

@@ -122,7 +122,7 @@ PowerNetwork PowerNetwork::build(Project& project) {
             d.currentLimit = s.currentLimit;
             d.holdCurrent = s.holdCurrent;
             if (s.kind == "battery") {
-                const BatteryDef::Point pt = pw.battery.at(std::clamp(param(comp, kChargePercent, 100.0), 0.0, 100.0));
+                const BatteryDef::Point pt = pw.battery.packAt(std::clamp(param(comp, kChargePercent, 100.0), 0.0, 100.0));
                 d.voc = pt.voltage;
                 d.r = pt.resistance;
             } else if (s.kind == "supply") {

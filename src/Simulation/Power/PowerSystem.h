@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <QHash>
 #include <QList>
 #include <QString>
@@ -20,8 +21,12 @@ class Emulator;
  *   - currents: every powered part's static load plus its motor's current
  *     (Emulator::supplyCurrent); a part that is off draws nothing;
  *   - batteries: open-circuit voltage and resistance from their discharge
- *     curve at the present charge; with "drains" on, the charge goes down
- *     with the current drawn (sim time);
+ *     curve at the level of their available charge (Kinetic Battery Model:
+ *     a heavy load empties the available well faster than the bound charge
+ *     refills it, so the voltage drops early, and it recovers at rest); with
+ *     "drains" on, the charge goes down with the current drawn (sim time),
+ *     past the rated cut-off (0 %) down to the cell's dead point; a fitted
+ *     protection circuit cuts the pack off below its threshold;
  *   - solve: the voltage of every rail;
  *   - parts: below their load's min_v a part switches off (back on 50 mV
  *     above it);
@@ -59,10 +64,22 @@ class PowerSystem {
             int supply = -1;     // index in the network's supplies
             int uid = -1;
             QString name;
-            BatteryDef curve;
-            double percent = 100.0;
+            BatteryDef def;
+            // The two wells, in % of the rated capacity above the dead point.
+            double available = 0.0, bound = 0.0;
             bool drains = false;
-            bool reportedEmpty = false;
+            bool protection = false;      // a protection circuit is fitted
+            bool cut = false;             // ... and has cut the pack off (until Stop)
+            double belowSince = -1.0;     // protection: under its threshold since
+            double cutAt = 0.0;
+            bool reportedZero = false, reportedOverDischarge = false, reportedFlat = false;
+
+            double total() const { return def.deadPercent() + available + bound; }   // % of rated
+            // The available well's level, where the curve is read (% of rated).
+            double level() const { return def.deadPercent() + available / def.availableFraction; }
+            // What a fuel gauge on the pack reads: 0..100 %, 0 at the rated cut-off.
+            double charge() const { return std::clamp(total(), 0.0, 100.0); }
+            double availableCharge() const { return std::clamp(level(), 0.0, 100.0); }
         };
         struct Extremes {
             double minV = 1e9, minVAt = 0.0;
@@ -93,7 +110,8 @@ class PowerSystem {
         double railVolts(int uid, const QString& pin) const;
         double partCurrent(int uid) const;   // A drawn from its supply pin (last step); 0 if none
         // A battery's state (last step); false if `uid` is not a battery.
-        bool battery(int uid, double* percent, double* volts, double* amps) const;
+        // percent and available are fuel-gauge readings (0..100 %).
+        bool battery(int uid, double* percent, double* volts, double* amps, double* available = nullptr) const;
         double boardRailVolts(int boardUid) const;
 
         // One line per source and per board MCU rail, for the Output at Stop.
@@ -113,4 +131,5 @@ class PowerSystem {
         QHash<int, QString> names;           // uid -> part name
 
         QString supplyName(int i) const;
+        void stepBattery(Battery& b, double now, double dt);
 };

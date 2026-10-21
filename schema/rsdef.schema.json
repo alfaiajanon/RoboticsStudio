@@ -158,15 +158,34 @@
                 "battery": {
                     "type": "object", "required": ["capacity_mah", "curve"], "additionalProperties": false,
                     "properties": {
-                        "capacity_mah": { "type": "number", "exclusiveMinimum": 0 },
+                        "cells": { "type": "integer", "minimum": 1, "description": "cells in series; the curve and the thresholds are per cell (default 1)" },
+                        "capacity_mah": { "type": "number", "exclusiveMinimum": 0, "description": "rated capacity: at the datasheet's drain down to its cut-off voltage (= 0 %)" },
                         "curve": {
                             "type": "array", "minItems": 2,
                             "items": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "type": "number" } },
-                            "description": "[charge %, open-circuit V, internal ohm] points from 0 to 100 %, interpolated"
+                            "description": "[charge %, open-circuit V, internal ohm] per cell, interpolated; up to 100 %, with a point at 0 % (the rated cut-off); points below 0 % are the charge a cell still gives past it, down to its dead point"
+                        },
+                        "rate": {
+                            "type": "object", "required": ["available_fraction", "rate_constant_per_h"], "additionalProperties": false,
+                            "description": "Rate-capacity and recovery (Kinetic Battery Model): the load draws from an available well; the bound charge flows into it at rate_constant_per_h x (bound level - available level)",
+                            "properties": {
+                                "available_fraction": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+                                "rate_constant_per_h": { "type": "number", "exclusiveMinimum": 0 }
+                            }
+                        },
+                        "over_discharge_v": { "type": "number", "minimum": 0, "description": "per cell, open circuit: below it a real cell is damaged (a warning)" },
+                        "protection": {
+                            "type": "object", "required": ["cutoff_v"], "additionalProperties": false,
+                            "description": "A protection circuit (BMS): below cutoff_v per cell at the terminals for delay_ms it cuts the pack off until Stop",
+                            "properties": {
+                                "cutoff_v": { "type": "number", "exclusiveMinimum": 0 },
+                                "delay_ms": { "type": "number", "minimum": 0 },
+                                "fitted": { "type": "boolean", "description": "default for an instance (Inspector 'Protection circuit (BMS)'); default false" }
+                            }
                         }
                     }
                 },
-                "sources": { "type": "object", "additionalProperties": { "type": "string" }, "description": "supplies.<pin>, regulators.<id>, loads.<pin>, brownout, battery -> where the numbers come from (datasheet, measurement, estimate)" }
+                "sources": { "type": "object", "additionalProperties": { "type": "string" }, "description": "supplies.<pin>, regulators.<id>, loads.<pin>, brownout, battery, battery.rate, battery.protection -> where the numbers come from (datasheet, measurement, estimate)" }
             }
         },
         "kinematics": {

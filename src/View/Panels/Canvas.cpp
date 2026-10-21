@@ -787,7 +787,9 @@ static QList<PowerSignal> powerSignals(Project* project, ComponentInstance* comp
         for (const PinDef& p : bp->pins)
             if (p.isPower()) out.append({"power." + p.id + "_v", "V", QString("Voltage of the board's %1 rail").arg(p.id.toUpper())});
     } else if (bp->power.battery.present) {
-        out.append({"power.charge", "%", "State of charge"});
+        out.append({"power.charge", "%", "State of charge, as a fuel gauge reads it (0 % = the rated cut-off)"});
+        out.append({"power.charge_available", "%", "The charge the cell can give right now: falls faster than the "
+                                                   "charge under a heavy load, recovers at rest"});
         out.append({"power.battery_v", "V", "Voltage at the terminals"});
         out.append({"power.battery_a", "A", "Current drawn from the battery"});
     } else if (!PowerNetwork::supplyPin(comp).isEmpty()) {
@@ -805,12 +807,12 @@ static bool readPowerSignal(int uid, const QString& signal, double& v) {
     const PowerSystem& ps = sim->getPowerSystem();
     if (!ps.isActive()) return false;
     const QString what = signal.mid(6);   // after "power."
-    double pct = 0, volts = 0, amps = 0;
+    double pct = 0, volts = 0, amps = 0, avail = 0;
     if (what == "supply_v") { v = ps.supplyOf(uid); return v >= 0.0; }
     if (what == "supply_a") { v = ps.partCurrent(uid); return true; }
-    if (what == "charge" || what == "battery_v" || what == "battery_a") {
-        if (!ps.battery(uid, &pct, &volts, &amps)) return false;
-        v = what == "charge" ? pct : what == "battery_v" ? volts : amps;
+    if (what == "charge" || what == "charge_available" || what == "battery_v" || what == "battery_a") {
+        if (!ps.battery(uid, &pct, &volts, &amps, &avail)) return false;
+        v = what == "charge" ? pct : what == "charge_available" ? avail : what == "battery_v" ? volts : amps;
         return true;
     }
     if (what.endsWith("_v")) { v = ps.railVolts(uid, what.chopped(2)); return v >= 0.0; }
