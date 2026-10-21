@@ -1165,17 +1165,27 @@ void InspectorPanel::build_globalSettings(Project* project) {
         QString toDelete = scriptCombo->currentText();
         if (toDelete.isEmpty()) return;
 
-        if (QMessageBox::question(this, "Delete Script", "Delete " + toDelete + " from disk?",
+        // A sketch in its own folder goes with its .h / .cpp files.
+        const QString fullPath = project->getProjectDirectory() + "/" + toDelete;
+        const bool folder = Project::inSketchFolder(toDelete);
+        const QDir sketchDir = QFileInfo(fullPath).dir();
+        QStringList files{fullPath};
+        if (folder) {
+            files.clear();
+            for (const QString& f : sketchDir.entryList(QDir::Files)) files << sketchDir.filePath(f);
+        }
+        const QString what = folder ? QString("the sketch %1/ (%2 file%3)").arg(QFileInfo(toDelete).path()).arg(files.size()).arg(files.size() == 1 ? "" : "s")
+                                    : toDelete;
+        if (QMessageBox::question(this, "Delete Script", "Delete " + what + " from disk?",
                                    QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes) {
             return;
         }
 
-        // Undo writes the file back, so keep its content.
-        const QString fullPath = project->getProjectDirectory() + "/" + toDelete;
-        QByteArray content;
-        {
-            QFile file(fullPath);
-            if (file.open(QIODevice::ReadOnly)) content = file.readAll();
+        // Undo writes the files back, so keep their content.
+        QList<QPair<QString, QByteArray>> contents;
+        for (const QString& f : files) {
+            QFile file(f);
+            if (file.open(QIODevice::ReadOnly)) contents.append({f, file.readAll()});
         }
 
         QJsonArray newPaths;
@@ -1184,11 +1194,18 @@ void InspectorPanel::build_globalSettings(Project* project) {
         }
         int newActiveIndex = newPaths.isEmpty() ? -1 : 0;
 
+        const QString dirPath = sketchDir.absolutePath();
         Commands::setMcuScripts(newPaths, newActiveIndex, "Delete script",
-            [fullPath]() { QFile::remove(fullPath); },
-            [fullPath, content]() {
-                QFile file(fullPath);
-                if (file.open(QIODevice::WriteOnly)) file.write(content);
+            [contents, folder, dirPath]() {
+                for (const auto& c : contents) QFile::remove(c.first);
+                if (folder) QDir().rmdir(dirPath);   // only if empty
+            },
+            [contents, dirPath]() {
+                QDir().mkpath(dirPath);
+                for (const auto& c : contents) {
+                    QFile file(c.first);
+                    if (file.open(QIODevice::WriteOnly)) file.write(c.second);
+                }
             });
 
         // Only replace the editor's file if it was the deleted one.

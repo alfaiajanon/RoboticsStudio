@@ -943,23 +943,27 @@ void EditorWindow::setupMainViewport() {
         SimulationManager* sim = Application::getInstance()->getSimulationManager();
         if (sim->getState() != SimulationState::EDITING) return;
 
-        // The sketch's own errors and warnings, as markers in the script editor.
+        // The errors and warnings in the sketch's own files (.ino, .h, .cpp),
+        // as markers in the script editor, per file.
         Project* project = Application::getInstance()->getProject();
-        QList<LineMarker> markers;
+        QHash<QString, QList<LineMarker>> markers;
+        QString firstError;
         for (const FirmwareCompiler::Diagnostic& d : firmwareCompiler->diagnostics()) {
-            if (d.inSketch && d.severity != "note") markers.append({d.line, d.severity == "error", d.message});
+            if (!d.inSketch || d.severity == "note") continue;
+            markers[d.path].append({d.line, d.severity == "error", d.message});
+            if (firstError.isEmpty() && d.severity == "error") firstError = d.path;
         }
-        const QString sketchPath = project->getProjectDirectory() + "/" + project->activeSketchPath();
+        scriptPanel->setCompileMarkers(markers);
         if (!ok) {
-            // Show the sketch at its first error (opening it if another script is shown).
+            // Show the file with the first error (the sketch for a link error).
+            const QString target = firstError.isEmpty() ? project->getProjectDirectory() + "/" + project->activeSketchPath() : firstError;
             centerStack->setCurrentPage(scriptPanel);
-            if (QFileInfo(scriptPanel->currentPath()) != QFileInfo(sketchPath) && scriptPanel->confirmLeaveUnsaved())
-                scriptPanel->loadScript(sketchPath);
-            if (QFileInfo(scriptPanel->currentPath()) == QFileInfo(sketchPath)) scriptPanel->showDiagnostics(markers, true);
+            if (QFileInfo(scriptPanel->currentPath()) != QFileInfo(target) && scriptPanel->confirmLeaveUnsaved())
+                scriptPanel->loadScript(target);
+            scriptPanel->goToFirstError();
             Toast::showMessage(this, "Firmware didn't compile: see the marked lines and the Output panel", 3000);
             return;
         }
-        if (QFileInfo(scriptPanel->currentPath()) == QFileInfo(sketchPath)) scriptPanel->showDiagnostics(markers, false);
         Application::getInstance()->getProject()->setFirmwareBinary(firmwareCompiler->wasm());
         startRun();
     });

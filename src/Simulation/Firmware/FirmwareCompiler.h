@@ -32,18 +32,25 @@ class QProcess;
  * (Servo.h, robot_pins.h) the sketch includes itself, so the same file builds
  * for a real board. No Arduino-style automatic prototypes: declare a
  * function before using it.
+ *
+ * A sketch in its own folder (script/arm/arm.ino, an Arduino sketch folder)
+ * is that folder: the .ino plus every .cpp next to it, each compiled as its
+ * own translation unit and linked together, as the Arduino IDE does (a .cpp
+ * includes <Arduino.h> itself). A sketch outside such a folder (an older
+ * project's arm.ino at the project root) is the one file plus its headers.
  */
 class FirmwareCompiler : public QObject {
     Q_OBJECT
 
     public:
         struct Diagnostic {
-            QString file;        // the sketch's file name, a core header, or empty (linker)
+            QString file;        // the file's name (arm.ino, kinematics.cpp), a core header, or empty (linker)
+            QString path;        // absolute path when the file is one of the sketch's own, else empty
             int line = 0;
             int column = 0;
             QString severity;    // error / warning / note
             QString message;
-            bool inSketch = false;
+            bool inSketch = false;   // in one of the sketch's own files (path is set)
         };
 
         explicit FirmwareCompiler(QObject* parent = nullptr);
@@ -79,6 +86,8 @@ class FirmwareCompiler : public QObject {
         QList<Job> jobs;
         QString clang;
         QString sketchName;
+        QString sketchFile;    // absolute path of the .ino
+        QString sketchFolder;  // its folder (the user's headers and .cpp files)
         QString wasmPath;
         QByteArray result;
         QList<Diagnostic> diags;

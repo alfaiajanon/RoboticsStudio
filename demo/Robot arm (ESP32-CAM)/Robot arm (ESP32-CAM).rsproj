@@ -141,7 +141,7 @@
                     "self_connector": "general",
                     "snap_angle": -90
                 },
-                "firmware": "Robot arm (ESP32-CAM).ino",
+                "firmware": "script/robot_arm_esp32cam/robot_arm_esp32cam.ino",
                 "model_id": "esp32_cam",
                 "name": "ESP32-CAM",
                 "parameters": {
@@ -232,7 +232,7 @@
     "script": {
         "current": 0,
         "paths": [
-            "Robot arm (ESP32-CAM).ino"
+            "script/robot_arm_esp32cam/robot_arm_esp32cam.ino"
         ]
     },
     "stage": {
@@ -371,7 +371,7 @@
         "script": {
             "current": 0,
             "paths": [
-                "stage.js"
+                "script/stage.js"
             ]
         }
     },

@@ -1,4 +1,6 @@
 #include "NewProjectDialog.h"
+#include <QFileInfo>
+#include "Document/Project.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -98,8 +100,12 @@ void NewProjectDialog::onCreateClicked() {
 void NewProjectDialog::generateProjectScaffolding(const QString& folderPath, const QString& projectName) {
     QDir dir(folderPath);
 
-    // 1. The firmware sketch (no parts yet: a bare setup()/loop())
-    QString sketchFileName = projectName + ".ino";
+    // 1. The firmware sketch (no parts yet: a bare setup()/loop()), in a
+    //    sketch folder of its own: script/<name>/<name>.ino
+    QString sketch = Project::sketchName(projectName);
+    if (sketch.isEmpty()) sketch = "sketch";
+    const QString sketchFileName = QString("%1/%2/%2.ino").arg(Project::kScriptDir, sketch);
+    dir.mkpath(QFileInfo(sketchFileName).path());
     QFile sketchFile(dir.absoluteFilePath(sketchFileName));
     if (sketchFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
         sketchFile.write(firmwareTemplate(nullptr, m_levelCombo->currentData().toString() == "real").toUtf8());

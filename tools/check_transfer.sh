@@ -3,8 +3,8 @@
 # compile for its real board, unchanged. Two kinds of sketch:
 #   - Real projects (demo/<name>/<name>.rsproj with "level": "real"): each
 #     board's firmware slot is compiled for that board's fqbn (from its
-#     .rsdef), with the user's headers from the project folder. These
-#     sketches use the board's own pins, as on the real board.
+#     .rsdef), with the sketch's own files (its sketch folder's .h and .cpp).
+#     These sketches use the board's own pins, as on the real board.
 #   - Prototype sketches with a board folder next to them
 #     (examples/firmware/<name>/uno/robot_pins.h, .../esp32cam/...): the
 #     folder holds a hand-written robot_pins.h with the sketch's names on that
@@ -64,8 +64,15 @@ shopt -s nullglob
 while IFS=$'\t' read -r ino fqbn label; do
     [ -n "$ino" ] || continue
     [ -z "$ONLY" ] || [ "$ONLY" = "$label" ] || continue
-    headers=("$(dirname "$ino")"/*.h)
-    compile "$ino" "$fqbn" "$label" "${headers[@]}"
+    # The sketch's own files: a sketch folder (script/<name>/) brings its
+    # headers and .cpp files; a sketch at the project root only its headers.
+    sketchdir="$(dirname "$ino")"
+    if [ "$(basename "$sketchdir")" = "$(basename "$ino" .ino)" ]; then
+        files=("$sketchdir"/*.h "$sketchdir"/*.hpp "$sketchdir"/*.cpp)
+    else
+        files=("$sketchdir"/*.h "$sketchdir"/*.hpp)
+    fi
+    compile "$ino" "$fqbn" "$label" "${files[@]}"
 done < <(python3 - "$ROOT" <<'EOF'
 import glob, json, os, sys
 root = sys.argv[1]

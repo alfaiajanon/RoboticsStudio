@@ -161,7 +161,7 @@ Rules:
 
 ## 8. Robotics library
 
-- The **kinematic chain** is extracted from the assembly: joints, axes and link transforms from the connector chain. Firmware can query it, so sketches no longer hard-code geometry (as `demo/Robot arm/Robot arm.ino` does today).
+- The **kinematic chain** is extracted from the assembly: joints, axes and link transforms from the connector chain. Firmware can query it, so sketches no longer hard-code geometry (as `demo/Robot arm/script/robot_arm/robot_arm.ino` does today).
 - A small C++ library on top: forward kinematics, analytic and numeric IK, trajectory generation (trapezoid, S-curve), PID with anti-windup, filters (low-pass, complementary, alpha-beta), diff-drive odometry.
 - It runs as part of the firmware and uses only the sensors the robot actually has; it never reads simulation-only values.
 - Optional: URDF export from the same chain.

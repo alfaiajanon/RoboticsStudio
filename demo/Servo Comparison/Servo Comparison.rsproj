@@ -132,7 +132,7 @@
     "script": {
         "current": 0,
         "paths": [
-            "Servo Comparison.ino"
+            "script/servo_comparison/servo_comparison.ino"
         ]
     },
     "version": "0.3.0-alpha"

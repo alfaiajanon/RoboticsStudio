@@ -12,7 +12,10 @@
 #include <QScrollBar>
 #include <QTimer>
 #include <QSplitter>
-#include <QListWidget>
+#include <QTreeWidget>
+#include <QTreeWidgetItemIterator>
+#include <QHeaderView>
+#include <QMenu>
 #include <QToolButton>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -42,7 +45,8 @@ namespace {
 
 enum class ScriptKind { Mcu, Stage };
 constexpr int ROLE_KIND = Qt::UserRole;       // ScriptKind as int
-constexpr int ROLE_PATH = Qt::UserRole + 1;   // path relative to the project dir
+constexpr int ROLE_PATH = Qt::UserRole + 1;   // path relative to the project dir (a unit: its .ino)
+constexpr int ROLE_UNIT = Qt::UserRole + 2;   // true on a sketch unit row
 
 const char* STAGE_SCRIPT_TEMPLATE = R"(// Stage script: drives the controlled props, next to (not inside) the robot.
 // Globals:
@@ -90,6 +94,51 @@ QIcon kindBadge(ScriptKind kind) {
 // A robot script that no longer runs (an old project's .js).
 QIcon staleBadge() {
     return badge(QColor("#E53935"), "!");
+}
+
+// A sketch unit: a small chip (body + pins), painted so it needs no SVG support.
+QIcon unitIcon() {
+    const qreal dpr = 2.0;
+    QPixmap pm(QSize(18, 18) * dpr);
+    pm.setDevicePixelRatio(dpr);
+    pm.fill(Qt::transparent);
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::Antialiasing);
+    const QColor blue("#6FA8F5");
+    p.setPen(QPen(blue, 1.4, Qt::SolidLine, Qt::RoundCap));
+    for (qreal t : {6.5, 9.0, 11.5}) {
+        p.drawLine(QPointF(t, 1.5), QPointF(t, 4.0));
+        p.drawLine(QPointF(t, 14.0), QPointF(t, 16.5));
+        p.drawLine(QPointF(1.5, t), QPointF(4.0, t));
+        p.drawLine(QPointF(14.0, t), QPointF(16.5, t));
+    }
+    p.setBrush(QColor("#1E88E5"));
+    p.drawRoundedRect(QRectF(4.0, 4.0, 10.0, 10.0), 2, 2);
+    return QIcon(pm);
+}
+
+// A file inside a sketch unit, by its extension.
+QIcon fileBadge(const QString& path) {
+    const QString ext = QFileInfo(path).suffix().toLower();
+    if (ext == "ino") return badge(QColor("#1E88E5"), "M");
+    if (ext == "cpp") return badge(QColor("#00897B"), "C");
+    return badge(QColor("#7E8792"), "H");
+}
+
+const char* kToolButtonStyle = R"(
+    QToolButton { background: transparent; color: #a6a8ae; border: none; border-radius: 3px;
+                  font-size: 16px; font-weight: bold; min-width: 24px; min-height: 24px; }
+    QToolButton:hover { background-color: #353639; color: #e6e7e9; }
+    QToolButton:disabled { color: #55575d; }
+)";
+
+// A file name the user typed for a sketch's .h or .cpp: letters, digits, '_', '-'.
+QString fileStem(const QString& typed) {
+    QString n = typed.trimmed();
+    n.remove(QRegularExpression("\\.(h|hpp|cpp|ino)$", QRegularExpression::CaseInsensitiveOption));
+    n.replace(QRegularExpression("[^A-Za-z0-9_-]+"), "_");
+    n.remove(QRegularExpression("^[^A-Za-z0-9_]+"));
+    return n;
 }
 
 }
@@ -152,14 +201,14 @@ void ScriptPanel::setupUI() {
     PanelCorners::install(editorSide);
     splitter->setStretchFactor(0, 0);
     splitter->setStretchFactor(1, 1);
-    splitter->setSizes({220, 9999});
+    splitter->setSizes({250, 9999});
 }
 
 
 
 QWidget* ScriptPanel::buildScriptList() {
     QWidget* side = new QWidget();
-    side->setMinimumWidth(140);
+    side->setMinimumWidth(160);
     QVBoxLayout* layout = new QVBoxLayout(side);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
@@ -174,29 +223,34 @@ QWidget* ScriptPanel::buildScriptList() {
 
     addButton = new QToolButton(header);
     addButton->setText("+");
-    addButton->setToolTip("New script (MCU or stage)");
+    addButton->setToolTip("New firmware sketch (its own unit) or stage script");
     addButton->setCursor(Qt::PointingHandCursor);
-    addButton->setStyleSheet(R"(
-        QToolButton { background: transparent; color: #a6a8ae; border: none; border-radius: 3px;
-                      font-size: 16px; font-weight: bold; min-width: 24px; min-height: 24px; }
-        QToolButton:hover { background-color: #353639; color: #e6e7e9; }
-        QToolButton:disabled { color: #55575d; }
-    )");
+    addButton->setStyleSheet(kToolButtonStyle);
     connect(addButton, &QToolButton::clicked, this, &ScriptPanel::createScript);
 
     headerLayout->addWidget(title);
     headerLayout->addStretch();
     headerLayout->addWidget(addButton);
 
-    scriptList = new QListWidget(side);
+    scriptList = new QTreeWidget(side);
     scriptList->setFrameShape(QFrame::NoFrame);
     scriptList->setIconSize(QSize(18, 18));
-    // Selected script: subtle row + accent bar on the left (not a full blue row)
+    scriptList->setColumnCount(2);
+    scriptList->setHeaderHidden(true);
+    scriptList->setRootIsDecorated(true);
+    scriptList->setIndentation(14);
+    scriptList->header()->setStretchLastSection(false);
+    scriptList->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    scriptList->header()->setSectionResizeMode(1, QHeaderView::Fixed);
+    scriptList->header()->resizeSection(1, 28);
+    scriptList->setContextMenuPolicy(Qt::CustomContextMenu);
+    // Selected file: subtle row + accent bar on the left (not a full blue row)
     scriptList->setStyleSheet(
-        "QListWidget::item { padding: 4px 2px; border-left: 3px solid transparent; }"
-        "QListWidget::item:hover { background-color: #232427; }"
-        "QListWidget::item:selected { background-color: #26272a; border-left: 3px solid #4a8fe7; color: #e6e7e9; }");
-    connect(scriptList, &QListWidget::itemClicked, this, &ScriptPanel::onScriptItemClicked);
+        "QTreeWidget::item { padding: 3px 2px; border-left: 3px solid transparent; }"
+        "QTreeWidget::item:hover { background-color: #232427; }"
+        "QTreeWidget::item:selected { background-color: #26272a; border-left: 3px solid #4a8fe7; color: #e6e7e9; }");
+    connect(scriptList, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem* item, int) { onScriptItemClicked(item); });
+    connect(scriptList, &QTreeWidget::customContextMenuRequested, this, &ScriptPanel::showFileMenu);
 
     layout->addWidget(header);
     layout->addWidget(scriptList);
@@ -211,46 +265,80 @@ void ScriptPanel::refresh() {
     if (!app) return;
     Project* project = app->getProject();
     if (!project) return;
+    const QString root = project->getProjectDirectory();
 
     // At the Real level a sketch runs on the boards whose slot holds it.
     const bool real = project->getLevel() == ProjectLevel::Real;
     QHash<QString, QStringList> boardsOf;
     if (real) for (ComponentInstance* b : project->boards()) if (!b->firmware.isEmpty()) boardsOf[b->firmware] << b->name;
 
-    auto addItem = [this, real, &boardsOf](ScriptKind kind, const QString& rel, bool active) {
-        const QStringList boards = kind == ScriptKind::Mcu ? boardsOf.value(rel) : QStringList();
-        QListWidgetItem* item = new QListWidgetItem(kindBadge(kind), boards.isEmpty() ? rel : rel + "  → " + boards.join(", "), scriptList);
-        item->setData(ROLE_KIND, static_cast<int>(kind));
-        item->setData(ROLE_PATH, rel);
-        QString kindName = kind == ScriptKind::Mcu ? "Firmware sketch" : "Stage script";
-        if (kind == ScriptKind::Mcu && real)
-            item->setToolTip(boards.isEmpty() ? kindName + " (no board runs it: pick it in a board's Inspector)"
-                                              : kindName + " (runs on " + boards.join(", ") + ")");
-        else
-            item->setToolTip(active ? kindName + " (active, runs on Play)" : kindName);
-        if (kind == ScriptKind::Mcu && rel.endsWith(".js", Qt::CaseInsensitive)) {
-            // An old project's JavaScript robot script: no longer runs.
-            item->setIcon(staleBadge());
-            item->setToolTip("JavaScript robot scripts were removed: this script does not run.\n"
-                             "Port it to a firmware sketch (.ino), see docs/user/firmware.md.");
-        }
-        if (active) {
-            QFont f = item->font();
-            f.setBold(true);
-            item->setFont(f);
-        }
+    auto bold = [](QTreeWidgetItem* item) {
+        QFont f = item->font(0);
+        f.setBold(true);
+        item->setFont(0, f);
+    };
+    auto fileItem = [](QTreeWidgetItem* parent, QTreeWidget* tree, const QIcon& icon, const QString& text, ScriptKind kind,
+                       const QString& rel) {
+        QTreeWidgetItem* item = parent ? new QTreeWidgetItem(parent) : new QTreeWidgetItem(tree);
+        item->setIcon(0, icon);
+        item->setText(0, text);
+        item->setData(0, ROLE_KIND, static_cast<int>(kind));
+        item->setData(0, ROLE_PATH, rel);
+        return item;
     };
 
-    QJsonArray mcuPaths = project->getScriptPaths();
-    int mcuCurrent = project->getCurrentScriptIdx();
+    const QJsonArray mcuPaths = project->getScriptPaths();
+    const int mcuCurrent = project->getCurrentScriptIdx();
     for (int i = 0; i < mcuPaths.size(); ++i) {
         const QString rel = mcuPaths[i].toString();
-        addItem(ScriptKind::Mcu, rel, real ? rel == project->activeSketchPath() : i == mcuCurrent);
+        const bool active = real ? rel == project->activeSketchPath() : i == mcuCurrent;
+        if (rel.endsWith(".js", Qt::CaseInsensitive)) {
+            // An old project's JavaScript robot script: no longer runs.
+            QTreeWidgetItem* item = fileItem(nullptr, scriptList, staleBadge(), rel, ScriptKind::Mcu, rel);
+            item->setToolTip(0, "JavaScript robot scripts were removed: this script does not run.\n"
+                                "Port it to a firmware sketch (.ino), see docs/user/firmware.md.");
+            continue;
+        }
+        // The sketch unit: its .ino first, then the folder's headers and sources.
+        const bool folder = Project::inSketchFolder(rel);
+        const QFileInfo info(root + "/" + rel);
+        const QStringList boards = boardsOf.value(rel);
+        const QString unitName = folder ? info.dir().dirName() : info.completeBaseName();
+        QTreeWidgetItem* unit = fileItem(nullptr, scriptList, unitIcon(),
+                                         boards.isEmpty() ? unitName : unitName + "  → " + boards.join(", "), ScriptKind::Mcu, rel);
+        unit->setData(0, ROLE_UNIT, true);
+        QString tip = folder ? QString("Firmware sketch %1/ (an Arduino sketch folder): the .ino, plus its .h and .cpp files").arg(QFileInfo(rel).path())
+                             : QString("Firmware sketch %1 (a single file at the project root; new sketches get a folder of their own)").arg(rel);
+        if (real) tip += boards.isEmpty() ? "\nNo board runs it: pick it in a board's Inspector." : "\nRuns on " + boards.join(", ");
+        else if (active) tip += "\nActive: runs on Play";
+        unit->setToolTip(0, tip);
+        if (active) bold(unit);
+        fileItem(unit, nullptr, fileBadge(rel), info.fileName(), ScriptKind::Mcu, rel)->setToolTip(0, "The sketch: setup() and loop()");
+        if (folder) {
+            const QString dirRel = QFileInfo(rel).path();
+            for (const QString& f : info.dir().entryList({"*.h", "*.hpp", "*.cpp"}, QDir::Files, QDir::Name))
+                fileItem(unit, nullptr, fileBadge(f), f, ScriptKind::Mcu, dirRel + "/" + f)
+                    ->setToolTip(0, f.endsWith(".cpp") ? "Compiled on its own and linked with the sketch (include <Arduino.h> here yourself)"
+                                                       : "A header of the sketch: #include \"" + f + "\"");
+            QToolButton* plus = new QToolButton(scriptList);
+            plus->setText("+");
+            plus->setToolTip("Add a .h or .cpp file to this sketch");
+            plus->setCursor(Qt::PointingHandCursor);
+            plus->setStyleSheet(kToolButtonStyle);
+            plus->setEnabled(addButton->isEnabled());
+            connect(plus, &QToolButton::clicked, this, [this, rel]() { addFileToSketch(rel); });
+            scriptList->setItemWidget(unit, 1, plus);
+        }
+        unit->setExpanded(true);
     }
 
     const Stage::Data& stage = project->getStage()->getData();
-    for (int i = 0; i < stage.scripts.size(); ++i)
-        addItem(ScriptKind::Stage, stage.scripts[i], i == stage.currentScript);
+    for (int i = 0; i < stage.scripts.size(); ++i) {
+        QTreeWidgetItem* item = fileItem(nullptr, scriptList, kindBadge(ScriptKind::Stage), QFileInfo(stage.scripts[i]).fileName(),
+                                         ScriptKind::Stage, stage.scripts[i]);
+        item->setToolTip(0, i == stage.currentScript ? "Stage script (active, runs on Play)" : "Stage script");
+        if (i == stage.currentScript) bold(item);
+    }
 
     syncListSelection();
 }
@@ -259,22 +347,21 @@ void ScriptPanel::refresh() {
 
 void ScriptPanel::setCreationEnabled(bool enabled) {
     addButton->setEnabled(enabled);
+    for (QTreeWidgetItemIterator it(scriptList); *it; ++it)
+        if (QWidget* w = scriptList->itemWidget(*it, 1)) w->setEnabled(enabled);
 }
 
 
 
-// Highlights the list row of the file open in the editor.
+// Highlights the row of the file open in the editor.
 void ScriptPanel::syncListSelection() {
     Project* project = Application::getInstance() ? Application::getInstance()->getProject() : nullptr;
-    QListWidgetItem* match = nullptr;
+    QTreeWidgetItem* match = nullptr;
     if (project && !currentFilePath.isEmpty()) {
-        QString open = QDir::cleanPath(currentFilePath);
-        for (int i = 0; i < scriptList->count(); ++i) {
-            QListWidgetItem* item = scriptList->item(i);
-            if (QDir::cleanPath(project->getProjectDirectory() + "/" + item->data(ROLE_PATH).toString()) == open) {
-                match = item;
-                break;
-            }
+        const QString open = QDir::cleanPath(currentFilePath);
+        for (QTreeWidgetItemIterator it(scriptList); *it && !match; ++it) {
+            if ((*it)->data(0, ROLE_UNIT).toBool()) continue;   // the unit's .ino row is the match
+            if (QDir::cleanPath(project->getProjectDirectory() + "/" + (*it)->data(0, ROLE_PATH).toString()) == open) match = *it;
         }
     }
     QSignalBlocker block(scriptList);
@@ -284,9 +371,9 @@ void ScriptPanel::syncListSelection() {
 
 
 
-void ScriptPanel::onScriptItemClicked(QListWidgetItem* item) {
+void ScriptPanel::onScriptItemClicked(QTreeWidgetItem* item) {
     Project* project = Application::getInstance()->getProject();
-    QString path = project->getProjectDirectory() + "/" + item->data(ROLE_PATH).toString();
+    QString path = project->getProjectDirectory() + "/" + item->data(0, ROLE_PATH).toString();
     if (QDir::cleanPath(path) == QDir::cleanPath(currentFilePath)) return;
 
     if (!confirmLeaveUnsaved()) {
@@ -295,6 +382,28 @@ void ScriptPanel::onScriptItemClicked(QListWidgetItem* item) {
     }
     loadScript(path);
     syncListSelection();
+}
+
+
+
+// Right click on a sketch's .h / .cpp: delete it (the .ino goes with its sketch,
+// from the Inspector's script list).
+void ScriptPanel::showFileMenu(const QPoint& pos) {
+    QTreeWidgetItem* item = scriptList->itemAt(pos);
+    Project* project = Application::getInstance()->getProject();
+    if (!item || !project || item->data(0, ROLE_UNIT).toBool() || !addButton->isEnabled()) return;
+    const QString rel = item->data(0, ROLE_PATH).toString();
+    const QString ext = QFileInfo(rel).suffix().toLower();
+    if (ext != "h" && ext != "hpp" && ext != "cpp") return;
+    QMenu menu(this);
+    QAction* del = menu.addAction("Delete " + QFileInfo(rel).fileName() + "...");
+    if (menu.exec(scriptList->viewport()->mapToGlobal(pos)) != del) return;
+    const QString full = project->getProjectDirectory() + "/" + rel;
+    if (QMessageBox::question(this, "Delete File", "Delete " + rel + " from disk? This can't be undone.",
+                              QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes) return;
+    if (QDir::cleanPath(full) == QDir::cleanPath(currentFilePath)) unloadScript();
+    if (!QFile::remove(full)) Log::error("Could not delete " + full);
+    refresh();
 }
 
 
@@ -312,10 +421,11 @@ bool ScriptPanel::confirmLeaveUnsaved() {
 
 
 /*
- * "+" dialog: file name + kind. The file is created from the kind's template
- * (an existing file of that name is reused, not overwritten) and registered
- * in the project: firmware sketches in "script", stage scripts in "stage.script".
- * Either becomes its kind's active script when that kind has none.
+ * "+" dialog: name + kind. A firmware sketch gets a folder of its own,
+ * script/<name>/<name>.ino (an Arduino sketch folder), from the starter
+ * template; a stage script is script/<name>.js. Registered in the project:
+ * sketches in "script", stage scripts in "stage.script". Either becomes its
+ * kind's active script when that kind has none.
  */
 void ScriptPanel::createScript() {
     Application* app = Application::getInstance();
@@ -324,40 +434,44 @@ void ScriptPanel::createScript() {
 
     QDialog dialog(this);
     dialog.setWindowTitle("New Script");
-    dialog.setMinimumWidth(340);
+    dialog.setMinimumWidth(360);
     QFormLayout* form = new QFormLayout(&dialog);
 
     QComboBox* kindCombo = new QComboBox(&dialog);
     kindCombo->addItem(kindBadge(ScriptKind::Mcu), "Firmware sketch (.ino, controls the robot)", static_cast<int>(ScriptKind::Mcu));
     kindCombo->addItem(kindBadge(ScriptKind::Stage), "Stage script (JavaScript, drives props)", static_cast<int>(ScriptKind::Stage));
     QLineEdit* nameEdit = new QLineEdit(&dialog);
-    auto extensionOf = [kindCombo]() {
-        return static_cast<ScriptKind>(kindCombo->currentData().toInt()) == ScriptKind::Mcu ? QString(".ino") : QString(".js");
+    QLabel* hint = new QLabel(&dialog);
+    hint->setWordWrap(true);
+    hint->setStyleSheet("color: #8a8d93;");
+    auto isMcu = [kindCombo]() { return static_cast<ScriptKind>(kindCombo->currentData().toInt()) == ScriptKind::Mcu; };
+    auto relOf = [isMcu](const QString& n) {
+        return isMcu() ? QString("%1/%2/%2.ino").arg(Project::kScriptDir, n) : QString("%1/%2.js").arg(Project::kScriptDir, n);
     };
-    auto updatePlaceholder = [nameEdit, extensionOf]() { nameEdit->setPlaceholderText("e.g. walker" + extensionOf()); };
-    updatePlaceholder();
-    connect(kindCombo, &QComboBox::currentIndexChanged, &dialog, updatePlaceholder);
+    auto update = [nameEdit, hint, isMcu, relOf]() {
+        nameEdit->setPlaceholderText(isMcu() ? "e.g. walker" : "e.g. traffic");
+        const QString n = isMcu() ? Project::sketchName(nameEdit->text()) : fileStem(nameEdit->text());
+        hint->setText(n.isEmpty() ? QString() : "Creates " + relOf(n) + (isMcu() ? " (a sketch folder: add .h / .cpp files with its \"+\")" : ""));
+    };
+    update();
+    connect(kindCombo, &QComboBox::currentIndexChanged, &dialog, update);
+    connect(nameEdit, &QLineEdit::textChanged, &dialog, update);
     form->addRow("Type:", kindCombo);
-    form->addRow("File name:", nameEdit);
+    form->addRow("Name:", nameEdit);
+    form->addRow(hint);
 
     QDialogButtonBox* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
     form->addRow(buttons);
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
 
-    const QJsonArray mcuPaths = project->getScriptPaths();
-    const QStringList stagePaths = project->getStage()->getData().scripts;
-    QString name;
+    QString rel;
     connect(buttons, &QDialogButtonBox::accepted, &dialog, [&]() {
-        name = nameEdit->text().trimmed();
-        if (name.isEmpty()) return;
-        // A firmware .cpp stays .cpp; any other extension becomes the kind's own.
-        const bool keepCpp = extensionOf() == ".ino" && name.endsWith(".cpp", Qt::CaseInsensitive);
-        if (!keepCpp && !name.endsWith(extensionOf(), Qt::CaseInsensitive)) {
-            name.remove(QRegularExpression("\\.(js|ino|cpp)$", QRegularExpression::CaseInsensitiveOption));
-            name += extensionOf();
-        }
-        if (mcuPaths.contains(name) || stagePaths.contains(name)) {
-            QMessageBox::warning(&dialog, "New Script", name + " is already a project script.");
+        const QString n = isMcu() ? Project::sketchName(nameEdit->text()) : fileStem(nameEdit->text());
+        if (n.isEmpty()) return;
+        rel = relOf(n);
+        const QString full = project->getProjectDirectory() + "/" + rel;
+        if (QFileInfo::exists(isMcu() ? QFileInfo(full).path() : full)) {
+            QMessageBox::warning(&dialog, "New Script", rel + (isMcu() ? ": that sketch folder already exists." : " already exists."));
             return;
         }
         dialog.accept();
@@ -366,8 +480,9 @@ void ScriptPanel::createScript() {
     if (dialog.exec() != QDialog::Accepted) return;
     const ScriptKind kind = static_cast<ScriptKind>(kindCombo->currentData().toInt());
 
-    QString fullPath = project->getProjectDirectory() + "/" + name;
-    if (!QFile::exists(fullPath)) {
+    const QString fullPath = project->getProjectDirectory() + "/" + rel;
+    QDir().mkpath(QFileInfo(fullPath).path());
+    {
         QFile file(fullPath);
         if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
             Log::error("ScriptPanel could not create " + fullPath);
@@ -381,16 +496,82 @@ void ScriptPanel::createScript() {
         QJsonArray paths = project->getScriptPaths();
         int current = project->getCurrentScriptIdx();
         bool hadActive = current >= 0 && current < paths.size();
-        paths.append(name);
+        paths.append(rel);
         Commands::setMcuScripts(paths, hadActive ? current : paths.size() - 1, "Add script");
     } else {
         // undoable stage edit; its reload refreshes the editor (and this list)
-        app->getEditor()->stagePanel->addScript(name);
+        app->getEditor()->stagePanel->addScript(rel);
     }
 
     if (!confirmLeaveUnsaved()) return;
     loadScript(fullPath);
     refresh();
+}
+
+
+
+// A sketch unit's "+": a header or a source file in the sketch's folder. A
+// .cpp is compiled on its own and linked with the sketch, so it includes
+// <Arduino.h> (and its own header, if there is one) itself.
+void ScriptPanel::addFileToSketch(const QString& sketchRel) {
+    Project* project = Application::getInstance()->getProject();
+    if (!project || !Project::inSketchFolder(sketchRel)) return;
+    const QDir folder = QFileInfo(project->getProjectDirectory() + "/" + sketchRel).dir();
+
+    QDialog dialog(this);
+    dialog.setWindowTitle("Add File to " + folder.dirName());
+    dialog.setMinimumWidth(340);
+    QFormLayout* form = new QFormLayout(&dialog);
+    QComboBox* typeCombo = new QComboBox(&dialog);
+    typeCombo->addItem(fileBadge("x.h"), "Header (.h)", ".h");
+    typeCombo->addItem(fileBadge("x.cpp"), "Source (.cpp, compiled and linked with the sketch)", ".cpp");
+    QLineEdit* nameEdit = new QLineEdit(&dialog);
+    nameEdit->setPlaceholderText("e.g. kinematics");
+    form->addRow("Type:", typeCombo);
+    form->addRow("Name:", nameEdit);
+    QDialogButtonBox* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    form->addRow(buttons);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    QString fileName;
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, [&]() {
+        const QString stem = fileStem(nameEdit->text());
+        if (stem.isEmpty()) return;
+        fileName = stem + typeCombo->currentData().toString();
+        if (stem == folder.dirName() && fileName.endsWith(".cpp")) {
+            QMessageBox::warning(&dialog, "Add File", "That name is the sketch's own: pick another.");
+            return;
+        }
+        if (folder.exists(fileName)) {
+            QMessageBox::warning(&dialog, "Add File", fileName + " already exists in this sketch.");
+            return;
+        }
+        dialog.accept();
+    });
+    if (dialog.exec() != QDialog::Accepted) return;
+
+    const QString stem = QFileInfo(fileName).completeBaseName();
+    QString text;
+    if (fileName.endsWith(".h")) {
+        text = QString("// %1: part of the %2 sketch. Include it with #include \"%1\".\n#pragma once\n\n#include <Arduino.h>\n\n")
+                   .arg(fileName, folder.dirName());
+    } else {
+        text = QString("// %1: part of the %2 sketch, compiled on its own and linked with it.\n#include <Arduino.h>\n")
+                   .arg(fileName, folder.dirName());
+        if (folder.exists(stem + ".h")) text += QString("#include \"%1.h\"\n").arg(stem);
+        text += "\n";
+    }
+    const QString full = folder.filePath(fileName);
+    QFile file(full);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        Log::error("ScriptPanel could not create " + full);
+        return;
+    }
+    file.write(text.toUtf8());
+    file.close();
+    refresh();
+    if (!confirmLeaveUnsaved()) return;
+    loadScript(full);
+    syncListSelection();
 }
 
 void ScriptPanel::loadScript(const QString& fullpath) {
@@ -416,6 +597,7 @@ void ScriptPanel::loadScript(const QString& fullpath) {
     textEditor->setLanguage(suffix == "ino" || suffix == "cpp" || suffix == "h" ? CodeLanguage::Cpp : CodeLanguage::JavaScript);
     textEditor->clearLineMarkers();
     textEditor->setPlainText(content);
+    if (compileMarkers.contains(QDir::cleanPath(fullpath))) textEditor->setLineMarkers(compileMarkers.value(QDir::cleanPath(fullpath)));
     textEditor->horizontalScrollBar()->setValue(0);
     textEditor->verticalScrollBar()->setValue(0);
     connect(textEditor, &QPlainTextEdit::textChanged, this, &ScriptPanel::onEditorTextChanged);
@@ -429,10 +611,14 @@ void ScriptPanel::loadScript(const QString& fullpath) {
     statusLabel->setText(fileInfo.fileName() + " (External Editor Preferred)");
 }
 
-void ScriptPanel::showDiagnostics(const QList<LineMarker>& markers, bool goToFirstError) {
-    textEditor->setLineMarkers(markers);
-    if (!goToFirstError) return;
-    for (const LineMarker& m : markers) {
+void ScriptPanel::setCompileMarkers(const QHash<QString, QList<LineMarker>>& byPath) {
+    compileMarkers.clear();
+    for (auto it = byPath.begin(); it != byPath.end(); ++it) compileMarkers.insert(QDir::cleanPath(it.key()), it.value());
+    textEditor->setLineMarkers(compileMarkers.value(QDir::cleanPath(currentFilePath)));
+}
+
+void ScriptPanel::goToFirstError() {
+    for (const LineMarker& m : compileMarkers.value(QDir::cleanPath(currentFilePath))) {
         if (m.error) { textEditor->goToLine(m.line); return; }
     }
 }

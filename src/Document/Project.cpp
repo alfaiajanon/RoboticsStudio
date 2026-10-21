@@ -8,6 +8,7 @@
 #include "Simulation/ErrorSystem/EmulatorFactory.h"
 
 #include <QDir>
+#include <QRegularExpression>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -215,6 +216,23 @@ QStringList Project::boardDefines() const {
 
 
 
+bool Project::inSketchFolder(const QString& sketchPath) {
+    const QFileInfo info(sketchPath);
+    return info.dir().dirName() == info.completeBaseName();
+}
+
+
+
+QString Project::sketchName(const QString& typed) {
+    QString n = typed.trimmed();
+    n.remove(QRegularExpression("\\.(ino|cpp)$", QRegularExpression::CaseInsensitiveOption));
+    n.replace(QRegularExpression("[^A-Za-z0-9_.-]+"), "_");
+    n.remove(QRegularExpression("^[^A-Za-z0-9]+"));
+    return n.left(63);
+}
+
+
+
 // Copies a folder tree; false on the first failure.
 static bool copyTree(const QString& from, const QString& to) {
     if (!QDir().mkpath(to)) return false;
@@ -252,16 +270,26 @@ QString Project::createRealCopy(const QString& destDir, const QString& name, QSt
     doc["wiring"] = QJsonObject{{"wires", QJsonArray()}, {"layout", QJsonObject()}};
 
     // The sketches that use the Prototype's generated names get the user's
-    // own robot_pins.h with the same names, not wired yet.
-    bool usesPinsHeader = false;
+    // own robot_pins.h with the same names, not wired yet, in their folder.
+    QStringList pinsFolders;
     for (const QJsonValue& v : scriptPaths) {
         const QString rel = v.toString();
         if (!rel.endsWith(".ino", Qt::CaseInsensitive) && !rel.endsWith(".cpp", Qt::CaseInsensitive)) continue;
-        QFile sketch(directoryPath + "/" + rel);
-        if (sketch.open(QFile::ReadOnly) && QString::fromUtf8(sketch.readAll()).contains("\"robot_pins.h\"")) usesPinsHeader = true;
+        QStringList files{directoryPath + "/" + rel};
+        const QDir folder = QFileInfo(directoryPath + "/" + rel).dir();
+        if (inSketchFolder(rel))
+            for (const QString& f : folder.entryList({"*.h", "*.hpp", "*.cpp"}, QDir::Files)) files << folder.filePath(f);
+        bool uses = false;
+        for (const QString& f : files) {
+            QFile file(f);
+            uses = uses || (file.open(QFile::ReadOnly) && QString::fromUtf8(file.readAll()).contains("\"robot_pins.h\""));
+        }
+        const QString dest = QFileInfo(destDir + "/" + rel).absolutePath();
+        if (uses && !pinsFolders.contains(dest)) pinsFolders << dest;
     }
-    const QString pinsPath = destDir + "/robot_pins.h";
-    if (usesPinsHeader && !QFileInfo::exists(pinsPath)) {
+    for (const QString& folder : pinsFolders) {
+        const QString pinsPath = folder + "/robot_pins.h";
+        if (QFileInfo::exists(pinsPath)) continue;
         QList<BoardPin> pins = idealBoard().pins();
         for (BoardPin& p : pins) p.number = -1;
         const QString intro = QString(
@@ -270,9 +298,9 @@ QString Project::createRealCopy(const QString& destDir, const QString& name, QSt
             "// Add a board (Components -> Boards), wire each part on the Wiring page (Ctrl+3), then put\n"
             "// the board pin each name is wired to here: a number (9) or the board's name for it (A0).\n"
             "// -1 = not wired yet.\n").arg(name, getName());
-        QFile out(pinsPath);
-        if (!out.open(QFile::WriteOnly | QFile::Truncate)) return fail("Can't write " + pinsPath);
-        out.write(BoardPins::header(pins, intro).toUtf8());
+        QFile pinsOut(pinsPath);
+        if (!pinsOut.open(QFile::WriteOnly | QFile::Truncate)) return fail("Can't write " + pinsPath);
+        pinsOut.write(BoardPins::header(pins, intro).toUtf8());
     }
 
     const QString path = destDir + "/" + name + ".rsproj";

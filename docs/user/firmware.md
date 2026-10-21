@@ -6,8 +6,8 @@ Every part is reached through its real interface (pins, I2C, SPI, the camera dri
 
 ## 1. Create a sketch
 
-1. In the **Script** view, press **+**, choose **Firmware sketch (.ino)** and give it a name.
-2. It becomes the active sketch when the project has none. Otherwise pick it in the Inspector (project selected) → **Firmware**.
+1. In the **Script** view, press **+** at the top, choose **Firmware sketch (.ino)** and give it a name. It gets a folder of its own, `script/<name>/<name>.ino`, like an Arduino sketch folder. In the Script view it is one unit (chip icon) holding its files.
+2. It becomes the active sketch when the project has none. Otherwise pick it in the Inspector (project selected) → **Firmware**, or in a board's Inspector at the Real level.
 3. Press **▶ PLAY**.
 
 The new sketch already uses your robot. It lists the project's pin names, attaches the first servo with that servo's own pulse range, and centres it:
@@ -59,7 +59,14 @@ constexpr int SHOULDER_SIGNAL = COMP_6_SIGNAL;
 - A `.ino` file gets `#include <Arduino.h>` added automatically, as the Arduino IDE does. Include everything else yourself: `#include <Servo.h>`, and at the Prototype level `#include "robot_pins.h"`. Headers you put next to the sketch (`#include "pins.h"`) are found, as in an Arduino sketch folder.
 - **Declare a function before you use it.** The Arduino IDE generates these declarations for `.ino` files; this version does not yet.
 - A `.cpp` robot script works too (PlatformIO style). It gets nothing added: write `#include <Arduino.h>` at the top.
-- The whole firmware is one file.
+- **More files, as in the Arduino IDE.** A sketch's unit has its own **+** to add a header (`.h`) or a source file (`.cpp`) to its folder.
+  - A header is used with `#include "kinematics.h"`.
+  - Every `.cpp` in the folder is compiled **on its own** and linked with the sketch. It includes `<Arduino.h>` (and its own header) itself, and `static` names stay inside it.
+  - Declare in the `.h`, define in the `.cpp`: a function declared and never defined fails at link time (`undefined symbol`).
+  - Errors are marked in the file they're in.
+- A sketch folder has exactly one `.ino`, its root (a board runs that). Several sketches in a project are several folders.
+- Right-click a `.h` or `.cpp` to delete it. Deleting the sketch (Inspector → **Delete**) deletes its folder.
+- Older projects keep their sketch at the project root (`arm.ino`). It still runs as one file plus the headers next to it; `.cpp` files there are not compiled. New sketches always get a folder.
 
 ## 4. What you can use
 
@@ -182,4 +189,4 @@ Older projects programmed the robot in JavaScript, calling each part as `comp_<u
 
 The firmware sees what the real part offers, as the JavaScript API did: no servo position, no motor speed, no stepper position.
 
-The Robot arm demo was ported this way: `demo/Robot arm/Robot arm.ino` is a line-by-line port of the old JavaScript, with the same results.
+The Robot arm demo was ported this way: `demo/Robot arm/script/robot_arm/robot_arm.ino` is a line-by-line port of the old JavaScript, with the same results.

@@ -2,14 +2,17 @@
 
 #include <QWidget>
 #include <QString>
+#include <QHash>
+#include <QList>
+#include "View/Widgets/CodeEditor.h"
 
 class CodeEditor;
 struct LineMarker;
 class QLabel;
 class QPushButton;
 class QFileSystemWatcher;
-class QListWidget;
-class QListWidgetItem;
+class QTreeWidget;
+class QTreeWidgetItem;
 class QToolButton;
 
 /*
@@ -17,10 +20,16 @@ class QToolButton;
  * for stage scripts) with line numbers and compiler markers.
  * Includes a file system watcher to automatically reload the script 
  * if it is modified externally (e.g., via VS Code).
- * Left of the editor (resizable splitter) lists every project script:
- * firmware sketches with a blue "M" badge, stage scripts with a green "S"
- * (an old project's .js robot script, which no longer runs, with a red "!");
- * the active one of each kind is bold. "+" creates a new script.
+ * Left of the editor (resizable splitter) is the project's script tree:
+ *   - a firmware sketch is a unit (chip icon) holding its files: the one
+ *     .ino (the root, what a board runs) and any .h / .cpp next to it
+ *     (script/<name>/, an Arduino sketch folder); its own "+" adds a .h or
+ *     .cpp. An older project's sketch at the project root is a unit with
+ *     just its .ino (no "+").
+ *   - a stage script is one file (green "S"); an old project's .js robot
+ *     script, which no longer runs, has a red "!".
+ * The active sketch / stage script is bold. The header's "+" creates a new
+ * sketch (its folder) or stage script.
  */
 class ScriptPanel : public QWidget {
     Q_OBJECT
@@ -36,15 +45,19 @@ public:
     QString currentPath() const { return currentFilePath; }
     // Save/Discard/Cancel prompt when the open script has unsaved edits; false = cancelled.
     bool confirmLeaveUnsaved();
-    // Compiler messages for the open script, as gutter markers.
-    void showDiagnostics(const QList<LineMarker>& markers, bool goToFirstError);
+    // Compiler messages of the last build, per file (absolute path), shown as
+    // gutter markers on whichever of those files is open.
+    void setCompileMarkers(const QHash<QString, QList<LineMarker>>& byPath);
+    void goToFirstError();
 
     // Rebuilds the script list from the project (MCU + stage scripts).
     void refresh();
     // Locks script creation while the simulation runs.
     void setCreationEnabled(bool enabled);
-    // The "New Script" dialog (firmware sketch, JS script or stage script).
+    // The "New Script" dialog: a firmware sketch (its own folder) or a stage script.
     void createScript();
+    // A sketch's "+": a new .h or .cpp in its folder.
+    void addFileToSketch(const QString& sketchRel);
 
 signals:
     void modificationChanged(bool unsaved);
@@ -57,14 +70,16 @@ private slots:
 private:
     void setupUI();
     QWidget* buildScriptList();
-    void onScriptItemClicked(QListWidgetItem* item);
+    void onScriptItemClicked(QTreeWidgetItem* item);
+    void showFileMenu(const QPoint& pos);
     void syncListSelection();
     void setUnsaved(bool unsaved);   // flag + Save button + modificationChanged
 
     CodeEditor* textEditor; // <-- Changed type
     QLabel* statusLabel;
     QPushButton* saveButton;
-    QListWidget* scriptList;
+    QTreeWidget* scriptList;
+    QHash<QString, QList<LineMarker>> compileMarkers;   // cleaned absolute path -> markers
     QToolButton* addButton;
     
     QFileSystemWatcher* fileWatcher;

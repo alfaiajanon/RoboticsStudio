@@ -165,9 +165,18 @@ void FirmwareCompiler::compile(const QString& sketchPath, const QString& sketchT
     wrapped += QString("#line 1 \"%1\"\n").arg(sketchName) + sketchText;
     if (!wrapped.endsWith('\n')) wrapped += '\n';
 
-    // The user's own headers next to the sketch (a pins.h, helpers): part of the build.
+    // The user's own files next to the sketch: headers, and in a sketch folder
+    // (the folder is named after the sketch) every .cpp, each its own unit.
     const QString userDir = info.absolutePath();
+    sketchFile = info.absoluteFilePath();
+    sketchFolder = userDir;
+    const bool sketchFolderLayout = QFileInfo(userDir).fileName() == info.completeBaseName();
     QStringList userHeaders = QDir(userDir).entryList({"*.h", "*.hpp"}, QDir::Files, QDir::Name);
+    QStringList userSources;
+    if (sketchFolderLayout)
+        for (const QString& f : QDir(userDir).entryList({"*.cpp"}, QDir::Files, QDir::Name))
+            if (QFileInfo(userDir + "/" + f) != info) userSources << f;
+    userHeaders += userSources;   // all of them are part of the build's hash
     QStringList defineFlags;
     for (const QString& d : defines) if (!d.isEmpty()) defineFlags << "-D" + d;
 
@@ -211,8 +220,10 @@ void FirmwareCompiler::compile(const QString& sketchPath, const QString& sketchT
         return;
     }
 
+    QStringList sources{sketchDir + "/sketch.cpp"};
+    for (const QString& f : userSources) sources << userDir + "/" + f;   // clang compiles each on its own, then links
     jobs.append({flags + defineFlags + QStringList{"-I" + sketchDir, "-I" + userDir} + linkFlags()
-                     + QStringList{sketchDir + "/sketch.cpp"} + coreObjects + QStringList{"-o", wasmPath + ".tmp"},
+                     + sources + coreObjects + QStringList{"-o", wasmPath + ".tmp"},
                  wasmPath});
     if (!coreReady) Log::info("Building the firmware core (first time only)...");
     runNext();
@@ -293,7 +304,13 @@ void FirmwareCompiler::parseOutput(const QString& text) {
             d.column = m.captured(3).toInt();
             d.severity = m.captured(4) == "fatal error" ? "error" : m.captured(4);
             d.message = m.captured(5);
-            d.inSketch = d.file == sketchName;
+            if (d.file == sketchName) {
+                d.path = sketchFile;
+            } else if (QFileInfo(d.file).isAbsolute() && QDir::cleanPath(QFileInfo(d.file).absolutePath()) == QDir::cleanPath(sketchFolder)) {
+                d.path = QDir::cleanPath(d.file);
+                d.file = QFileInfo(d.file).fileName();
+            }
+            d.inSketch = !d.path.isEmpty();
             if (!fw.isEmpty() && d.file.startsWith(fw)) d.file = "firmware" + d.file.mid(fw.size());
             if (d.message == "'robot_pins.h' file not found")
                 d.message += " (the Real level generates no robot_pins.h: use the board's pin numbers, e.g. "

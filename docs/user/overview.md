@@ -15,9 +15,9 @@ A project folder holds:
 | File | What it is |
 |---|---|
 | `<name>.rsproj` | the assembly (which parts, how they are connected), level and wiring, script list, plot layout |
-| `robot_pins.h` | in a Real copy of a Prototype project: your own file with the sketch's pin names on the board's pins ([firmware.md](firmware.md#2-pins)) |
-| `*.ino` | robot firmware (C++ Arduino sketches), see [firmware.md](firmware.md) |
-| `*.js` | stage scripts (JavaScript, they move props), see [stage.md](stage.md) |
+| `script/<sketch>/<sketch>.ino` + `.h`/`.cpp` | robot firmware: one Arduino sketch folder per sketch, see [firmware.md](firmware.md) |
+| `script/<sketch>/robot_pins.h` | in a Real copy of a Prototype project: your own file with the sketch's pin names on the board's pins ([firmware.md](firmware.md#2-pins)) |
+| `script/*.js` | stage scripts (JavaScript, they move props), see [stage.md](stage.md) |
 | `Components/<id>/<id>.rsdef` | parts you created yourself ("Local Components") |
 
 ## 2. Assemble the robot

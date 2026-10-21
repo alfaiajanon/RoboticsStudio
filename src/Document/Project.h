@@ -120,6 +120,18 @@ class Project {
         QString boardVariantHeader() const;
         QStringList boardDefines() const;
 
+        // Scripts live under <project>/script/: a firmware sketch in a folder
+        // of its own, named after it (script/arm/arm.ino, with its .h and .cpp
+        // files: an Arduino sketch folder); a stage script as one file
+        // (script/stage.js). Older projects keep their files at the root.
+        static constexpr const char* kScriptDir = "script";
+        // A sketch path (relative or absolute) whose folder is named after it.
+        static bool inSketchFolder(const QString& sketchPath);
+        // A valid Arduino sketch name from what the user typed ("My arm" ->
+        // "My_arm": letters, digits, '_', '-', '.', first a letter or digit,
+        // at most 63 characters); empty if nothing is left.
+        static QString sketchName(const QString& typed);
+
         // Prototype -> Real is one way: a new project at the Real level in
         // `destDir` (must not exist), copied from this project as saved on
         // disk. Same robot, sketches, stage and plots; no board, no wiring.
