@@ -41,6 +41,23 @@
             "name": "Power"
         },
         {
+            "id": "driver",
+            "items": [
+                "driver/l298n_module/l298n_module.rsdef",
+                "driver/tb6612fng_module/tb6612fng_module.rsdef"
+            ],
+            "keys": [
+                "driver",
+                "motor driver",
+                "h-bridge",
+                "hbridge",
+                "l298n",
+                "tb6612",
+                "motor"
+            ],
+            "name": "Drivers"
+        },
+        {
             "id": "dc_motor",
             "items": [
                 "motor/dc_gear_60rpm/dc_gear_60rpm.rsdef"

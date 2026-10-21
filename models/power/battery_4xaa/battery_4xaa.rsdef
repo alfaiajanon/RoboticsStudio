@@ -42,48 +42,89 @@
             }
         ],
         "battery": {
-            "capacity_mah": 2500,
+            "cells": 4,
+            "capacity_mah": 2900,
             "curve": [
                 [
+                    -4,
+                    0.4,
+                    20.0
+                ],
+                [
+                    -2,
+                    0.7,
+                    6.0
+                ],
+                [
                     0,
-                    4.4,
+                    0.86,
+                    2.4
+                ],
+                [
+                    2,
+                    0.93,
                     2.0
                 ],
                 [
-                    10,
-                    4.7,
+                    5,
+                    1.0,
                     1.2
                 ],
                 [
-                    25,
-                    5.0,
-                    0.9
-                ],
-                [
-                    50,
-                    5.3,
+                    10,
+                    1.06,
                     0.75
                 ],
                 [
-                    75,
-                    5.7,
-                    0.65
+                    25,
+                    1.15,
+                    0.45
                 ],
                 [
-                    90,
-                    6.0,
-                    0.6
+                    40,
+                    1.22,
+                    0.33
+                ],
+                [
+                    50,
+                    1.26,
+                    0.28
+                ],
+                [
+                    60,
+                    1.3,
+                    0.22
+                ],
+                [
+                    75,
+                    1.36,
+                    0.18
+                ],
+                [
+                    85,
+                    1.42,
+                    0.16
+                ],
+                [
+                    95,
+                    1.5,
+                    0.15
                 ],
                 [
                     100,
-                    6.4,
-                    0.6
+                    1.6,
+                    0.15
                 ]
-            ]
+            ],
+            "rate": {
+                "available_fraction": 0.534,
+                "rate_constant_per_h": 0.03611
+            }
         },
         "sources": {
-            "supplies.plus": "the battery curve below",
-            "battery": "estimate from the Energizer E91 (AA alkaline) datasheet: 1.6 V fresh, 2500 mAh at moderate drain (less at 1 A), internal resistance 150-300 mOhm per cell rising near empty; 4 cells in series, end at 1.1 V/cell open circuit"
+            "supplies.plus": "the battery block below",
+            "battery": "per AA cell, Energizer E91 (alkaline Zn/MnO2). Capacity: the datasheet's ~2900 mAh at 25 mA continuous to 0.8 V, 21 °C (as quoted by lygte-info.dk 'Comparison of AA battery chemistry'). Curve: estimate shaped like the datasheet's low-drain discharge curve (no plateau: 1.6 V fresh sloping to ~1.1 V at 90 % used, then a knee; 0 % = 0.8 V at the terminals at 25 mA) plus I·R; resistance ~0.15 ohm fresh, about double at half charge, ~0.75 ohm at 90 % used (learningaboutelectronics.com 'Battery internal resistance'; TI SLVA194: rises as the cell empties), steeply higher past the cut-off; points below 0 %: estimate (an alkaline gives only a few % more below 0.8 V). Not verified against a bench measurement: measure your cells",
+            "battery.rate": "fitted with tools/fit_battery.py (the simulation's own model) to the E91 continuous-discharge capacities to 0.8 V: 2900 mAh at 25 mA and ~1400 mAh at 500 mA (datasheet, via lygte-info.dk), ~2200 mAh at 100 mA (lygte-info.dk's estimate); rms error 3 % (25 mA -5 %, 100 mA +1 %, 500 mA 0 %). The one-time-constant model (~7 h) gives the slow recovery, not the fast one in the first seconds after a load stops"
         }
     },
     "resources": {

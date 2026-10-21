@@ -42,43 +42,89 @@
             }
         ],
         "battery": {
-            "capacity_mah": 550,
+            "cells": 6,
+            "capacity_mah": 625,
             "curve": [
                 [
+                    -4,
+                    0.45,
+                    37.0
+                ],
+                [
+                    -2,
+                    0.75,
+                    11.0
+                ],
+                [
                     0,
-                    6.0,
-                    5.0
+                    0.91,
+                    4.5
                 ],
                 [
-                    10,
-                    6.8,
-                    3.5
+                    2,
+                    0.96,
+                    3.7
                 ],
                 [
-                    25,
-                    7.4,
-                    2.8
-                ],
-                [
-                    50,
-                    8.0,
+                    5,
+                    1.01,
                     2.2
                 ],
                 [
+                    10,
+                    1.06,
+                    1.4
+                ],
+                [
+                    25,
+                    1.15,
+                    0.85
+                ],
+                [
+                    40,
+                    1.22,
+                    0.62
+                ],
+                [
+                    50,
+                    1.26,
+                    0.52
+                ],
+                [
+                    60,
+                    1.3,
+                    0.41
+                ],
+                [
                     75,
-                    8.6,
-                    1.9
+                    1.36,
+                    0.34
+                ],
+                [
+                    85,
+                    1.42,
+                    0.3
+                ],
+                [
+                    95,
+                    1.5,
+                    0.28
                 ],
                 [
                     100,
-                    9.6,
-                    1.7
+                    1.6,
+                    0.28
                 ]
-            ]
+            ],
+            "rate": {
+                "available_fraction": 0.344,
+                "rate_constant_per_h": 0.3162
+            }
         },
         "sources": {
-            "supplies.plus": "the battery curve below",
-            "battery": "estimate from the Energizer 522 (9 V alkaline) datasheet: 550 mAh at 25 mA (much less at high drain), internal resistance ~1.7 Ohm fresh; open-circuit curve read off its discharge plots"
+            "supplies.plus": "the battery block below",
+            "battery": "per cell (6 small alkaline cells in series), Energizer/Eveready 522: rated 625 mAh at 25 mA continuous to 0.8 V per cell (Eveready 522 datasheet, average capacity). Curve: the AA alkaline shape (see battery_4xaa), 0 % = 0.8 V per cell at 25 mA; resistance ~1.7 ohm per pack fresh (estimate, the earlier model's value) rising as for the AA. Estimate: measure your battery",
+            "battery.rate": "fitted with tools/fit_battery.py (the simulation's own model) to 625 mAh at 25 mA and ~450 mAh at 100 mA to 4.8 V (secondary readings of the Energizer 522 life graph: 'about 24 h at 25 mA', 'less than 5 hours at 100 mA', baldengineer.com '9V batteries suck'); rms error 4 %. Another reading (~300 mAh at 100 mA to 7 V) gives 233 mAh in the model: the mid-discharge voltage at 100 mA is probably a little low"
         }
     },
     "resources": {
