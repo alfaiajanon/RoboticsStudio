@@ -12,7 +12,7 @@
 
 /*
  * Undoable edits of the Real-level electronics: wires, the schematic layout,
- * the project level and a board's firmware slot. None of them changes the
+ * and a board's firmware slot. None of them changes the
  * MJCF, so there is no simulation reload; they count as structural so the
  * editor refresh rebuilds the wiring page, the Inspector and the checks.
  */
@@ -45,16 +45,6 @@ inline void moveSchematicBlocks(const QHash<int, QPointF>& from, const QHash<int
     };
     Application::getInstance()->getUndoStack()->push(new GenericCommand(
         [apply, to]() { apply(to); }, [apply, from]() { apply(from); }, "Move schematic block"));
-}
-
-inline void setLevel(ProjectLevel level) {
-    Project* project = Application::getInstance()->getProject();
-    const ProjectLevel old = project->getLevel();
-    if (old == level) return;
-    Application::getInstance()->getUndoStack()->push(new GenericCommand(
-        [project, level]() { project->setLevel(level); },
-        [project, old]() { project->setLevel(old); },
-        level == ProjectLevel::Real ? "Switch to the Real level" : "Switch to the Prototype level"));
 }
 
 inline void setBoardFirmware(int uid, const QString& sketch) {

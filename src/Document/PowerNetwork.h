@@ -108,6 +108,7 @@ class PowerNetwork {
         static constexpr const char* kVOut = "power.v_out";                 // buck module, V
         static constexpr const char* kChargePercent = "power.charge_percent"; // battery, 0..100
         static constexpr const char* kDrains = "power.drains";              // battery, bool
+        static constexpr const char* kProtection = "power.protection";      // battery with a protection block, bool
 
         // The most a part can draw at a supply voltage: its static load plus
         // its motor at stall (servo: stall_current_a at rated_voltage, scaled;

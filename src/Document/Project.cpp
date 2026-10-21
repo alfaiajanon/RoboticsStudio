@@ -8,6 +8,10 @@
 #include "Simulation/ErrorSystem/EmulatorFactory.h"
 
 #include <QDir>
+#include <QRegularExpression>
+#include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
 #include <QFile>
 #include <queue>
 #include <cmath>
@@ -94,6 +98,7 @@ void Project::clear() {
 
     qDeleteAll(constraintList);
     constraintList.clear();
+    unknownComponents = QJsonArray();
 
     rootComponent = nullptr;
 }
@@ -190,36 +195,120 @@ QString Project::readActiveSketch() const {
 
 
 QString Project::pinsHeader() {
-    if (level == ProjectLevel::Real) {
-        const RealBoard rb = realBoard();
-        if (rb.isValid()) return rb.header(getName());
-    }
+    if (level == ProjectLevel::Real) return QString();   // the sketch uses the board's own pins
     return idealBoard().header(getName());
 }
 
 
 
-bool Project::writeBoardHeader() {
-    if (level != ProjectLevel::Real || directoryPath.isEmpty()) return true;
+QString Project::boardVariantHeader() const {
+    if (level != ProjectLevel::Real) return QString();
     const RealBoard rb = realBoard();
-    if (!rb.isValid() || rb.def().headerFolder.isEmpty()) return true;
-    QDir dir(directoryPath);
-    if (!dir.mkpath(rb.def().headerFolder)) {
-        Log::error("Can't create the board header folder: " + dir.filePath(rb.def().headerFolder));
-        return false;
-    }
-    const QString path = dir.filePath(rb.def().headerFolder + "/robot_pins.h");
-    const QByteArray text = rb.header(getName()).toUtf8();
-    QFile existing(path);
-    if (existing.open(QFile::ReadOnly) && existing.readAll() == text) return true;   // unchanged: keep the mtime
-    existing.close();
-    QFile file(path);
-    if (!file.open(QFile::WriteOnly | QFile::Truncate)) {
-        Log::error("Can't write the board header: " + path);
-        return false;
-    }
-    file.write(text);
+    return rb.isValid() ? rb.variantHeader() : QString();
+}
+
+
+
+QStringList Project::boardDefines() const {
+    if (level != ProjectLevel::Real) return {};
+    const RealBoard rb = realBoard();
+    return rb.isValid() ? rb.defines() : QStringList();
+}
+
+
+
+bool Project::inSketchFolder(const QString& sketchPath) {
+    const QFileInfo info(sketchPath);
+    return info.dir().dirName() == info.completeBaseName();
+}
+
+
+
+QString Project::sketchName(const QString& typed) {
+    QString n = typed.trimmed();
+    n.remove(QRegularExpression("\\.(ino|cpp)$", QRegularExpression::CaseInsensitiveOption));
+    n.replace(QRegularExpression("[^A-Za-z0-9_.-]+"), "_");
+    n.remove(QRegularExpression("^[^A-Za-z0-9]+"));
+    return n.left(63);
+}
+
+
+
+// Copies a folder tree; false on the first failure.
+static bool copyTree(const QString& from, const QString& to) {
+    if (!QDir().mkpath(to)) return false;
+    const QDir src(from);
+    for (const QString& f : src.entryList(QDir::Files | QDir::Hidden))
+        if (!QFile::copy(src.filePath(f), to + "/" + f)) return false;
+    for (const QString& d : src.entryList(QDir::Dirs | QDir::NoDotAndDotDot))
+        if (!copyTree(src.filePath(d), to + "/" + d)) return false;
     return true;
+}
+
+
+
+QString Project::createRealCopy(const QString& destDir, const QString& name, QString* error) {
+    auto fail = [error](const QString& msg) { if (error) *error = msg; return QString(); };
+    if (level != ProjectLevel::Prototype) return fail("This project is already at the Real level");
+    if (name.trimmed().isEmpty()) return fail("The copy needs a name");
+    if (QFileInfo::exists(destDir)) return fail("There is already a file or folder at " + destDir);
+    if (QDir(destDir).absolutePath().startsWith(QDir(directoryPath).absolutePath() + "/"))
+        return fail("The copy can't go inside the project's own folder");
+
+    QFile in(projectPath);
+    if (!in.open(QFile::ReadOnly)) return fail("Can't read the project file: " + projectPath);
+    QJsonObject doc = QJsonDocument::fromJson(in.readAll()).object();
+    in.close();
+
+    if (!copyTree(directoryPath, destDir)) return fail("Can't copy the project to " + destDir);
+    QFile::remove(destDir + "/" + QFileInfo(projectPath).fileName());
+
+    QJsonObject meta = doc["meta"].toObject();
+    meta["name"] = name;
+    doc["meta"] = meta;
+    doc["schema"] = kSchemaVersion;
+    doc["level"] = levelName(ProjectLevel::Real);
+    doc["wiring"] = QJsonObject{{"wires", QJsonArray()}, {"layout", QJsonObject()}};
+
+    // The sketches that use the Prototype's generated names get the user's
+    // own robot_pins.h with the same names, not wired yet, in their folder.
+    QStringList pinsFolders;
+    for (const QJsonValue& v : scriptPaths) {
+        const QString rel = v.toString();
+        if (!rel.endsWith(".ino", Qt::CaseInsensitive) && !rel.endsWith(".cpp", Qt::CaseInsensitive)) continue;
+        QStringList files{directoryPath + "/" + rel};
+        const QDir folder = QFileInfo(directoryPath + "/" + rel).dir();
+        if (inSketchFolder(rel))
+            for (const QString& f : folder.entryList({"*.h", "*.hpp", "*.cpp"}, QDir::Files)) files << folder.filePath(f);
+        bool uses = false;
+        for (const QString& f : files) {
+            QFile file(f);
+            uses = uses || (file.open(QFile::ReadOnly) && QString::fromUtf8(file.readAll()).contains("\"robot_pins.h\""));
+        }
+        const QString dest = QFileInfo(destDir + "/" + rel).absolutePath();
+        if (uses && !pinsFolders.contains(dest)) pinsFolders << dest;
+    }
+    for (const QString& folder : pinsFolders) {
+        const QString pinsPath = folder + "/robot_pins.h";
+        if (QFileInfo::exists(pinsPath)) continue;
+        QList<BoardPin> pins = idealBoard().pins();
+        for (BoardPin& p : pins) p.number = -1;
+        const QString intro = QString(
+            "// robot_pins.h for \"%1\" (Real level). This file is YOURS: edit it, it is never regenerated.\n"
+            "// It keeps the pin names of the Prototype project \"%2\", so the sketch builds unchanged.\n"
+            "// Add a board (Components -> Boards), wire each part on the Wiring page (Ctrl+3), then put\n"
+            "// the board pin each name is wired to here: a number (9) or the board's name for it (A0).\n"
+            "// -1 = not wired yet.\n").arg(name, getName());
+        QFile pinsOut(pinsPath);
+        if (!pinsOut.open(QFile::WriteOnly | QFile::Truncate)) return fail("Can't write " + pinsPath);
+        pinsOut.write(BoardPins::header(pins, intro).toUtf8());
+    }
+
+    const QString path = destDir + "/" + name + ".rsproj";
+    QFile out(path);
+    if (!out.open(QFile::WriteOnly | QFile::Truncate)) return fail("Can't write " + path);
+    out.write(QJsonDocument(doc).toJson(QJsonDocument::Indented));
+    return path;
 }
 
 
@@ -399,6 +488,7 @@ bool Project::saveProject() {
     }
 
     QJsonObject assemblyObj;
+    for (const QJsonValue& v : unknownComponents) componentsArray.append(v);
     assemblyObj["components"] = componentsArray;
     assemblyObj["constraints"] = constraintsArray;
     assemblyObj["transform"] = QJsonObject{
@@ -420,7 +510,6 @@ bool Project::saveProject() {
     for (auto it = schematicLayout.begin(); it != schematicLayout.end(); ++it)
         if (componentMap.contains(it.key())) layoutObj[QString::number(it.key())] = QJsonArray{it.value().x(), it.value().y()};
     projectData["wiring"] = QJsonObject{{"wires", wiring.toJson()}, {"layout", layoutObj}};
-    writeBoardHeader();
 
     if (plottingProvider) plotting = plottingProvider();
     projectData["plotting"] = plotting;
@@ -510,7 +599,15 @@ void Project::parseAssembly() {
         }
 
         QString model_id = component->modelId;
-        component->setBlueprint(LibraryManager::getInstance().getBlueprint(model_id));
+        ComponentBlueprint* blueprint = LibraryManager::getInstance().getBlueprint(model_id);
+        if (!blueprint) {
+            Log::error(QString("Part \"%1\" (uid %2): its model '%3' is not in the component library; it is left out "
+                               "(and kept in the project file)").arg(component->name).arg(component->uid).arg(model_id));
+            unknownComponents.append(obj);
+            delete component;
+            continue;
+        }
+        component->setBlueprint(blueprint);
         // component->initializeIO();
 
 

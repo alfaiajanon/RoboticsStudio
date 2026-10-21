@@ -1,0 +1,196 @@
+{
+    "level": "prototype",
+    "schema": 3,
+    "assembly": {
+        "components": [
+            {
+                "uid": 1,
+                "model_id": "motor_stand",
+                "name": "Stand",
+                "parameters": {},
+                "connection": {
+                    "parent_uid": 0,
+                    "parent_connector": "root",
+                    "self_connector": "",
+                    "snap_angle": 0
+                }
+            },
+            {
+                "uid": 2,
+                "model_id": "motor_dc_gear_60rpm",
+                "name": "Left",
+                "parameters": {},
+                "connection": {
+                    "parent_uid": 1,
+                    "parent_connector": "motor",
+                    "self_connector": "chassie_right_1",
+                    "snap_angle": 0
+                }
+            },
+            {
+                "uid": 3,
+                "model_id": "wheel_D_65_25",
+                "name": "Wheel",
+                "parameters": {},
+                "connection": {
+                    "parent_uid": 2,
+                    "parent_connector": "shaft_left",
+                    "self_connector": "center_mount",
+                    "snap_angle": 0
+                }
+            }
+        ],
+        "constraints": [],
+        "transform": {
+            "rotation": [
+                0,
+                0,
+                0
+            ]
+        }
+    },
+    "meta": {
+        "author": "",
+        "icon": "logo.png",
+        "name": "DC Motor",
+        "version": "1.0.0"
+    },
+    "plotting": {
+        "canvases": [
+            {
+                "enabled": true,
+                "name": "Speed",
+                "targets": [
+                    {
+                        "color": "#34bef0",
+                        "signal": "current_velocity",
+                        "uid": 2
+                    }
+                ],
+                "type": "scalar"
+            },
+            {
+                "enabled": true,
+                "name": "Drive",
+                "targets": [
+                    {
+                        "color": "#f0a034",
+                        "signal": "drive",
+                        "uid": 2
+                    }
+                ],
+                "type": "scalar"
+            }
+        ],
+        "motion": {
+            "targets": []
+        }
+    },
+    "script": {
+        "current": 0,
+        "paths": [
+            "script/dc_motor/dc_motor.ino"
+        ]
+    },
+    "stage": {
+        "environment": {
+            "ambient": [
+                0.1,
+                0.1,
+                0.1
+            ],
+            "fog": {
+                "color": [
+                    0.5,
+                    0.5,
+                    0.5
+                ],
+                "enabled": false,
+                "end": 10,
+                "start": 3
+            },
+            "gravity": [
+                0,
+                0,
+                -9.81
+            ],
+            "headlight": [
+                0.4,
+                0.4,
+                0.4
+            ],
+            "light": {
+                "castShadow": true,
+                "diffuse": [
+                    0.8,
+                    0.8,
+                    0.8
+                ],
+                "dir": [
+                    0,
+                    0,
+                    -1
+                ]
+            },
+            "shadowSize": 4096,
+            "skyBottom": [
+                0,
+                0,
+                0
+            ],
+            "skyTop": [
+                0.4,
+                0.6,
+                0.8
+            ],
+            "timestep": 0.002
+        },
+        "floor": {
+            "color1": [
+                0.2,
+                0.3,
+                0.4
+            ],
+            "color2": [
+                0.1,
+                0.15,
+                0.2
+            ],
+            "euler": [
+                0,
+                0,
+                0
+            ],
+            "file": "",
+            "friction": [
+                1,
+                0.005,
+                0.0001
+            ],
+            "pattern": "checker",
+            "pos": [
+                0,
+                0,
+                0
+            ],
+            "scale": [
+                1,
+                1,
+                1
+            ],
+            "texRepeat": 10,
+            "type": "plane"
+        },
+        "props": [],
+        "robotSpawn": [
+            0,
+            0,
+            0
+        ],
+        "script": {
+            "current": -1,
+            "paths": []
+        }
+    },
+    "version": "0.3.0-alpha"
+}

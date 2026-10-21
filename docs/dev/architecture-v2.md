@@ -33,9 +33,13 @@ A project has a **level**. Levels are not separate engines: every level uses the
 - **Firmware belongs to a board, not to the robot.** Each board has a firmware slot holding its sketch, and runs it on its own `FirmwareRuntime` and lockstep gate; all boards share sim time, so a multi-board run is still deterministic.
 - **Prototype** is one ideal brain: a single implicit ideal controller that auto-wires every part, with as many channels of each kind as the robot needs, so auto-wiring cannot run out of pins. The user focuses on behaviour; pins and electronics stay hidden. Prototype stays single-board.
 - **Real** is the actual electronics. A Real project **starts with no board**: the user adds boards from the component library like any other part (an Uno for the motors and an ESP32-CAM for vision, a Nano per leg, ...), wires them, and gives each its firmware. Boards talk to each other over wired buses (UART, I2C). Multiple boards arrive together with the UART bus model; a board-to-board link is what makes more than one useful. Without a board, Play runs the physics only and the design-rule check says so.
-- **Prototype → Real** is a guided migration, not a toggle. The user adds (or the wizard offers to add) the board(s); the app maps the ideal wiring onto them and lists what does not fit, with suggested fixes: not enough PWM pins (add a PCA9685, or pick a Mega), an I2C address clash, a pin that is not interrupt-capable, a 5 V signal into a 3.3 V part, power budget exceeded. The Prototype sketch goes into the first board's firmware slot.
-- **Real → Prototype** is always automatic: the boards' sketches merge back into the single ideal controller only when there is one board (otherwise the user picks which sketch to keep); the wiring stays in the file but is not used.
-- The firmware API is the same at every level, so a sketch written in Prototype keeps working after migration as long as it goes through the API; only the pin bindings change (`robot_pins.h` becomes one pins header per board).
+- **A project's level is fixed** (settled 2026-10-21). **Prototype → Real is one way, into a new project**: "Create Real copy" leaves the Prototype project as it is (`Project::createRealCopy`). There is no Real → Prototype.
+  - Today the copy has the same robot and sketches, no board and no wiring, plus a `robot_pins.h` that is the user's own: the Prototype's names set to -1 ("not wired yet"), for the user to fill in with board pins.
+  - Later the migration wizard does the mapping: it adds (or offers) the board(s), maps the ideal wiring onto them, writes those pins, and lists what does not fit with suggested fixes: not enough PWM pins (add a PCA9685, or pick a Mega), an I2C address clash, a pin that is not interrupt-capable, a 5 V signal into a 3.3 V part, power budget exceeded. The Prototype sketch goes into the first board's firmware slot.
+- **Pins at the Real level are the board's own** (settled 2026-10-21, replacing the generated per-board `robot_pins.h`): a sketch writes `servo.attach(9)`, `analogRead(A0)`, `LED_BUILTIN`, as on the bench.
+  - The board's names and macros come from the real Arduino core's variant, recorded in the board's `.rsdef` (`board.variant`) and compiled in as `pins_arduino.h` + `-D` flags, so the sketch is the same file the real board gets.
+  - The Prototype level, which has no physical pins, keeps generated names (`robot_pins.h`).
+  - The firmware API is the same at every level.
 
 ## 3. Time model
 
@@ -113,7 +117,9 @@ flowchart LR
 3. The motor draws current from the 5V net. At stall the net sags; the servo's torque drops, and if the voltage falls below the MCU's brownout threshold, the MCU resets. No special-case code is needed for this classic failure.
 4. A missing GND wire is flagged by the design-rule check before Play.
 
-**Built (Phase 2, power pass):** `Document/PowerNetwork` (rails, supplies, regulators, loads, ground domains; a few-pass DC solve) and `Simulation/Power/PowerSystem` (per step, with the parts' live currents; part on/off at `min_v`; MCU brownout reset and restart; battery charge). Parts: the boards' USB feed and regulators, 4×AA, 9 V, 2S LiPo, bench supply, LM2596 buck. Design rules: back-feeding, ranges on every rail, regulator headroom, typical/peak budget, brownout at peak, common ground. User guides: [wiring.md](../user/wiring.md#power), [create_power.md](../user/create_power.md). Not yet: the DC motor's supply (with driver parts), pin output strength, polyfuse trip.
+**Built (Phase 2, power pass):** `Document/PowerNetwork` (rails, supplies, regulators, loads, ground domains; a few-pass DC solve) and `Simulation/Power/PowerSystem` (per step, with the parts' live currents; part on/off at `min_v`; MCU brownout reset and restart; batteries with a per-cell discharge curve that continues past the rated cut-off, a Kinetic Battery Model for the rate-capacity and recovery effects, over-discharge warnings and an optional protection circuit). Parts: the boards' USB feed and regulators, 4×AA, 9 V, 2S LiPo, bench supply, LM2596 buck. Design rules: back-feeding, ranges on every rail, regulator headroom, typical/peak budget, brownout at peak, common ground. User guides: [wiring.md](../user/wiring.md#power), [create_power.md](../user/create_power.md). Not yet: polyfuse trip.
+
+**Built (Phase 2, pass 2: motor drivers):** the DC motor is a two-terminal circuit at the Real level (pin types `motor` / `motor_out`); `PinBus` carries each net's source (a driver output, a board pin with the board's `pin_output_ohm`, ground) and the current back; `HBridgeEmulatorCpp` (L298N, TB6612FNG modules) with the datasheets' drops and truth tables; a pin's current over `pin_abs_max_ma` is warned about and loads the board's rail; design rules for motor-to-pin wiring, shorted outputs, per-channel current, L298N jumpers, and the stall current through drivers in the budget. Prototype behaviour is unchanged (same torque table). Demo: `DC Motor` / `DC Motor (Uno)`.
 
 ## 5. Boards
 
@@ -121,7 +127,7 @@ A board is a component like any other, with many pins and a **firmware slot** (t
 
 - **Ideal controller** (Prototype): unlimited channels of every kind, ideal electrical behaviour.
 - First real boards: Arduino Uno, Mega, an ESP32 dev board.
-- Interface parts are ordinary components with pins on both sides: PCA9685 (I2C PWM driver), motor drivers (L298N, TB6612), level shifters, battery packs, buck converters.
+- Interface parts are ordinary components with pins on both sides: PCA9685 (I2C PWM driver), motor drivers (L298N, TB6612: built), level shifters, battery packs, buck converters (built).
 
 ## 6. Device models
 
@@ -151,13 +157,13 @@ Rules:
 - The robot's firmware is C++ against the Arduino API, compiled in the app to WebAssembly with a bundled toolchain (wasi-sdk clang) and run in an embedded runtime (WAMR: C, small, fast interpreter).
 - **Built (Prototype level, first milestone):** `Simulation/Firmware/FirmwareRuntime` (WAMR 2.4.5, `extern/wamr`, built by `cmake/wamr/`) and `FirmwareCompiler` (wasi-sdk 34, fetched by `tools/fetch_wasi_sdk.sh`, a trimmed copy bundled in the AppImage); the core in `resources/firmware` (`rs_abi.h` imports, `Arduino.h`, `Print`/`Serial`, `String`, `Servo`); pins through `Simulation/Controller/PinBus` from `Document/IdealBoard` (`robot_pins.h`). Not yet: `Wire.h` and the part libraries. User guide: [docs/user/firmware.md](../user/firmware.md).
 - **Arduino core shim:** `setup()`/`loop()`, `pinMode`, `digitalRead`/`digitalWrite`, `analogRead`/`analogWrite`, `millis`, `micros`, `delay`, `Serial` (to the Output panel), `Servo.h`, `Wire.h`, plus libraries for the shipped parts (MPU6050, PCA9685, camera, display). Everything goes through the board's pins and the netlist.
-- **Prototype convenience:** the same sketch structure; parts are reached through generated pin names (`robot_pins.h`: `COMP_<uid>_<PIN>`, plus `<NAME>_<PIN>` for uniquely named parts), so the code survives migration to Real, where only the header changes. (Settled 2026-10-19, instead of `comp_N` handles.)
+- **Prototype convenience:** the same sketch structure; parts are reached through generated pin names (`robot_pins.h`: `COMP_<uid>_<PIN>`, plus `<NAME>_<PIN>` for uniquely named parts), because the ideal board has no physical pins. At the Real level a sketch uses the board's own pins (section 2); a Real copy keeps the names in a `robot_pins.h` the user owns. (Settled 2026-10-19 instead of `comp_N` handles; Real-level pins settled 2026-10-21.)
 - **Transfer rule:** every demo sketch must also compile with `arduino-cli` for its real board. CI checks this.
 - **JavaScript** stays only for stage scripts (the `QJSEngine` stage controller, `prop_<id>` and `robot`). Done in Phase 7: robot JS scripts were removed and the demos ported to C++.
 
 ## 8. Robotics library
 
-- The **kinematic chain** is extracted from the assembly: joints, axes and link transforms from the connector chain. Firmware can query it, so sketches no longer hard-code geometry (as `demo/Robot arm/Robot arm.ino` does today).
+- The **kinematic chain** is extracted from the assembly: joints, axes and link transforms from the connector chain. Firmware can query it, so sketches no longer hard-code geometry (as `demo/Robot arm/script/robot_arm/robot_arm.ino` does today).
 - A small C++ library on top: forward kinematics, analytic and numeric IK, trajectory generation (trapezoid, S-curve), PID with anti-windup, filters (low-pass, complementary, alpha-beta), diff-drive odometry.
 - It runs as part of the firmware and uses only the sensors the robot actually has; it never reads simulation-only values.
 - Optional: URDF export from the same chain.
@@ -169,8 +175,8 @@ Built in Phase 2 (core slice); user guide: [wiring.md](../user/wiring.md).
 - The **Wiring page** (`View/Panels/Wiring/WiringPage`, Ctrl+3) is a page in the editor's central page stack, next to the 3D View and the Script page, shown only at the Real level. It is a **schematic canvas** (`SchematicScene`: part blocks with their typed pins, two-point wires dragged from pin to pin, routed around the blocks), with the design-rule findings and the net list beside it. Wires, block moves, the level and a board's firmware slot are undoable commands (`Commands/WiringCommands.h`).
 - The script page is the **firmware** page (C++) for the robot; stage scripts keep the JS editor. At the Real level a sketch's entry names the board(s) running it.
 - The New Project dialog asks for the **level** (Prototype by default). A Real project starts with no board.
-- The level lives in the project settings (Inspector, nothing selected, above the firmware list) and in a HUD badge in the 3D view ("Prototype · ideal board", "Real · Uno"); clicking the badge opens the setting. Switching to Prototype asks for confirmation when there is wiring; both directions are one undoable step.
-- Selecting a board shows its firmware slot (pick a sketch, open it) and the pins in its `robot_pins.h`. The first board added at the Real level takes over the Prototype sketch.
+- The level lives in the project settings (Inspector, nothing selected, above the firmware list) and in a HUD badge in the 3D view ("Prototype · ideal board", "Real · Uno"); clicking the badge opens the settings. The level is shown, not switched; a Prototype project has **Create Real copy...** there.
+- Selecting a board shows its firmware slot (pick a sketch, open it) and what is wired to each of its pins. The first board added at the Real level takes over the Prototype sketch.
 - Still to come: the migration wizard (Prototype → Real), several boards running at once (with UART), Serial tagged by board.
 
 ## 10. What stays and what changes

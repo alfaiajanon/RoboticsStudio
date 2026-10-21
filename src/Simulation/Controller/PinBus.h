@@ -23,6 +23,27 @@ struct PinState {
     int level = 0;           // digital: LOW / HIGH
     int risingEdges = 0;     // digital: LOW->HIGH writes not yet taken by the part (STEP pulses)
     double voltage = 0.0;    // analog
+
+    // The electrical side, for loads that draw real current (a motor terminal).
+    bool ideal = false;        // an ideal-board pin (Prototype): the ideal driver, not a circuit
+    double boardOhm = 0.0;     // Real: a board gpio pin is on this net: its output resistance ...
+    double boardVolts = 0.0;   // ... its logic voltage (HIGH) ...
+    double boardMaxA = 0.0;    // ... and its absolute maximum current (0 = not modelled)
+    bool onBoard = false;      // a board gpio pin is on this net
+    bool ground = false;       // a ground net: a 0 V source for a load wired to it
+    // A motor driver's output on this net (motor_out), written every step by the driver.
+    bool src = false;
+    double srcV = 0.0, srcR = 0.0;   // Thevenin while connected
+    double srcConn = 0.0;            // fraction of the time connected (EN PWM); 1 = always
+    double amps = 0.0;               // current a load (motor) draws out of this net's source, last step
+};
+
+// What drives a net electrically: open (nothing, or a pin set as input), or a
+// Thevenin source connected for a fraction of the time.
+struct PinSource {
+    bool open = true;
+    double v = 0.0, r = 0.0;
+    double conn = 0.0;   // 1 = always connected; < 1 = open the rest of the time (no current then)
 };
 
 
@@ -60,6 +81,7 @@ class PinBus {
 
         int handleOf(int uid, const QString& pinId) const;   // -1 if none
         int handleForNumber(int boardNumber) const;          // -1 if no part has it
+        int numberOf(int h) const;                           // the board pin number of a handle, -1 if none
 
         // The board pin, or an off-board pin for a part pin that isn't typed
         // (so not on the board): scripts that reach the part directly keep
@@ -91,4 +113,19 @@ class PinBus {
         double voltage(int h) const;
 
         const PinState* state(int h) const { return valid(h) ? &states[h] : nullptr; }
+
+        // ---- the electrical side (Real level) ----
+        // A motor driver's output: its Thevenin source this step (conn < 1:
+        // open the rest of the time), or open.
+        void writeSource(int h, double v, double r, double conn);
+        void openSource(int h);
+        void markGround(int h);   // a net with ground pins (Real)
+        // What drives the net: a driver's output, else a board pin the firmware
+        // drives (its duty x logic voltage, through its output resistance), else open.
+        PinSource source(int h) const;
+        // The load current out of the net's source (a motor writes it, A).
+        void setAmps(int h, double a);
+        double amps(int h) const;
+        // Nets with a board gpio pin on them (for the pins' current).
+        std::vector<int> boardNets() const;
 };

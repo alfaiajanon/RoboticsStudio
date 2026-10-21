@@ -75,7 +75,7 @@
                     "self_connector": "base",
                     "snap_angle": 0
                 },
-                "firmware": "Servo Comparison (Uno).ino",
+                "firmware": "script/servo_comparison_uno/servo_comparison_uno.ino",
                 "model_id": "arduino_uno",
                 "name": "Uno",
                 "parameters": {
@@ -146,7 +146,7 @@
     "script": {
         "current": 0,
         "paths": [
-            "Servo Comparison (Uno).ino"
+            "script/servo_comparison_uno/servo_comparison_uno.ino"
         ]
     },
     "stage": {

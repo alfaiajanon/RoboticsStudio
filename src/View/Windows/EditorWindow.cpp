@@ -8,6 +8,7 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 #include <QMessageBox>
+#include <QInputDialog>
 #include <QWidget>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -244,6 +245,35 @@ bool EditorWindow::isProjectModified() const {
 }
 
 
+void EditorWindow::createRealCopy() {
+    Project* project = Application::getInstance()->getProject();
+    if (!project || project->getLevel() != ProjectLevel::Prototype) return;
+    if (!confirmUnsavedChanges()) return;   // the copy is made from the saved files
+    if (isProjectModified()) {
+        QMessageBox::information(this, "Create Real Copy", "Save the project first: the copy is made from the saved project.");
+        return;
+    }
+    bool ok = false;
+    const QString name = QInputDialog::getText(this, "Create Real Copy",
+        "A new project at the Real level, next to this one: the same robot and sketches, no board yet.\n"
+        "This project stays as it is.\n\nName of the copy:",
+        QLineEdit::Normal, project->getName() + " (Real)", &ok).trimmed();
+    if (!ok || name.isEmpty()) return;
+    QDir parent(project->getProjectDirectory());
+    parent.cdUp();
+    QString error;
+    const QString path = project->createRealCopy(parent.filePath(name), name, &error);
+    if (path.isEmpty()) {
+        QMessageBox::warning(this, "Create Real Copy", error);
+        return;
+    }
+    Application::getInstance()->openProject(path);
+    Toast::showMessage(this, "Real copy opened: add a board (Components -> Boards), wire it (Ctrl+3), "
+                             "then set its pins in the sketch (robot_pins.h)", 6000);
+}
+
+
+
 bool EditorWindow::confirmUnsavedChanges() {
     const bool projectDirty = isProjectModified();
     const bool scriptDirty = scriptPanel && scriptPanel->hasUnsavedChanges();
@@ -371,7 +401,7 @@ void EditorWindow::setupMenuBar() {
         Project* project = Application::getInstance()->getProject();
         if (!centerStack || !wiringPage || !project) return;
         if (project->getLevel() != ProjectLevel::Real) {
-            Toast::showMessage(this, "Wiring is part of the Real level (project settings: Level)", 2500);
+            Toast::showMessage(this, "Wiring is part of the Real level (project settings: Create Real copy)", 2500);
             return;
         }
         centerStack->setCurrentPage(wiringPage);
@@ -913,23 +943,27 @@ void EditorWindow::setupMainViewport() {
         SimulationManager* sim = Application::getInstance()->getSimulationManager();
         if (sim->getState() != SimulationState::EDITING) return;
 
-        // The sketch's own errors and warnings, as markers in the script editor.
+        // The errors and warnings in the sketch's own files (.ino, .h, .cpp),
+        // as markers in the script editor, per file.
         Project* project = Application::getInstance()->getProject();
-        QList<LineMarker> markers;
+        QHash<QString, QList<LineMarker>> markers;
+        QString firstError;
         for (const FirmwareCompiler::Diagnostic& d : firmwareCompiler->diagnostics()) {
-            if (d.inSketch && d.severity != "note") markers.append({d.line, d.severity == "error", d.message});
+            if (!d.inSketch || d.severity == "note") continue;
+            markers[d.path].append({d.line, d.severity == "error", d.message});
+            if (firstError.isEmpty() && d.severity == "error") firstError = d.path;
         }
-        const QString sketchPath = project->getProjectDirectory() + "/" + project->activeSketchPath();
+        scriptPanel->setCompileMarkers(markers);
         if (!ok) {
-            // Show the sketch at its first error (opening it if another script is shown).
+            // Show the file with the first error (the sketch for a link error).
+            const QString target = firstError.isEmpty() ? project->getProjectDirectory() + "/" + project->activeSketchPath() : firstError;
             centerStack->setCurrentPage(scriptPanel);
-            if (QFileInfo(scriptPanel->currentPath()) != QFileInfo(sketchPath) && scriptPanel->confirmLeaveUnsaved())
-                scriptPanel->loadScript(sketchPath);
-            if (QFileInfo(scriptPanel->currentPath()) == QFileInfo(sketchPath)) scriptPanel->showDiagnostics(markers, true);
+            if (QFileInfo(scriptPanel->currentPath()) != QFileInfo(target) && scriptPanel->confirmLeaveUnsaved())
+                scriptPanel->loadScript(target);
+            scriptPanel->goToFirstError();
             Toast::showMessage(this, "Firmware didn't compile: see the marked lines and the Output panel", 3000);
             return;
         }
-        if (QFileInfo(scriptPanel->currentPath()) == QFileInfo(sketchPath)) scriptPanel->showDiagnostics(markers, false);
         Application::getInstance()->getProject()->setFirmwareBinary(firmwareCompiler->wasm());
         startRun();
     });
@@ -944,13 +978,15 @@ void EditorWindow::setupMainViewport() {
 
             Project* project = Application::getInstance()->getProject();
             if (project->hasScriptAt(project->getCurrentScriptIdx())) project->reloadScript();
-            // The active sketch: the ideal board's (Prototype) or the active
-            // board's slot (Real), with that board's robot_pins.h.
+            // The active sketch: the ideal board's (Prototype, with its generated
+            // robot_pins.h) or the active board's slot (Real, with the board's
+            // variant and macros, as the real core builds it).
             if (project->usesFirmware()) {
-                project->writeBoardHeader();
                 setHudBtn(playBtn, "Compiling...", ":/icons/play.svg", playColor);
                 playBtn->setEnabled(false);
-                firmwareCompiler->compile(project->activeSketchPath(), project->readActiveSketch(), project->pinsHeader());
+                firmwareCompiler->compile(project->getProjectDirectory() + "/" + project->activeSketchPath(),
+                                          project->readActiveSketch(), project->pinsHeader(),
+                                          project->boardVariantHeader(), project->boardDefines());
                 return;
             }
             startRun();

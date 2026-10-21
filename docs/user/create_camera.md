@@ -52,7 +52,9 @@ One output per camera, target kind `camera`, any name (for example `image` or `d
 
 From firmware the camera works like on an ESP32-CAM, with Espressif's camera driver API (RoboticsStudio ships a compatible subset): `esp_camera_init(&config)`, then `esp_camera_fb_get()` / `esp_camera_fb_return()`. See `examples/firmware/esp32_camera` and [firmware.md](firmware.md).
 
-The library also has the **ESP32-CAM board** itself (`models/board/esp32_cam`): a board with its OV2640 camera built in, wired on the PCB. At the Real level its camera pins are the board's own (`ESP32_CAM_SDA` = 26, `ESP32_CAM_D0` = 5, ...; the AI-Thinker pinout, no reset pin) and need no wires; its camera device and emulator are the same as this guide's, in the board's `.rsdef`. `demo/Robot arm (ESP32-CAM)` uses it. See [wiring.md](wiring.md).
+The library also has the **ESP32-CAM board** itself (`models/board/esp32_cam`): a board with its OV2640 camera built in, wired on the PCB. At the Real level its camera pins are the board's own GPIOs, wired on the PCB (the usual AI-Thinker list: `SIOD_GPIO_NUM 26`, `Y2_GPIO_NUM 5`, ..., no reset pin), and need no wires; its camera device and emulator are the same as this guide's, in the board's `.rsdef`. `demo/Robot arm (ESP32-CAM)` uses it. See [wiring.md](wiring.md).
+
+The example below is a Prototype sketch (the part named `Camera`, pins from `robot_pins.h`); on a real ESP32-CAM the same fields take the GPIO numbers.
 
 ```cpp
 #include "esp_camera.h"

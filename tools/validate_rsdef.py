@@ -39,7 +39,7 @@ class Errors(list):
 
 # mirrors PinDef::types() / PinDef::capabilities() in ComponentData.cpp
 PIN_TYPES = ("pwm", "digital", "analog", "i2c_sda", "i2c_scl", "spi_sck", "spi_mosi", "spi_miso",
-             "uart_tx", "uart_rx", "power", "ground", "gpio", "power_out")
+             "uart_tx", "uart_rx", "power", "ground", "gpio", "power_out", "motor", "motor_out")
 PIN_CAPS = ("digital", "pwm", "analog", "interrupt", "i2c_sda", "i2c_scl",
             "spi_sck", "spi_mosi", "spi_miso", "uart_tx", "uart_rx")
 SCHEMA_VERSION, MIN_SCHEMA_VERSION = 3, 2
@@ -158,12 +158,31 @@ def check_power(errs, d):
             pts = sorted(curve)
             if len(pts) < 2:
                 errs.add("power.battery.curve: needs at least 2 points")
-            elif pts[0][0] != 0 or pts[-1][0] != 100:
-                errs.add("power.battery.curve: must span 0 to 100 %")
+            elif pts[-1][0] != 100 or not any(pt[0] == 0 for pt in pts):
+                errs.add("power.battery.curve: must reach 100 % and have a point at 0 % "
+                         "(points below 0 % are the charge past the rated cut-off)")
             if any(pt[1] <= 0 or pt[2] < 0 for pt in pts):
                 errs.add("power.battery.curve: voltages must be > 0, resistances >= 0")
             if len({pt[0] for pt in pts}) != len(pts):
                 errs.add("power.battery.curve: duplicate charge level")
+        cells = b.get("cells", 1)
+        if not isinstance(cells, int) or isinstance(cells, bool) or cells < 1:
+            errs.add("power.battery: 'cells' must be a whole number >= 1")
+        if "rate" in b:
+            r = b["rate"]
+            for key in ("available_fraction", "rate_constant_per_h"):
+                if key not in r:
+                    errs.add(f"power.battery.rate: missing '{key}'")
+            if not 0 < r.get("available_fraction", 1) <= 1:
+                errs.add("power.battery.rate: 'available_fraction' must be in (0, 1]")
+            elif r.get("available_fraction", 1) < 1 and not r.get("rate_constant_per_h", 0) > 0:
+                errs.add("power.battery.rate: 'rate_constant_per_h' must be > 0")
+        if b.get("over_discharge_v", 0) < 0:
+            errs.add("power.battery: 'over_discharge_v' must be >= 0")
+        if "protection" in b:
+            p = b["protection"]
+            if not p.get("cutoff_v", 0) > 0 or p.get("delay_ms", 0) < 0:
+                errs.add("power.battery.protection: 'cutoff_v' must be > 0, 'delay_ms' >= 0")
         if batteries != 1:
             errs.add("power.battery: needs exactly one supply of kind 'battery'")
     elif batteries:
@@ -176,6 +195,7 @@ def power_source_keys(pw):
     keys += [f"regulators.{r.get('id')}" for r in pw.get("regulators", [])]
     keys += [f"loads.{l.get('pin')}" for l in pw.get("loads", [])]
     keys += [k for k in ("brownout", "battery") if k in pw]
+    keys += [f"battery.{k}" for k in ("rate", "protection") if k in pw.get("battery", {})]
     return keys
 
 
@@ -206,7 +226,7 @@ def check_pins(errs, d):
             numbers[p["number"]] = pid
     if board is None:
         return
-    for key in ("fqbn", "header_folder", "logic_voltage"):
+    for key in ("fqbn", "logic_voltage"):
         if not board.get(key):
             errs.add(f"board: missing '{key}'")
     by_id = {p.get("id"): p for p in pins}
@@ -227,6 +247,14 @@ def check_pins(errs, d):
     check_ref("spi.miso", spi.get("miso"), "spi_miso")
     for pin_id in board.get("analog_write", {}).get("pins", {}):
         check_ref("analog_write.pins", pin_id, "pwm")
+    variant = board.get("variant", {})
+    for name, num in variant.get("pins", {}).items():
+        if not isinstance(num, int) or isinstance(num, bool) or num < 0:
+            errs.add(f"board.variant.pins: '{name}' must be a pin number >= 0")
+        elif not name.isidentifier():
+            errs.add(f"board.variant.pins: '{name}' is not a C++ name")
+    if any(not isinstance(x, str) or not x.split("=")[0].isidentifier() for x in variant.get("defines", [])):
+        errs.add("board.variant.defines: each entry is NAME or NAME=VALUE")
 
 
 def validate(d):

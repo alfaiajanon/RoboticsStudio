@@ -44,7 +44,7 @@ In edit mode, every prop is shown where it was authored. Physics only applies in
 
 ## The stage script
 
-Create stage scripts in the Script view with **+** → *Stage script* (they're listed with a green **S**). The dropdown in the Stage toolbar picks which one runs on Play, or **None**. It's disabled until the project has a stage script. In the `.rsproj` they are saved as `"stage": {"script": {"current": 0, "paths": ["stage.js"]}}`, with `current` set to `-1` for none.
+Create stage scripts in the Script view with **+** → *Stage script* (they're listed with a green **S**, one file each: `script/<name>.js`). The dropdown in the Stage toolbar picks which one runs on Play, or **None**. It's disabled until the project has a stage script. In the `.rsproj` they are saved as `"stage": {"script": {"current": 0, "paths": ["script/stage.js"]}}`, with `current` set to `-1` for none.
 
 A stage script is JavaScript, written like an Arduino sketch: an optional `setup()` runs once, then `loop()` over and over. `delay(ms)`, `delayMicroseconds(us)`, `millis()` and `micros()` use simulated time, in lockstep with the physics like the robot's firmware; `console.log()` prints to the Output panel, tagged `[STAGE]`. The stage script runs on its own thread, so a `delay()` in it never stalls the firmware, and the other way round. A `loop()` that never returns or calls `delay()` is stopped after 2 seconds.
 

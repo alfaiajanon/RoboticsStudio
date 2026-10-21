@@ -2,11 +2,14 @@
 // pot noise, backlash, unit spread) can be compared with the ideal one.
 //
 // Real version (Real level): an Arduino Uno wired to both servos (signals on
-// D9 and D10, 5V and GND) on the Wiring page. Same sketch as the Prototype
-// copy; the names in uno/robot_pins.h are generated from that wiring.
+// D9 and D10, 5V and GND) on the Wiring page. It uses the Uno's own pin
+// numbers; the rest is the Prototype copy's sketch.
 
 #include <Servo.h>
-#include "robot_pins.h"
+
+// Servo signals, as wired on the Wiring page.
+const int EMULATED_SERVO_SIGNAL = 9;
+const int STANDARD_SERVO_SIGNAL = 10;
 
 const unsigned long PERIOD_MS = 20000;   // one full sweep: -45 -> +45 -> -45 degrees
 const int MIN_ANGLE = 45;                // Arduino angles: 90 is the centre, so 45..135

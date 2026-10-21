@@ -164,13 +164,15 @@
             "no_load_speed_rpm": "spec sheet: 60 rpm at 12 V measured with the gearbox's friction (generic BO gear motor listing); the line runs through that point, so its friction-free intercept is 64 rpm (harness, 2026-10-19: 58.4 rpm at no load); to be measured (plan task 37)",
             "rated_voltage": "spec sheet: voltage of the speed and torque figures",
             "speed_spread": "estimate: unit-to-unit no-load speed spread (stddev); to be measured",
+            "stall_current_a": "estimate (no current in the listing): energy balance at stall, stall torque / back-EMF constant = 0.15 N\u00b7m / (12 V / 6.7 rad/s) = 84 mA for a lossless gearbox, divided by a cheap plastic gearbox's ~35 % efficiency = 0.25 A (armature ~48 ohm); to be measured (plan task 37)",
             "stall_torque_nm": "estimate: the listing's max torque 0.15 N\u00b7m taken as the stall torque at 12 V; to be measured",
-            "supply_voltage": "assumption: 12 V supply through an ideal H-bridge, until the power net and driver parts exist (plan Phase 2)"
+            "supply_voltage": "assumption: the Prototype level's ideal H-bridge runs at 12 V (at the Real level the motor gets what its driver or pin supplies)"
         },
         "parameters": {
             "no_load_speed_rpm": 64,
             "rated_voltage": 12,
             "speed_spread": 0.05,
+            "stall_current_a": 0.25,
             "stall_torque_nm": 0.15,
             "supply_voltage": 12
         },
@@ -211,6 +213,17 @@
                 "target": {
                     "kind": "emulator"
                 }
+            },
+            {
+                "channel_type": "scalar",
+                "dim": 1,
+                "internal": true,
+                "name": "current",
+                "physical": false,
+                "target": {
+                    "kind": "emulator"
+                },
+                "unit": "A"
             }
         ]
     },
@@ -331,18 +344,18 @@
     },
     "pins": [
         {
-            "description": "Motor terminal A. At the Prototype level an ideal H-bridge (DRV8833-style) drives it from this board pin (driver input IN1)",
+            "description": "Motor terminal A. Real level: wire it to a motor driver's output (straight to a board pin it gets only what the pin can give). Prototype level: an ideal H-bridge (DRV8833-style) drives it from an ideal board pin (driver input IN1)",
             "id": "motor_a",
-            "type": "pwm",
+            "type": "motor",
             "voltage_range": [
                 -12,
                 12
             ]
         },
         {
-            "description": "Motor terminal B. At the Prototype level an ideal H-bridge (DRV8833-style) drives it from this board pin (driver input IN2)",
+            "description": "Motor terminal B. Real level: wire it to a motor driver's output. Prototype level: an ideal H-bridge (DRV8833-style) drives it from an ideal board pin (driver input IN2)",
             "id": "motor_b",
-            "type": "pwm",
+            "type": "motor",
             "voltage_range": [
                 -12,
                 12

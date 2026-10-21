@@ -17,28 +17,40 @@ class QProcess;
  *
  *   core: resources/firmware/core/*.cpp -> objects, built once per core
  *         version and cached (~/.cache/.../firmware/core-<hash>)
- *   sketch: written with robot_pins.h into sketch-<hash>/, compiled and
- *         linked with the core objects -> firmware.wasm. The hash covers the
- *         sketch, the pins header, the flags and the core, so pressing Play
- *         again without changes reuses the result.
+ *   sketch: written into sketch-<hash>/ with the generated headers (the
+ *         ideal board's robot_pins.h at the Prototype level; a real board's
+ *         variant, pins_arduino.h, at the Real level), compiled and linked
+ *         with the core objects -> firmware.wasm. The sketch's own folder is
+ *         on the include path after them, so the user's headers next to the
+ *         sketch are found. The hash covers the sketch, the generated
+ *         headers, the user's headers in the sketch folder, the defines, the
+ *         flags and the core, so pressing Play again without changes reuses
+ *         the result.
  *
  * A .ino sketch gets what the Arduino IDE adds, `#include <Arduino.h>`, and a
  * #line so diagnostics point at the sketch's own lines. Everything else
  * (Servo.h, robot_pins.h) the sketch includes itself, so the same file builds
  * for a real board. No Arduino-style automatic prototypes: declare a
  * function before using it.
+ *
+ * A sketch in its own folder (script/arm/arm.ino, an Arduino sketch folder)
+ * is that folder: the .ino plus every .cpp next to it, each compiled as its
+ * own translation unit and linked together, as the Arduino IDE does (a .cpp
+ * includes <Arduino.h> itself). A sketch outside such a folder (an older
+ * project's arm.ino at the project root) is the one file plus its headers.
  */
 class FirmwareCompiler : public QObject {
     Q_OBJECT
 
     public:
         struct Diagnostic {
-            QString file;        // the sketch's file name, a core header, or empty (linker)
+            QString file;        // the file's name (arm.ino, kinematics.cpp), a core header, or empty (linker)
+            QString path;        // absolute path when the file is one of the sketch's own, else empty
             int line = 0;
             int column = 0;
             QString severity;    // error / warning / note
             QString message;
-            bool inSketch = false;
+            bool inSketch = false;   // in one of the sketch's own files (path is set)
         };
 
         explicit FirmwareCompiler(QObject* parent = nullptr);
@@ -46,7 +58,11 @@ class FirmwareCompiler : public QObject {
 
         // Starts a compile; finished() always follows (at once from the cache).
         // A compile still running is cancelled.
-        void compile(const QString& sketchPath, const QString& sketchText, const QString& pinsHeader);
+        // pinsHeader: robot_pins.h to generate (Prototype), or empty;
+        // variantHeader: the board's pins_arduino.h (Real), or empty;
+        // defines: the board's macros (NAME or NAME=VALUE).
+        void compile(const QString& sketchPath, const QString& sketchText, const QString& pinsHeader,
+                     const QString& variantHeader = QString(), const QStringList& defines = QStringList());
         void cancel();
         bool isBusy() const { return process != nullptr; }
 
@@ -70,6 +86,8 @@ class FirmwareCompiler : public QObject {
         QList<Job> jobs;
         QString clang;
         QString sketchName;
+        QString sketchFile;    // absolute path of the .ino
+        QString sketchFolder;  // its folder (the user's headers and .cpp files)
         QString wasmPath;
         QByteArray result;
         QList<Diagnostic> diags;

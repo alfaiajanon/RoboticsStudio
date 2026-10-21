@@ -41,6 +41,8 @@ class Project {
         ComponentInstance* rootComponent = nullptr;
         QMap<int, ComponentInstance*> componentMap;
         QList<Constraint*> constraintList;
+        // Parts whose model isn't in the library: not loaded, written back on save.
+        QJsonArray unknownComponents;
         Rotation rootRotation;
 
         FirmwareRuntime firmware{"MCU"};   // the robot's firmware while it is C++ (.ino/.cpp)
@@ -94,7 +96,6 @@ class Project {
 
         static constexpr int kSchemaVersion = 3;   // "schema" in the .rsproj; files without it are 2
         ProjectLevel getLevel() const { return level; }
-        void setLevel(ProjectLevel l) { level = l; }
         static QString levelName(ProjectLevel l) { return l == ProjectLevel::Real ? "real" : "prototype"; }
 
         Netlist& netlist() { return wiring; }
@@ -113,11 +114,34 @@ class Project {
         // Prototype, the active board's slot at Real. Empty = none.
         QString activeSketchPath() const;
         QString readActiveSketch() const;
-        // robot_pins.h for the active sketch (ideal or real board).
+        // Prototype: the ideal board's robot_pins.h for the sketch (its pin
+        // names). Real: empty; the sketch uses the board's own pins.
         QString pinsHeader();
-        // Real level: writes <project>/<header_folder>/robot_pins.h for the
-        // active board (what tools/check_transfer.sh compiles). False on error.
-        bool writeBoardHeader();
+        // Real: the active board's pins_arduino.h (A0, LED_BUILTIN, ...) and
+        // its macros, as the real core has them; empty at the Prototype level.
+        QString boardVariantHeader() const;
+        QStringList boardDefines() const;
+
+        // Scripts live under <project>/script/: a firmware sketch in a folder
+        // of its own, named after it (script/arm/arm.ino, with its .h and .cpp
+        // files: an Arduino sketch folder); a stage script as one file
+        // (script/stage.js). Older projects keep their files at the root.
+        static constexpr const char* kScriptDir = "script";
+        // A sketch path (relative or absolute) whose folder is named after it.
+        static bool inSketchFolder(const QString& sketchPath);
+        // A valid Arduino sketch name from what the user typed ("My arm" ->
+        // "My_arm": letters, digits, '_', '-', '.', first a letter or digit,
+        // at most 63 characters); empty if nothing is left.
+        static QString sketchName(const QString& typed);
+
+        // Prototype -> Real is one way: a new project at the Real level in
+        // `destDir` (must not exist), copied from this project as saved on
+        // disk. Same robot, sketches, stage and plots; no board, no wiring.
+        // A sketch that includes robot_pins.h gets one of its own there, with
+        // the Prototype's names set to -1 ("not wired yet") for the user to
+        // fill in with board pins; it is the user's file, never regenerated.
+        // Returns the new .rsproj path, or empty with `error` set.
+        QString createRealCopy(const QString& destDir, const QString& name, QString* error);
         // Writes the .rsproj only; the editor (EditorWindow::saveProject) owns
         // the "unsaved changes" state and marks it clean on success.
         bool saveProject();

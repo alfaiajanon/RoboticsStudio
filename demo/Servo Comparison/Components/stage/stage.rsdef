@@ -35,6 +35,32 @@
                     0
                 ]
             }
+        },
+        {
+            "body": "body_1",
+            "description": "Top of the stand: the controller board",
+            "id": "top",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    90,
+                    180,
+                    270
+                ]
+            },
+            "transform": {
+                "pos": [
+                    0,
+                    -0.015,
+                    0.025
+                ],
+                "quat": [
+                    1,
+                    0,
+                    0,
+                    0
+                ]
+            }
         }
     ],
     "emulator": {

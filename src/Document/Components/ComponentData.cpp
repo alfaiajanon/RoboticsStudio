@@ -1,4 +1,5 @@
 #include "ComponentData.h"
+#include <QRegularExpression>
 #include "Utils/Graph.h"
 #include "HintClass.h"
 #include <QDir>
@@ -839,7 +840,7 @@ static QJsonArray interfaceToJson(const QMap<QString, InterfaceDef>& defs) {
 
 const QStringList& PinDef::types() {
     static const QStringList t{"pwm", "digital", "analog", "i2c_sda", "i2c_scl", "spi_sck", "spi_mosi", "spi_miso",
-                               "uart_tx", "uart_rx", "power", "ground", "gpio", "power_out"};
+                               "uart_tx", "uart_rx", "power", "ground", "gpio", "power_out", "motor", "motor_out"};
     return t;
 }
 
@@ -928,7 +929,7 @@ static BoardDef parseBoard(const QJsonObject& b, const QList<PinDef>& pins, Load
     BoardDef board;
     board.present = true;
     board.fqbn = readString(b, "fqbn", "board", err, true);
-    board.headerFolder = readString(b, "header_folder", "board", err, true);
+    board.headerFolder = readString(b, "header_folder", "board", err, false);
     board.logicVoltage = readNumber(b, "logic_voltage", "board", err, true);
     const QJsonObject adc = b["adc"].toObject();
     board.adcBits = int(readNumber(adc, "bits", "board.adc", err, false, 10));
@@ -946,6 +947,19 @@ static BoardDef parseBoard(const QJsonObject& b, const QList<PinDef>& pins, Load
     board.spiMosi = spi["mosi"].toString();
     board.spiMiso = spi["miso"].toString();
     board.spiMaxHz = readNumber(spi, "max_hz", "board.spi", err, false, 8000000.0);
+    board.pinOutputOhm = readNumber(b, "pin_output_ohm", "board", err, false, 0.0);
+    board.pinAbsMaxA = readNumber(b, "pin_abs_max_ma", "board", err, false, 0.0) / 1000.0;
+    if (!err.has() && (board.pinOutputOhm < 0.0 || board.pinAbsMaxA < 0.0)) err.set("board: 'pin_output_ohm' and 'pin_abs_max_ma' must be >= 0");
+    const QJsonObject variant = b["variant"].toObject();
+    const QJsonObject vpins = variant["pins"].toObject();
+    for (auto it = vpins.begin(); it != vpins.end(); ++it) {
+        if (!it.value().isDouble() || it.value().toInt(-1) < 0)
+            err.set(QString("board.variant.pins: '%1' must be a pin number >= 0").arg(it.key()));
+        else if (!QRegularExpression("^[A-Za-z_][A-Za-z0-9_]*$").match(it.key()).hasMatch())
+            err.set(QString("board.variant.pins: '%1' is not a C++ name").arg(it.key()));
+        board.variantPins[it.key()] = it.value().toInt();
+    }
+    for (const QJsonValue& v : variant["defines"].toArray()) board.defines << v.toString();
     const QJsonObject src = b["sources"].toObject();
     for (auto it = src.begin(); it != src.end(); ++it) board.sources[it.key()] = it.value().toString();
     if (err.has()) return board;
@@ -971,7 +985,7 @@ static BoardDef parseBoard(const QJsonObject& b, const QList<PinDef>& pins, Load
 static QJsonObject boardToJson(const BoardDef& b) {
     QJsonObject o;
     o["fqbn"] = b.fqbn;
-    o["header_folder"] = b.headerFolder;
+    if (!b.headerFolder.isEmpty()) o["header_folder"] = b.headerFolder;
     o["logic_voltage"] = b.logicVoltage;
     o["adc"] = QJsonObject{{"bits", b.adcBits}, {"vref", b.adcVref}};
     QJsonObject aw{{"hz", b.analogWriteHz}};
@@ -992,6 +1006,13 @@ static QJsonObject boardToJson(const BoardDef& b) {
         QJsonObject src;
         for (auto it = b.sources.begin(); it != b.sources.end(); ++it) src[it.key()] = it.value();
         o["sources"] = src;
+    }
+    if (b.pinOutputOhm > 0.0) o["pin_output_ohm"] = b.pinOutputOhm;
+    if (b.pinAbsMaxA > 0.0) o["pin_abs_max_ma"] = b.pinAbsMaxA * 1000.0;
+    if (!b.variantPins.isEmpty() || !b.defines.isEmpty()) {
+        QJsonObject vpins;
+        for (auto it = b.variantPins.begin(); it != b.variantPins.end(); ++it) vpins[it.key()] = it.value();
+        o["variant"] = QJsonObject{{"pins", vpins}, {"defines", QJsonArray::fromStringList(b.defines)}};
     }
     return o;
 }
@@ -1020,6 +1041,11 @@ BatteryDef::Point BatteryDef::at(double percent) const {
         return {percent, a.voltage + f * (b.voltage - a.voltage), a.resistance + f * (b.resistance - a.resistance)};
     }
     return curve.last();
+}
+
+BatteryDef::Point BatteryDef::packAt(double percent) const {
+    const Point p = at(percent);
+    return {p.percent, p.voltage * cells, p.resistance * cells};
 }
 
 const PowerLoadDef* PowerDef::loadOn(const QString& pin) const {
@@ -1128,24 +1154,49 @@ static PowerDef parsePower(const QJsonObject& o, const QList<PinDef>& pins, bool
 
     if (o.contains("battery") && !err.has()) {
         const QJsonObject b = readObject(o["battery"], "power.battery", err);
-        pw.battery.present = true;
-        pw.battery.capacityAh = readNumber(b, "capacity_mah", "power.battery", err, true) / 1000.0;
+        BatteryDef& bat = pw.battery;
+        bat.present = true;
+        bat.cells = int(readNumber(b, "cells", "power.battery", err, false, 1.0));
+        bat.capacityAh = readNumber(b, "capacity_mah", "power.battery", err, true) / 1000.0;
         for (const QJsonValue& v : readArray(b, "curve", "power.battery", err)) {
             const QJsonArray pt = v.toArray();
             if (pt.size() != 3) { err.set("power.battery.curve: each point is [charge %, open-circuit V, internal ohm]"); break; }
-            pw.battery.curve.append({pt[0].toDouble(), pt[1].toDouble(), pt[2].toDouble()});
+            bat.curve.append({pt[0].toDouble(), pt[1].toDouble(), pt[2].toDouble()});
         }
-        std::sort(pw.battery.curve.begin(), pw.battery.curve.end(),
+        std::sort(bat.curve.begin(), bat.curve.end(),
                   [](const BatteryDef::Point& a, const BatteryDef::Point& b) { return a.percent < b.percent; });
+        if (b.contains("rate") && !err.has()) {
+            const QJsonObject r = readObject(b["rate"], "power.battery.rate", err);
+            bat.availableFraction = readNumber(r, "available_fraction", "power.battery.rate", err, true);
+            bat.rateConstant = readNumber(r, "rate_constant_per_h", "power.battery.rate", err, true);
+        }
+        bat.overDischargeV = readNumber(b, "over_discharge_v", "power.battery", err, false, 0.0);
+        if (b.contains("protection") && !err.has()) {
+            const QJsonObject p = readObject(b["protection"], "power.battery.protection", err);
+            bat.protection.present = true;
+            bat.protection.cutoffV = readNumber(p, "cutoff_v", "power.battery.protection", err, true);
+            bat.protection.delay = readNumber(p, "delay_ms", "power.battery.protection", err, false, 0.0) / 1000.0;
+            bat.protection.fitted = readBool(p, "fitted", "power.battery.protection", err, false, false);
+        }
         if (!err.has()) {
-            if (pw.battery.capacityAh <= 0.0) err.set("power.battery: 'capacity_mah' must be > 0");
-            else if (pw.battery.curve.size() < 2) err.set("power.battery.curve: needs at least 2 points");
-            else if (pw.battery.curve.first().percent != 0.0 || pw.battery.curve.last().percent != 100.0)
-                err.set("power.battery.curve: must span 0 to 100 %");
-            for (int i = 0; i < pw.battery.curve.size() && !err.has(); ++i) {
-                const BatteryDef::Point& p = pw.battery.curve[i];
+            bool hasZero = false;
+            for (const BatteryDef::Point& p : bat.curve) hasZero = hasZero || p.percent == 0.0;
+            if (bat.capacityAh <= 0.0) err.set("power.battery: 'capacity_mah' must be > 0");
+            else if (bat.cells < 1 || b["cells"].toDouble(1.0) != bat.cells) err.set("power.battery: 'cells' must be a whole number >= 1");
+            else if (bat.curve.size() < 2) err.set("power.battery.curve: needs at least 2 points");
+            else if (bat.curve.last().percent != 100.0 || !hasZero)
+                err.set("power.battery.curve: must reach 100 % and have a point at 0 % (points below 0 % are the charge past the rated cut-off)");
+            else if (bat.availableFraction <= 0.0 || bat.availableFraction > 1.0)
+                err.set("power.battery.rate: 'available_fraction' must be in (0, 1]");
+            else if (bat.availableFraction < 1.0 && bat.rateConstant <= 0.0)
+                err.set("power.battery.rate: 'rate_constant_per_h' must be > 0");
+            else if (bat.overDischargeV < 0.0) err.set("power.battery: 'over_discharge_v' must be >= 0");
+            else if (bat.protection.present && (bat.protection.cutoffV <= 0.0 || bat.protection.delay < 0.0))
+                err.set("power.battery.protection: 'cutoff_v' must be > 0, 'delay_ms' >= 0");
+            for (int i = 0; i < bat.curve.size() && !err.has(); ++i) {
+                const BatteryDef::Point& p = bat.curve[i];
                 if (p.voltage <= 0.0 || p.resistance < 0.0) err.set("power.battery.curve: voltages must be > 0, resistances >= 0");
-                else if (i > 0 && p.percent == pw.battery.curve[i - 1].percent) err.set("power.battery.curve: duplicate charge level");
+                else if (i > 0 && p.percent == bat.curve[i - 1].percent) err.set("power.battery.curve: duplicate charge level");
             }
         }
     }
@@ -1208,9 +1259,21 @@ static QJsonObject powerToJson(const PowerDef& pw) {
         o["brownout"] = b;
     }
     if (pw.battery.present) {
+        const BatteryDef& bat = pw.battery;
         QJsonArray curve;
-        for (const BatteryDef::Point& p : pw.battery.curve) curve.append(QJsonArray{p.percent, p.voltage, p.resistance});
-        o["battery"] = QJsonObject{{"capacity_mah", pw.battery.capacityAh * 1000.0}, {"curve", curve}};
+        for (const BatteryDef::Point& p : bat.curve) curve.append(QJsonArray{p.percent, p.voltage, p.resistance});
+        QJsonObject b{{"capacity_mah", bat.capacityAh * 1000.0}, {"curve", curve}};
+        if (bat.cells != 1) b["cells"] = bat.cells;
+        if (bat.availableFraction < 1.0)
+            b["rate"] = QJsonObject{{"available_fraction", bat.availableFraction}, {"rate_constant_per_h", bat.rateConstant}};
+        if (bat.overDischargeV > 0.0) b["over_discharge_v"] = bat.overDischargeV;
+        if (bat.protection.present) {
+            QJsonObject p{{"cutoff_v", bat.protection.cutoffV}};
+            if (bat.protection.delay > 0.0) p["delay_ms"] = bat.protection.delay * 1000.0;
+            if (bat.protection.fitted) p["fitted"] = true;
+            b["protection"] = p;
+        }
+        o["battery"] = b;
     }
     if (!pw.sources.isEmpty()) {
         QJsonObject src;

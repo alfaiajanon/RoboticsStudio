@@ -4,8 +4,10 @@
  * ArduinoCore-API: helpers are templates, not macros, so standard headers
  * (<algorithm>, <cmath>) keep working.
  *
- * Pins are the board numbers from robot_pins.h (e.g. COMP_6_SIGNAL).
- * Everything that takes time runs on simulated time.
+ * Pins: at the Prototype level the ideal board's numbers from the generated
+ * robot_pins.h (e.g. COMP_6_SIGNAL); at the Real level the board's own pin
+ * numbers and names (9, A0, LED_BUILTIN) from its variant, pins_arduino.h,
+ * as on the real core. Everything that takes time runs on simulated time.
  */
 #ifndef ARDUINO_H
 #define ARDUINO_H
@@ -17,6 +19,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include "rs_abi.h"
+// The board's variant (Real level, written next to the sketch's build):
+// A0, LED_BUILTIN, SDA, ... as the real core's pins_arduino.h has them.
+// The ideal board has none.
+#if __has_include("pins_arduino.h")
+#include "pins_arduino.h"
+#endif
 
 #define ROBOTICS_STUDIO 1
 

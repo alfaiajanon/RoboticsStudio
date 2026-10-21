@@ -588,10 +588,14 @@ int FirmwareRuntime::pinHandle(int pin, const char* what) {
     const int h = pins ? pins->handleForNumber(pin) : -1;
     if (h < 0 && !reportedPins.contains(pin)) {
         reportedPins.insert(pin);
-        if (board.ideal)
+        if (pin < 0)
+            Log::warning(QString("%1: %2 on pin %3: a pin that isn't set yet (in a Real copy, put the board pin "
+                                 "into robot_pins.h once the part is wired)").arg(tag, what).arg(pin));
+        else if (board.ideal)
             Log::warning(QString("%1: %2 on pin %3: no part has that pin (use the names in robot_pins.h)").arg(tag, what).arg(pin));
         else
-            Log::warning(QString("%1: %2 on pin %3: %4 has no such pin (use the names in robot_pins.h)").arg(tag, what).arg(pin).arg(board.name));
+            Log::warning(QString("%1: %2 on pin %3: %4 has no pin %3 (its pins are in the Inspector and on the Wiring page)")
+                             .arg(tag, what).arg(pin).arg(board.name));
     }
     return h;
 }

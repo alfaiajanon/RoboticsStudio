@@ -87,7 +87,7 @@ Turn on the **Connectors** overlay in the editor preview: X red, Y green, Z blue
 
 ## Pins
 
-The part's electrical pins: `{"id": "signal", "type": "pwm", "voltage_range": [4.8, 6]}`. Ids are unique. `type` is one of `pwm`, `digital`, `analog` (signal pins), `i2c_sda`, `i2c_scl`, `spi_sck`, `spi_mosi`, `spi_miso`, `uart_tx`, `uart_rx` (bus lines), `power` (a supply input) or `ground`; leave it out while you don't know yet. I2C parts share the board's I2C bus and answer at their I2C address; SPI parts share its SPI bus and listen while their chip-select (`cs`, a `digital` pin) is LOW. `voltage_range` on a `power` pin is the supply the part takes; the wiring checks compare it with the voltage of the rail it is wired to, and the board's logic level with the part's signal pins. What a part draws, supplies or converts at the Real level goes in its `power` block: [create_power.md](create_power.md).
+The part's electrical pins: `{"id": "signal", "type": "pwm", "voltage_range": [4.8, 6]}`. Ids are unique. `type` is one of `pwm`, `digital`, `analog` (signal pins), `i2c_sda`, `i2c_scl`, `spi_sck`, `spi_mosi`, `spi_miso`, `uart_tx`, `uart_rx` (bus lines), `motor` (a DC motor's terminal, [create_dc_motor.md](create_dc_motor.md)), `motor_out` (a motor driver's output, [create_driver.md](create_driver.md)), `power` (a supply input) or `ground`; leave it out while you don't know yet. I2C parts share the board's I2C bus and answer at their I2C address; SPI parts share its SPI bus and listen while their chip-select (`cs`, a `digital` pin) is LOW. `voltage_range` on a `power` pin is the supply the part takes; the wiring checks compare it with the voltage of the rail it is wired to, and the board's logic level with the part's signal pins. What a part draws, supplies or converts at the Real level goes in its `power` block: [create_power.md](create_power.md).
 
 Each typed pin except power and ground is wired automatically to the ideal controller of the Prototype level. The firmware reaches it through a generated name, shown in the Inspector under **Pins (ideal board)**: `COMP_6_SIGNAL` (uid 6, pin `signal`), plus `SHOULDER_SIGNAL` when the part's name ("Shoulder") is unique. The number is the part's uid × 100 + the pin's index in this list, so it doesn't change when you add or remove other parts. At the Real level you wire the same pins to a board yourself ([wiring.md](wiring.md)); the names stay, the numbers become the board's.
 
@@ -97,22 +97,25 @@ A part with a `"board"` block is a board: it runs a firmware sketch at the Real 
 
 - `"type": "gpio"`: a pin the firmware drives, with `"number"` (what the sketch passes, Uno A0 = 14) and `"caps"`: what it can do (`digital`, `pwm`, `analog`, `interrupt`, `i2c_sda`, `i2c_scl`, `spi_sck`, `spi_mosi`, `spi_miso`, `uart_tx`, `uart_rx`).
 - `"type": "power_out"`: a supply output (5V, 3V3), with its voltage in `voltage_range`; its regulator, the board's USB feed and its brownout threshold go in the `power` block ([create_power.md](create_power.md)). Batteries and regulator modules have `power_out` pins too.
-- `"internal": true` (with a `number`): a pin wired on the board's PCB to an on-board part, like the ESP32-CAM's camera pins. It can't take a wire; the sketch sees it as `<BOARD NAME>_<PIN>`.
+- `"internal": true` (with a `number`): a pin wired on the board's PCB to an on-board part, like the ESP32-CAM's camera pins. It can't take a wire; the sketch uses its `number` (the GPIO it is wired to on the PCB).
 
 ```json
 "board": {
     "fqbn": "arduino:avr:uno",               // what arduino-cli compiles for
-    "header_folder": "uno",                  // project folder for its robot_pins.h
     "logic_voltage": 5,
     "adc": {"bits": 10, "vref": 5},
     "analog_write": {"hz": 490, "pins": {"d5": 980, "d6": 980}},
     "i2c": {"sda": "a4", "scl": "a5", "default_hz": 100000},
     "spi": {"sck": "d13", "mosi": "d11", "miso": "d12", "max_hz": 8000000},
+    "variant": {"pins": {"A0": 14, "LED_BUILTIN": 13, "SDA": 18, "...": 0},   // the real core's pins_arduino.h
+                "defines": ["ARDUINO=10607", "ARDUINO_AVR_UNO", "ARDUINO_ARCH_AVR"]},  // and its board macros
+    "pin_output_ohm": 25,                     // a gpio's output resistance (V drop per A)
+    "pin_abs_max_ma": 40,                     // its absolute maximum current
     "sources": {"adc": "datasheet: ATmega328P, 10-bit ADC", "...": "..."}
 }
 ```
 
-`i2c`/`spi`/`analog_write.pins` name gpio pins that have the matching capability. A board may also carry devices and an emulator (the ESP32-CAM's camera). See `models/board/` for the Uno and the ESP32-CAM.
+`i2c`/`spi`/`analog_write.pins` name gpio pins that have the matching capability. `pin_output_ohm` and `pin_abs_max_ma` set what a part wired straight to a pin gets at the Real level (a DC motor on an Uno pin: 5 V through 25 Ω) and when a run warns that a pin is overloaded. A board may also carry devices and an emulator (the ESP32-CAM's camera). See `models/board/` for the Uno and the ESP32-CAM.
 
 ## Interface signals
 

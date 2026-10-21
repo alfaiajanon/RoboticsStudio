@@ -1,4 +1,6 @@
 #include "SimulationManager.h"
+#include <cmath>
+#include "Document/Netlist.h"
 #include "MujocoContext.h"
 
 #include <chrono>
@@ -114,8 +116,21 @@ void SimulationManager::play() {
         pinBus.build(project->idealBoard());
         deviceBus.reset(&pinBus);
     } else {
-        if (board.isValid()) pinBus.build(board, project->netlist());
-        else pinBus.clear();
+        if (board.isValid()) {
+            pinBus.build(board, project->netlist());
+            // Ground nets are a 0 V source for a load wired to them (a motor from a pin to GND).
+            for (const Net& net : project->netlist().nets()) {
+                for (const PinRef& r : net.pins) {
+                    ComponentInstance* c = project->getComponentByUid(r.uid);
+                    bool ground = false;
+                    if (c && c->getBlueprint())
+                        for (const PinDef& pd : c->getBlueprint()->pins) ground = ground || (pd.id == r.pin && pd.type == "ground");
+                    if (ground) { pinBus.markGround(pinBus.handleOf(r.uid, r.pin)); break; }
+                }
+            }
+        } else {
+            pinBus.clear();
+        }
         deviceBus.reset(&pinBus);
         const BoardDef& def = board.def();
         const int uid = board.isValid() ? board.instance()->uid : -1;
@@ -193,6 +208,7 @@ void SimulationManager::edit() {
     deviceBus.reset(&pinBus);
     pinBus.clear();
     unpoweredUids.clear();
+    overloadedPins.clear();
 
     mj_resetData(mj->getModel(), mj->getData());
     mj->forward();
@@ -517,6 +533,7 @@ void SimulationManager::startPower(ComponentInstance* root) {
     deadUids = unpoweredUids;
     offEmulators.clear();
     powerCutsLogged.clear();
+    resetsLogged.clear();
     QHash<int, Emulator*> emulators;
     std::function<void(ComponentInstance*)> collect = [&](ComponentInstance* comp) {
         if (!comp) return;
@@ -563,6 +580,33 @@ void SimulationManager::setPartPowered(ComponentInstance* comp, bool powered, do
 
 
 /*
+ * Real level, after the emulators: the current the board's pins carry into
+ * loads that draw real current (a motor wired straight to a pin). It comes
+ * from the board's own supply, so it loads the board's rail in the power
+ * model; above a pin's absolute maximum a real pin is damaged (warned once).
+ */
+void SimulationManager::checkBoardPins(double now) {
+    ComponentInstance* board = project->activeBoard();
+    if (!board) return;
+    double total = 0.0;
+    for (int h : pinBus.boardNets()) {
+        const PinState* s = pinBus.state(h);
+        const double a = std::fabs(pinBus.amps(h));
+        total += a;
+        if (s && s->boardMaxA > 0.0 && a > s->boardMaxA && !overloadedPins.contains(h)) {
+            overloadedPins.insert(h);
+            Log::warning(QString("MCU: %1 pin %2 carries %3 mA at %4 s (absolute maximum %5 mA): a real pin would be damaged "
+                                 "(not simulated). Drive a motor through a motor driver")
+                             .arg(board->name).arg(pinBus.numberOf(h)).arg(a * 1000.0, 0, 'f', 0).arg(now, 0, 'f', 3)
+                             .arg(s->boardMaxA * 1000.0, 0, 'f', 0));
+        }
+    }
+    power.setBoardLoad(board->uid, total);
+}
+
+
+
+/*
  * Real level, once per physics tick after the emulators (physicsMutex held):
  * solve the power network with this step's currents, hand every part its
  * supply for the next step, switch parts off/on, and hold or release the
@@ -570,6 +614,7 @@ void SimulationManager::setPartPowered(ComponentInstance* comp, bool powered, do
  */
 void SimulationManager::applyPower(double now, double dt) {
     static constexpr int kCutsLogged = 5;   // per part, then only the summary at Stop
+    static constexpr int kResetsLogged = 10;   // per board
     const PowerSystem::Events ev = power.step(now, dt);
     for (const PowerSystem::Part& p : power.parts()) {
         if (p.emulator) p.emulator->setSupply(p.volts);
@@ -590,12 +635,16 @@ void SimulationManager::applyPower(double now, double dt) {
     for (int uid : ev.brownedOut) {
         ComponentInstance* board = project->getComponentByUid(uid);
         const QString name = board ? board->name : QString::number(uid);
-        Log::warning(QString("MCU: %1 brownout reset at %2 s (%3 V on its supply rail)")
-                         .arg(name).arg(now, 0, 'f', 3).arg(power.boardRailVolts(uid), 0, 'f', 2));
+        const int n = ++resetsLogged[uid];
+        if (n <= kResetsLogged)
+            Log::warning(QString("MCU: %1 brownout reset at %2 s (%3 V on its supply rail)%4")
+                             .arg(name).arg(now, 0, 'f', 3).arg(power.boardRailVolts(uid), 0, 'f', 2)
+                             .arg(n == kResetsLogged ? "; further resets not logged (the count is in the summary at Stop)" : ""));
         if (board && board == activeBoard && robotController == fw && fw->holdInReset()) pinBus.releaseBoardPins();
     }
     for (int uid : ev.released) {
-        if (activeBoard && activeBoard->uid == uid && robotController == fw && fw->isHeld() && fw->restart(now))
+        if (activeBoard && activeBoard->uid == uid && robotController == fw && fw->isHeld() && fw->restart(now)
+            && resetsLogged.value(uid) <= kResetsLogged)
             Log::info(QString("MCU: %1 starts again at %2 s (setup())").arg(activeBoard->name).arg(now, 0, 'f', 3));
     }
 }
@@ -677,6 +726,7 @@ bool SimulationManager::stepOnce() {
     syncFromMujocoProps(project->getStage(), m, d);
 
     runEmulators(d->time); // position it here to capture both sensor and actuator properly
+    if (project->getLevel() == ProjectLevel::Real) checkBoardPins(d->time);
     if (power.isActive()) applyPower(d->time, m->opt.timestep);
 
     if (d->time >= nextTelemetryDue - 1e-9) {

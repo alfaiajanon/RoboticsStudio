@@ -57,7 +57,7 @@
                 "additionalProperties": false,
                 "properties": {
                     "id": { "type": "string" },
-                    "type": { "enum": ["pwm", "digital", "analog", "i2c_sda", "i2c_scl", "spi_sck", "spi_mosi", "spi_miso", "uart_tx", "uart_rx", "power", "ground", "gpio", "power_out"], "description": "Electrical role. Part pins: every type except power/ground is on the ideal board (it gets a pin number in robot_pins.h) and, at the Real level, is wired to a board gpio pin; power = a supply input (load). Board pins (only with a 'board' block): gpio = a pin the firmware drives, with 'number' and 'caps'; power_out = a supply output (5V, 3V3). Omit while untyped." },
+                    "type": { "enum": ["pwm", "digital", "analog", "i2c_sda", "i2c_scl", "spi_sck", "spi_mosi", "spi_miso", "uart_tx", "uart_rx", "power", "ground", "gpio", "power_out", "motor", "motor_out"], "description": "Electrical role. motor = a motor terminal (carries the motor current; an ideal driver at the Prototype level); motor_out = a motor driver's output (driven by its part, not a board pin). Part pins: every type except power/ground is on the ideal board (it gets a pin number in robot_pins.h) and, at the Real level, is wired to a board gpio pin; power = a supply input (load). Board pins (only with a 'board' block): gpio = a pin the firmware drives, with 'number' and 'caps'; power_out = a supply output (5V, 3V3). Omit while untyped." },
                     "number": { "type": "integer", "minimum": 0, "description": "Board pins only: the number the sketch uses (Uno D9 = 9, A0 = 14). Required on gpio and internal pins; unique per board." },
                     "caps": { "type": "array", "items": { "enum": ["digital", "pwm", "analog", "interrupt", "i2c_sda", "i2c_scl", "spi_sck", "spi_mosi", "spi_miso", "uart_tx", "uart_rx"] }, "description": "gpio pins only: what the pin can do." },
                     "internal": { "type": "boolean", "description": "Board pins only: hard-wired on the board's PCB (the ESP32-CAM's camera pins). Not wireable; the sketch still sees its number." },
@@ -68,13 +68,23 @@
         },
         "board": {
             "type": "object",
-            "required": ["fqbn", "header_folder", "logic_voltage"],
+            "required": ["fqbn", "logic_voltage"],
             "additionalProperties": false,
             "description": "Makes the component a board: it runs a firmware sketch at the Real level. Pin references name gpio pins with the matching capability.",
             "properties": {
                 "fqbn": { "type": "string", "description": "arduino-cli board, e.g. arduino:avr:uno" },
-                "header_folder": { "type": "string", "description": "Project subfolder that receives the board's generated robot_pins.h (uno, esp32cam)" },
+                "header_folder": { "type": "string", "description": "Unused since 2026-10-21 (was the folder of the generated robot_pins.h); kept on save" },
+                "variant": {
+                    "type": "object", "additionalProperties": false,
+                    "description": "The real Arduino core's variant for this board (its pins_arduino.h): pin names a sketch can use and the board's macros, so a sketch compiles here as with arduino-cli",
+                    "properties": {
+                        "pins": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 }, "description": "name -> pin number (A0, LED_BUILTIN, SDA, MOSI, ...)" },
+                        "defines": { "type": "array", "items": { "type": "string" }, "description": "macros the core defines for this board (ARDUINO_AVR_UNO, ESP32, ...); NAME or NAME=VALUE" }
+                    }
+                },
                 "logic_voltage": { "type": "number", "description": "Volts on a HIGH output" },
+                "pin_output_ohm": { "type": "number", "minimum": 0, "description": "A gpio pin's output resistance as a source/sink (from the VOH/VOL vs current curves)" },
+                "pin_abs_max_ma": { "type": "number", "minimum": 0, "description": "A gpio pin's absolute maximum current" },
                 "adc": {
                     "type": "object", "additionalProperties": false,
                     "properties": { "bits": { "type": "integer" }, "vref": { "type": "number" } }
@@ -158,15 +168,34 @@
                 "battery": {
                     "type": "object", "required": ["capacity_mah", "curve"], "additionalProperties": false,
                     "properties": {
-                        "capacity_mah": { "type": "number", "exclusiveMinimum": 0 },
+                        "cells": { "type": "integer", "minimum": 1, "description": "cells in series; the curve and the thresholds are per cell (default 1)" },
+                        "capacity_mah": { "type": "number", "exclusiveMinimum": 0, "description": "rated capacity: at the datasheet's drain down to its cut-off voltage (= 0 %)" },
                         "curve": {
                             "type": "array", "minItems": 2,
                             "items": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "type": "number" } },
-                            "description": "[charge %, open-circuit V, internal ohm] points from 0 to 100 %, interpolated"
+                            "description": "[charge %, open-circuit V, internal ohm] per cell, interpolated; up to 100 %, with a point at 0 % (the rated cut-off); points below 0 % are the charge a cell still gives past it, down to its dead point"
+                        },
+                        "rate": {
+                            "type": "object", "required": ["available_fraction", "rate_constant_per_h"], "additionalProperties": false,
+                            "description": "Rate-capacity and recovery (Kinetic Battery Model): the load draws from an available well; the bound charge flows into it at rate_constant_per_h x (bound level - available level)",
+                            "properties": {
+                                "available_fraction": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+                                "rate_constant_per_h": { "type": "number", "exclusiveMinimum": 0 }
+                            }
+                        },
+                        "over_discharge_v": { "type": "number", "minimum": 0, "description": "per cell, open circuit: below it a real cell is damaged (a warning)" },
+                        "protection": {
+                            "type": "object", "required": ["cutoff_v"], "additionalProperties": false,
+                            "description": "A protection circuit (BMS): below cutoff_v per cell at the terminals for delay_ms it cuts the pack off until Stop",
+                            "properties": {
+                                "cutoff_v": { "type": "number", "exclusiveMinimum": 0 },
+                                "delay_ms": { "type": "number", "minimum": 0 },
+                                "fitted": { "type": "boolean", "description": "default for an instance (Inspector 'Protection circuit (BMS)'); default false" }
+                            }
                         }
                     }
                 },
-                "sources": { "type": "object", "additionalProperties": { "type": "string" }, "description": "supplies.<pin>, regulators.<id>, loads.<pin>, brownout, battery -> where the numbers come from (datasheet, measurement, estimate)" }
+                "sources": { "type": "object", "additionalProperties": { "type": "string" }, "description": "supplies.<pin>, regulators.<id>, loads.<pin>, brownout, battery, battery.rate, battery.protection -> where the numbers come from (datasheet, measurement, estimate)" }
             }
         },
         "kinematics": {

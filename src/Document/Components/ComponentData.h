@@ -41,7 +41,9 @@ struct PinDef {
     static const QStringList& capabilities();
     // A part's signal or bus pin: the ideal board gives it a number, and at
     // the Real level it is wired to a board gpio pin.
-    bool isBoardPin() const { return !type.isEmpty() && !isPower() && type != "ground" && type != "gpio"; }
+    // motor = a motor's terminal (it gets an ideal-board pin: the ideal driver);
+    // motor_out = a motor driver's output, driven by its own part, never a board pin.
+    bool isBoardPin() const { return !type.isEmpty() && !isPower() && type != "ground" && type != "gpio" && type != "motor_out"; }
     bool isPower() const { return type == "power" || type == "power_out"; }
     bool hasCap(const QString& cap) const { return caps.contains(cap); }
 };
@@ -51,7 +53,12 @@ struct PinDef {
 struct BoardDef {
     bool present = false;
     QString fqbn;              // arduino-cli board, e.g. arduino:avr:uno
-    QString headerFolder;      // project subfolder for its robot_pins.h ("uno")
+    QString headerFolder;      // unused since 2026-10-21 (the folder of a generated robot_pins.h); kept on save
+    // The real Arduino core's variant for this board (its pins_arduino.h):
+    // the pin names a sketch uses (A0, LED_BUILTIN, SDA, ...) and the
+    // board's macros (ARDUINO_AVR_UNO), so the sketch compiles here as there.
+    QMap<QString, int> variantPins;
+    QStringList defines;
     double logicVoltage = 5.0;
     int adcBits = 10;
     double adcVref = 5.0;
@@ -61,6 +68,10 @@ struct BoardDef {
     double i2cDefaultHz = 100000.0;
     QString spiSck, spiMosi, spiMiso;
     double spiMaxHz = 8000000.0;
+    // A gpio pin as a source: its output resistance (Ω, from the VOH/VOL vs
+    // current curves) and its absolute maximum current (A). 0 = not modelled.
+    double pinOutputOhm = 0.0;
+    double pinAbsMaxA = 0.0;
     QMap<QString, QString> sources;   // field -> datasheet / estimate
 };
 
@@ -106,14 +117,31 @@ struct BrownoutDef {           // boards: the MCU resets when its rail drops bel
     double restart = 0.0;      // s from release to setup()
 };
 
-struct BatteryDef {            // battery parts: state of charge
+struct BatteryDef {            // battery parts: state of charge (docs/user/create_power.md)
     bool present = false;
-    double capacityAh = 0.0;
-    // Discharge curve: (charge %, open-circuit V, internal Ω), sorted by charge.
+    int cells = 1;             // in series; the curve and the thresholds are per cell
+    double capacityAh = 0.0;   // rated: at the datasheet's drain down to its cut-off (= 0 %)
+    // Discharge curve per cell: (charge %, open-circuit V, internal Ω), sorted
+    // by charge, from the dead point (at or below 0 %: the charge a cell still
+    // gives past its rated cut-off) to 100 %.
     struct Point { double percent, voltage, resistance; };
     QList<Point> curve;
+    // Rate-capacity and recovery (Kinetic Battery Model): the load draws from
+    // an available well holding `availableFraction` of the charge; the rest
+    // flows in at rateConstant·(h_bound − h_available) per hour. 1 = one well.
+    double availableFraction = 1.0;
+    double rateConstant = 0.0;   // 1/h
+    double overDischargeV = 0.0; // per cell, open circuit; below it a real cell is damaged; 0 = no limit
+    struct Protection {          // a protection circuit (BMS): cuts the pack off
+        bool present = false;
+        double cutoffV = 0.0;    // per cell, at the terminals (under load)
+        double delay = 0.0;      // s below cutoffV before it cuts
+        bool fitted = false;     // default for an instance (power.protection)
+    } protection;
 
-    Point at(double percent) const;   // interpolated, clamped to the curve
+    Point at(double percent) const;       // per cell, interpolated, clamped to the curve
+    Point packAt(double percent) const;   // the whole pack (cells in series)
+    double deadPercent() const { return curve.isEmpty() ? 0.0 : curve.first().percent; }
 };
 
 struct PowerDef {

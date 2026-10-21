@@ -12,9 +12,11 @@ struct BoardDef;
 /*
  * One real board of the Real level (a component with a "board" block), seen
  * through the project's wiring: which part pin is on which of its pins.
- * Same BoardPin entries and constant names as the ideal board (COMP_6_SIGNAL,
- * SHOULDER_SIGNAL), but the numbers are the board's real pin numbers, so the
- * sketch is unchanged and its robot_pins.h now matches the real board.
+ * The sketch uses the board's own pin numbers and names (9, A0, LED_BUILTIN)
+ * as on the real board; nothing is generated for it except the board's
+ * variant (pins_arduino.h), which the real core also has. The BoardPin
+ * entries (number = the board pin, boardPinId = its label) are for the
+ * Inspector, the starter sketch and the run-time messages.
  *
  * Lists:
  *   - every part signal/bus pin on a net with one of the board's gpio pins;
@@ -35,5 +37,10 @@ class RealBoard {
         QList<BoardPin> pinsOf(int uid) const;
         const BoardPin* find(int number) const;     // first part pin on that board pin
 
-        QString header(const QString& projectName) const;
+        // The board's pins_arduino.h (board.variant): what the real core's
+        // variant defines, so A0 or LED_BUILTIN mean the same here.
+        QString variantHeader() const;
+        // The board's macros for the compiler (ARDUINO_AVR_UNO, ...).
+        QStringList defines() const;
+
 };

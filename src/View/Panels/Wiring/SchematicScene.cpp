@@ -37,6 +37,7 @@ QColor SchematicScene::typeColor(const QString& type) {
     if (type.startsWith("i2c")) return QColor(0xb0, 0x83, 0xf0);
     if (type.startsWith("spi")) return QColor(0x39, 0xc5, 0xbb);
     if (type.startsWith("uart")) return QColor(0xd4, 0xc5, 0x48);
+    if (type == "motor" || type == "motor_out") return QColor(0xb8, 0x7c, 0x4c);   // motor current: brown
     return QColor(0xc9, 0xcb, 0xd1);   // gpio: whatever it is wired to
 }
 

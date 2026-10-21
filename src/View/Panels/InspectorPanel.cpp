@@ -522,9 +522,9 @@ void InspectorPanel::build_images(ComponentInstance* comp) {
 }
 
 
-// The part's signal pins as the sketch names them (robot_pins.h). Read-only:
-// on the ideal board the numbers follow from the part's uid; at the Real
-// level they are the board pins it is wired to (the Wiring page).
+// The part's signal pins. Read-only. Prototype: the names the sketch uses
+// (robot_pins.h; the numbers follow from the part's uid). Real: the board
+// pins they are wired to (the Wiring page), which the sketch uses directly.
 void InspectorPanel::build_pins(ComponentInstance* comp) {
     Project* project = Application::getInstance()->getProject();
     if (Project::isBoard(comp)) {
@@ -538,12 +538,17 @@ void InspectorPanel::build_pins(ComponentInstance* comp) {
 
     QGroupBox* box = new QGroupBox(real ? QString("Pins (wired to %1)").arg(board.isValid() ? board.instance()->name : "no board")
                                         : QString("Pins (ideal board)"), this);
-    box->setToolTip("Use these names in the sketch, e.g. servo.attach(COMP_6_SIGNAL); they come from robot_pins.h");
+    box->setToolTip(real ? "The board pins this part is wired to: use the number in the sketch, e.g. servo.attach(9)"
+                         : "Use these names in the sketch, e.g. servo.attach(COMP_6_SIGNAL); they come from robot_pins.h");
     QFormLayout* form = new QFormLayout(box);
     for (const BoardPin& p : pins) {
-        QString text = QString("%1 = %2").arg(p.constant).arg(p.number);
-        if (!p.alias.isEmpty()) text += QString("  (or %1)").arg(p.alias);
-        if (real) text += QString("  [%1]").arg(p.boardPinId.toUpper());
+        QString text;
+        if (real) {
+            text = QString("%1 %2 = pin %3").arg(board.instance()->name, p.boardPinId.toUpper()).arg(p.number);
+        } else {
+            text = QString("%1 = %2").arg(p.constant).arg(p.number);
+            if (!p.alias.isEmpty()) text += QString("  (or %1)").arg(p.alias);
+        }
         form->addRow(QString("%1 (%2):").arg(p.pinId, p.type), createShrinkableLabel(text, box));
     }
     if (real && pins.isEmpty()) {
@@ -565,8 +570,8 @@ void InspectorPanel::build_board(ComponentInstance* comp) {
     QFormLayout* form = new QFormLayout(box);
 
     if (project->getLevel() != ProjectLevel::Real) {
-        form->addRow(createShrinkableLabel("Boards run their firmware at the Real level (project settings: Level). "
-                                           "At the Prototype level the ideal board runs the project's firmware.", box));
+        form->addRow(createShrinkableLabel("Boards run their firmware at the Real level (make a Real copy of the project: "
+                                           "project settings). At the Prototype level the ideal board runs the project's firmware.", box));
         mainLayout->addWidget(box);
         return;
     }
@@ -582,7 +587,7 @@ void InspectorPanel::build_board(ComponentInstance* comp) {
         if (path.endsWith(".ino", Qt::CaseInsensitive) || path.endsWith(".cpp", Qt::CaseInsensitive)) combo->addItem(path, path);
     }
     combo->setCurrentIndex(std::max(0, combo->findData(comp->firmware)));
-    combo->setToolTip("The sketch this board runs. Its robot_pins.h comes from the wiring.");
+    combo->setToolTip("The sketch this board runs. It uses the board's own pins (9, A0, LED_BUILTIN), as on the real board.");
     QPushButton* openBtn = new QPushButton("Open", slot);
     openBtn->setEnabled(!comp->firmware.isEmpty());
     slotLayout->addWidget(combo, 1);
@@ -606,14 +611,15 @@ void InspectorPanel::build_board(ComponentInstance* comp) {
     });
     mainLayout->addWidget(box);
 
-    // What the sketch sees: the part pins on this board's pins.
+    // What is on the board's pins: the numbers the sketch uses.
     const RealBoard rb = RealBoard::build(comp, project->getRootComponent(), project->netlist());
-    QGroupBox* pinsBox = new QGroupBox("Pins in robot_pins.h", this);
-    pinsBox->setToolTip("Generated from the wiring; the sketch uses these names");
+    QGroupBox* pinsBox = new QGroupBox("Pins", this);
+    pinsBox->setToolTip("What is wired to the board's pins (the Wiring page). The sketch uses the pin numbers, "
+                        "as on the real board: servo.attach(9), analogRead(A0)");
     QFormLayout* pinsForm = new QFormLayout(pinsBox);
     for (const BoardPin& p : rb.pins()) {
-        QString text = p.alias.isEmpty() ? p.constant : p.alias;
-        pinsForm->addRow(QString("%1 (%2):").arg(p.boardPinId.toUpper()).arg(p.number), createShrinkableLabel(text, pinsBox));
+        const QString text = QString("%1 %2").arg(p.partName, p.pinId);
+        pinsForm->addRow(QString("%1 (pin %2):").arg(p.boardPinId.toUpper()).arg(p.number), createShrinkableLabel(text, pinsBox));
     }
     if (rb.pins().isEmpty()) pinsForm->addRow(createShrinkableLabel("Nothing wired yet: open the Wiring page (Ctrl+3).", pinsBox));
     mainLayout->addWidget(pinsBox);
@@ -675,16 +681,31 @@ void InspectorPanel::build_power(ComponentInstance* comp) {
         } else if (s.kind == "battery" && pw.battery.present) {
             const double pct = param(PowerNetwork::kChargePercent, 100.0);
             QDoubleSpinBox* charge = spin(pct, 0.0, 100.0, 5.0, 0, " %");
-            const BatteryDef::Point pt = pw.battery.at(pct);
-            charge->setToolTip(QString("At this charge: %1 V open circuit, %2 Ω inside (%3 mAh when full)")
-                                   .arg(pt.voltage, 0, 'f', 2).arg(pt.resistance, 0, 'f', 3).arg(pw.battery.capacityAh * 1000.0));
+            const BatteryDef& bat = pw.battery;
+            const BatteryDef::Point pt = bat.packAt(pct);
+            const QString perCell = bat.cells > 1 ? QString(" (%1 V per cell)").arg(pt.voltage / bat.cells, 0, 'f', 2) : QString();
+            charge->setToolTip(QString("As a fuel gauge reads it: 0 % is the rated cut-off. At this charge: %1 V open circuit%2, "
+                                       "%3 Ω inside (%4 mAh rated)")
+                                   .arg(pt.voltage, 0, 'f', 2).arg(perCell).arg(pt.resistance, 0, 'f', 3).arg(bat.capacityAh * 1000.0));
             QCheckBox* drains = new QCheckBox("Drains during the run", box);
             drains->setChecked(comp->parameters.value(PowerNetwork::kDrains, false).toBool());
             drains->setToolTip("On: the charge goes down with the current drawn (sim time), and the voltage with it. "
-                               "Every Play starts from the charge set here.");
+                               "Heavy loads empty it sooner, a rest lets it recover a little, and past 0 % its voltage "
+                               "collapses. Every Play starts from the charge set here.");
             form->addRow("Charge:", charge);
-            form->addRow(createShrinkableLabel(QString("%1 V open circuit at this charge").arg(pt.voltage, 0, 'f', 2), box));
+            form->addRow(createShrinkableLabel(QString("%1 V open circuit at this charge%2").arg(pt.voltage, 0, 'f', 2).arg(perCell), box));
             form->addRow(drains);
+            if (bat.protection.present) {
+                QCheckBox* bms = new QCheckBox("Protection circuit (BMS)", box);
+                bms->setChecked(comp->parameters.value(PowerNetwork::kProtection, bat.protection.fitted).toBool());
+                bms->setToolTip(QString("On: below %1 V per cell at the terminals for %2 ms the pack cuts itself off "
+                                        "(0 V) until Stop, as a protection board does. Off: a bare pack keeps discharging.")
+                                    .arg(bat.protection.cutoffV, 0, 'f', 2).arg(bat.protection.delay * 1000.0, 0, 'f', 0));
+                form->addRow(bms);
+                connect(bms, &QCheckBox::toggled, this, [setParam](bool on) {
+                    setParam(PowerNetwork::kProtection, on, on ? "Battery protection on" : "Battery protection off");
+                });
+            }
             connect(charge, &QDoubleSpinBox::editingFinished, this, [setParam, charge]() {
                 setParam(PowerNetwork::kChargePercent, charge->value(), "Set battery charge");
             });
@@ -708,6 +729,22 @@ void InspectorPanel::build_power(ComponentInstance* comp) {
         form->addRow(QString("Draws (%1):").arg(l.pin.toUpper()), createShrinkableLabel(text, box));
     }
     if (form->rowCount() == 0) { delete box; return; }
+    // L298N module: its ENA/ENB jumpers tie the enable pins to 5 V (fitted on a new module).
+    const ComponentBlueprint* bpd = comp->getBlueprint();
+    if (bpd->emulatorDef.type == "hbridge_emulator" && bpd->emulatorDef.parameters.value("truth_table").toString() == "l298") {
+        for (const auto& [key, label] : {std::pair<const char*, const char*>{"driver.ena_jumper", "ENA jumper fitted"},
+                                          {"driver.enb_jumper", "ENB jumper fitted"}}) {
+            QCheckBox* jumper = new QCheckBox(label, box);
+            jumper->setChecked(comp->parameters.value(key, true).toBool());
+            jumper->setToolTip("Fitted: the enable pin is tied to the module's 5 V, so that channel is always on and "
+                               "the IN pins alone drive it (both LOW = brake). Remove it to PWM the enable pin from the board.");
+            form->addRow(jumper);
+            const char* k = key;
+            connect(jumper, &QCheckBox::toggled, this, [setParam, k](bool on) {
+                setParam(k, on, on ? "Fit L298N jumper" : "Remove L298N jumper");
+            });
+        }
+    }
     mainLayout->addWidget(box);
 }
 
@@ -1015,33 +1052,25 @@ void InspectorPanel::build_globalSettings(Project* project) {
     applyShrinkablePolicy(nameEdit);
     globalLayout->addRow("Robot Name:", nameEdit);
 
-    // Prototype: one ideal board runs the firmware below, every part auto-wired.
-    // Real: board parts run their own firmware through the Wiring page.
-    QComboBox* levelCombo = new QComboBox(globalBox);
-    fixComboBoxPolicy(levelCombo);
-    levelCombo->addItem("Prototype (ideal board)", int(ProjectLevel::Prototype));
-    levelCombo->addItem("Real (boards and wiring)", int(ProjectLevel::Real));
-    levelCombo->setCurrentIndex(project->getLevel() == ProjectLevel::Real ? 1 : 0);
-    levelCombo->setToolTip("Prototype: an ideal controller with unlimited pins, wired automatically.\n"
-                           "Real: add a board from the library, wire it on the Wiring page (Ctrl+3); "
-                           "the board's limits, bus speeds and power apply.");
-    globalLayout->addRow("Level:", levelCombo);
-    connect(levelCombo, &QComboBox::currentIndexChanged, this, [this, project, levelCombo]() {
-        const ProjectLevel level = ProjectLevel(levelCombo->currentData().toInt());
-        if (level == project->getLevel()) return;
-        if (level == ProjectLevel::Prototype && !project->netlist().isEmpty() &&
-            QMessageBox::question(this, "Switch to Prototype",
-                                  "The ideal board wires every part itself. Your wiring is kept in the project but not used. Switch?",
-                                  QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes) {
-            QSignalBlocker block(levelCombo);
-            levelCombo->setCurrentIndex(1);
-            return;
-        }
-        Commands::setLevel(level);
-        if (level == ProjectLevel::Real && project->boards().isEmpty())
-            Toast::showMessage(Application::getInstance()->getEditor(),
-                               "Real level: add a board from the Components library (Boards), then wire it (Ctrl+3)", 3500);
-    });
+    // The level is the project's for good: Prototype (one ideal board runs the
+    // firmware below, every part auto-wired) or Real (boards with their own
+    // firmware, wired on the Wiring page). A Prototype project moves on by
+    // making a Real copy; the Prototype project stays as it is.
+    const bool realLevel = project->getLevel() == ProjectLevel::Real;
+    auto* levelLabel = createShrinkableLabel(realLevel ? "Real (boards and wiring)" : "Prototype (ideal board)", globalBox);
+    levelLabel->setToolTip(realLevel ? "Boards from the library run their own firmware; wire them on the Wiring page (Ctrl+3). "
+                                       "The board's limits, bus speeds and power apply."
+                                     : "An ideal controller with unlimited pins, wired automatically.");
+    globalLayout->addRow("Level:", levelLabel);
+    if (!realLevel) {
+        QPushButton* copyBtn = new QPushButton("Create Real copy...", globalBox);
+        copyBtn->setToolTip("A new project at the Real level, next to this one: the same robot and sketches, "
+                            "no board yet. This project stays as it is.");
+        globalLayout->addRow("", copyBtn);
+        connect(copyBtn, &QPushButton::clicked, this, []() {
+            if (EditorWindow* editor = Application::getInstance()->getEditor()) editor->createRealCopy();
+        });
+    }
 
     QWidget* scriptWidget = new QWidget(globalBox);
     QGridLayout* scriptLayout = new QGridLayout(scriptWidget);
@@ -1152,17 +1181,27 @@ void InspectorPanel::build_globalSettings(Project* project) {
         QString toDelete = scriptCombo->currentText();
         if (toDelete.isEmpty()) return;
 
-        if (QMessageBox::question(this, "Delete Script", "Delete " + toDelete + " from disk?",
+        // A sketch in its own folder goes with its .h / .cpp files.
+        const QString fullPath = project->getProjectDirectory() + "/" + toDelete;
+        const bool folder = Project::inSketchFolder(toDelete);
+        const QDir sketchDir = QFileInfo(fullPath).dir();
+        QStringList files{fullPath};
+        if (folder) {
+            files.clear();
+            for (const QString& f : sketchDir.entryList(QDir::Files)) files << sketchDir.filePath(f);
+        }
+        const QString what = folder ? QString("the sketch %1/ (%2 file%3)").arg(QFileInfo(toDelete).path()).arg(files.size()).arg(files.size() == 1 ? "" : "s")
+                                    : toDelete;
+        if (QMessageBox::question(this, "Delete Script", "Delete " + what + " from disk?",
                                    QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes) {
             return;
         }
 
-        // Undo writes the file back, so keep its content.
-        const QString fullPath = project->getProjectDirectory() + "/" + toDelete;
-        QByteArray content;
-        {
-            QFile file(fullPath);
-            if (file.open(QIODevice::ReadOnly)) content = file.readAll();
+        // Undo writes the files back, so keep their content.
+        QList<QPair<QString, QByteArray>> contents;
+        for (const QString& f : files) {
+            QFile file(f);
+            if (file.open(QIODevice::ReadOnly)) contents.append({f, file.readAll()});
         }
 
         QJsonArray newPaths;
@@ -1171,11 +1210,18 @@ void InspectorPanel::build_globalSettings(Project* project) {
         }
         int newActiveIndex = newPaths.isEmpty() ? -1 : 0;
 
+        const QString dirPath = sketchDir.absolutePath();
         Commands::setMcuScripts(newPaths, newActiveIndex, "Delete script",
-            [fullPath]() { QFile::remove(fullPath); },
-            [fullPath, content]() {
-                QFile file(fullPath);
-                if (file.open(QIODevice::WriteOnly)) file.write(content);
+            [contents, folder, dirPath]() {
+                for (const auto& c : contents) QFile::remove(c.first);
+                if (folder) QDir().rmdir(dirPath);   // only if empty
+            },
+            [contents, dirPath]() {
+                QDir().mkpath(dirPath);
+                for (const auto& c : contents) {
+                    QFile file(c.first);
+                    if (file.open(QIODevice::WriteOnly)) file.write(c.second);
+                }
             });
 
         // Only replace the editor's file if it was the deleted one.

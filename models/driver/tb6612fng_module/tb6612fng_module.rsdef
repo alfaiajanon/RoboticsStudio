@@ -1,0 +1,370 @@
+{
+    "schema": 3,
+    "id": "driver_tb6612fng",
+    "meta": {
+        "name": "TB6612FNG dual motor driver breakout",
+        "version": "1.0.0",
+        "author": "Anon",
+        "icon_path": "",
+        "hint_class": "part"
+    },
+    "specs": {
+        "chip": "TB6612FNG",
+        "motor_supply_v": [
+            2.5,
+            13.5
+        ],
+        "current_per_channel_a": 1.2,
+        "peak_a": 3.2,
+        "weight_kg": 0.003,
+        "size_mm": [
+            20.3,
+            20.3,
+            4
+        ]
+    },
+    "pins": [
+        {
+            "id": "vm",
+            "type": "power",
+            "description": "VM: motor supply (2.5-13.5 V; 15 V absolute maximum)",
+            "voltage_range": [
+                2.5,
+                13.5
+            ]
+        },
+        {
+            "id": "vcc",
+            "type": "power",
+            "description": "VCC: logic supply (2.7-5.5 V)",
+            "voltage_range": [
+                2.7,
+                5.5
+            ]
+        },
+        {
+            "id": "gnd",
+            "type": "ground",
+            "description": "GND"
+        },
+        {
+            "id": "stby",
+            "type": "digital",
+            "description": "STBY: LOW = everything off (standby)",
+            "voltage_range": [
+                0,
+                5.5
+            ]
+        },
+        {
+            "id": "pwma",
+            "type": "pwm",
+            "description": "PWMA: channel A speed (HIGH = drive, LOW = short brake)",
+            "voltage_range": [
+                0,
+                5.5
+            ]
+        },
+        {
+            "id": "ain1",
+            "type": "digital",
+            "description": "AIN1",
+            "voltage_range": [
+                0,
+                5.5
+            ]
+        },
+        {
+            "id": "ain2",
+            "type": "digital",
+            "description": "AIN2",
+            "voltage_range": [
+                0,
+                5.5
+            ]
+        },
+        {
+            "id": "bin1",
+            "type": "digital",
+            "description": "BIN1",
+            "voltage_range": [
+                0,
+                5.5
+            ]
+        },
+        {
+            "id": "bin2",
+            "type": "digital",
+            "description": "BIN2",
+            "voltage_range": [
+                0,
+                5.5
+            ]
+        },
+        {
+            "id": "pwmb",
+            "type": "pwm",
+            "description": "PWMB: channel B speed",
+            "voltage_range": [
+                0,
+                5.5
+            ]
+        },
+        {
+            "id": "ao1",
+            "type": "motor_out",
+            "description": "AO1 (motor A)"
+        },
+        {
+            "id": "ao2",
+            "type": "motor_out",
+            "description": "AO2 (motor A)"
+        },
+        {
+            "id": "bo1",
+            "type": "motor_out",
+            "description": "BO1 (motor B)"
+        },
+        {
+            "id": "bo2",
+            "type": "motor_out",
+            "description": "BO2 (motor B)"
+        }
+    ],
+    "resources": {
+        "meshes": {},
+        "materials": {}
+    },
+    "kinematics": {
+        "default_body": "base",
+        "bodies": [
+            {
+                "id": "base",
+                "overrideGeom": false,
+                "transform": {
+                    "pos": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "quat": [
+                        1,
+                        0,
+                        0,
+                        0
+                    ]
+                },
+                "geoms": [
+                    {
+                        "id": "pcb",
+                        "type": "box",
+                        "size": [
+                            0.0101,
+                            0.0101,
+                            0.0008
+                        ],
+                        "pos": [
+                            0,
+                            0,
+                            0.0008
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.75,
+                            0.1,
+                            0.1
+                        ],
+                        "mass": 0.0015
+                    },
+                    {
+                        "id": "chip",
+                        "type": "box",
+                        "size": [
+                            0.0025,
+                            0.0035,
+                            0.0006
+                        ],
+                        "pos": [
+                            0,
+                            0,
+                            0.0022
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.08,
+                            0.08,
+                            0.08
+                        ],
+                        "mass": 0.0002
+                    },
+                    {
+                        "id": "header_l",
+                        "type": "box",
+                        "size": [
+                            0.0013,
+                            0.0095,
+                            0.0045
+                        ],
+                        "pos": [
+                            -0.0088,
+                            0,
+                            -0.0045
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.08,
+                            0.08,
+                            0.08
+                        ],
+                        "mass": 0.0006
+                    },
+                    {
+                        "id": "header_r",
+                        "type": "box",
+                        "size": [
+                            0.0013,
+                            0.0095,
+                            0.0045
+                        ],
+                        "pos": [
+                            0.0088,
+                            0,
+                            -0.0045
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.08,
+                            0.08,
+                            0.08
+                        ],
+                        "mass": 0.0006
+                    }
+                ]
+            }
+        ]
+    },
+    "connectors": [
+        {
+            "id": "base",
+            "body": "base",
+            "description": "Bottom (breadboard pins down)",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    90,
+                    180,
+                    270
+                ]
+            },
+            "transform": {
+                "pos": [
+                    0,
+                    0,
+                    0
+                ],
+                "quat": [
+                    0,
+                    1,
+                    0,
+                    0
+                ]
+            }
+        },
+        {
+            "id": "top",
+            "body": "base",
+            "description": "Top face",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    90,
+                    180,
+                    270
+                ]
+            },
+            "transform": {
+                "pos": [
+                    0,
+                    0,
+                    0.003
+                ],
+                "quat": [
+                    1,
+                    0,
+                    0,
+                    0
+                ]
+            }
+        }
+    ],
+    "devices": {
+        "actuators": [],
+        "sensors": [],
+        "cameras": [],
+        "displays": []
+    },
+    "interface": {
+        "inputs": [],
+        "outputs": []
+    },
+    "power": {
+        "loads": [
+            {
+                "pin": "vm",
+                "current_ma": 0,
+                "min_v": 2.5
+            },
+            {
+                "pin": "vcc",
+                "current_ma": 1.5,
+                "min_v": 2.7
+            }
+        ],
+        "sources": {
+            "loads.vm": "Toshiba TB6612FNG datasheet (copies at tams-www.informatik.uni-hamburg.de, faculty-web.msoe.edu): VM operating range 2.5-13.5 V; its own draw is negligible next to the motor's",
+            "loads.vcc": "Toshiba TB6612FNG datasheet (copies at tams-www.informatik.uni-hamburg.de, faculty-web.msoe.edu): ICC 1.1 mA typ at 3 V, 1.5 mA typ at 5.5 V (taken: 1.5 mA); operating range 2.7-5.5 V"
+        }
+    },
+    "emulator": {
+        "type": "hbridge_emulator",
+        "parameters": {
+            "truth_table": "tb6612",
+            "high_v0": 0.0,
+            "high_r": 0.25,
+            "low_v0": 0.0,
+            "low_r": 0.25,
+            "ideal_supply_v": 12,
+            "channel_max_a": 1.2
+        },
+        "parameter_sources": {
+            "truth_table": "Toshiba TB6612FNG datasheet (copies at tams-www.informatik.uni-hamburg.de, faculty-web.msoe.edu): H-SW control function: IN1/IN2 H/H short brake, L/H CCW, H/L CW, L/L stop (high impedance); PWM L = short brake; STBY L = standby (off)",
+            "high_v0": "Toshiba TB6612FNG datasheet (copies at tams-www.informatik.uni-hamburg.de, faculty-web.msoe.edu): MOSFET outputs: no fixed drop",
+            "high_r": "Toshiba TB6612FNG datasheet (copies at tams-www.informatik.uni-hamburg.de, faculty-web.msoe.edu): output ON resistance 0.5 ohm upper + lower typ (Vsat 0.5 V typ at 1 A, VM = 5 V): 0.25 ohm each",
+            "low_v0": "Toshiba TB6612FNG datasheet (copies at tams-www.informatik.uni-hamburg.de, faculty-web.msoe.edu): MOSFET outputs: no fixed drop",
+            "low_r": "Toshiba TB6612FNG datasheet (copies at tams-www.informatik.uni-hamburg.de, faculty-web.msoe.edu): see high_r",
+            "ideal_supply_v": "assumption: VM when the power model isn't running (no Real-level wiring)",
+            "channel_max_a": "Toshiba TB6612FNG datasheet: output current 1.2 A average per channel (3.2 A peak); the application note recommends 1.0 A or less continuous at VM >= 4.5 V"
+        },
+        "source": {}
+    }
+}
