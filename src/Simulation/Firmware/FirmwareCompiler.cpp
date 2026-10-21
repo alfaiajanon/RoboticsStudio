@@ -105,7 +105,8 @@ void FirmwareCompiler::cancel() {
 
 
 
-void FirmwareCompiler::compile(const QString& sketchPath, const QString& sketchText, const QString& pinsHeader) {
+void FirmwareCompiler::compile(const QString& sketchPath, const QString& sketchText, const QString& pinsHeader,
+                               const QString& variantHeader, const QStringList& defines) {
     cancel();
     ++generation;
     result.clear();
@@ -164,9 +165,21 @@ void FirmwareCompiler::compile(const QString& sketchPath, const QString& sketchT
     wrapped += QString("#line 1 \"%1\"\n").arg(sketchName) + sketchText;
     if (!wrapped.endsWith('\n')) wrapped += '\n';
 
+    // The user's own headers next to the sketch (a pins.h, helpers): part of the build.
+    const QString userDir = info.absolutePath();
+    QStringList userHeaders = QDir(userDir).entryList({"*.h", "*.hpp"}, QDir::Files, QDir::Name);
+    QStringList defineFlags;
+    for (const QString& d : defines) if (!d.isEmpty()) defineFlags << "-D" + d;
+
     QCryptographicHash sketchHash(QCryptographicHash::Sha1);
     sketchHash.addData(wrapped.toUtf8());
     sketchHash.addData(pinsHeader.toUtf8());
+    sketchHash.addData(variantHeader.toUtf8());
+    sketchHash.addData(defineFlags.join(' ').toUtf8());
+    for (const QString& h : userHeaders) {
+        QFile f(userDir + "/" + h);
+        if (f.open(QIODevice::ReadOnly)) { sketchHash.addData(h.toUtf8()); sketchHash.addData(f.readAll()); }
+    }
     sketchHash.addData(coreKey.toUtf8());
     sketchHash.addData(linkFlags().join(' ').toUtf8());
     const QString sketchDir = cacheRoot() + "/sketch-" + sketchHash.result().toHex().left(12);
@@ -185,19 +198,20 @@ void FirmwareCompiler::compile(const QString& sketchPath, const QString& sketchT
     }
 
     QDir().mkpath(sketchDir);
-    QFile pins(sketchDir + "/robot_pins.h");
-    QFile source(sketchDir + "/sketch.cpp");
-    if (!pins.open(QIODevice::WriteOnly | QIODevice::Truncate) || !source.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+    auto writeFile = [&](const QString& name, const QString& text) {
+        QFile f(sketchDir + "/" + name);
+        if (text.isEmpty()) { f.remove(); return true; }
+        if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
+        f.write(text.toUtf8());
+        return true;
+    };
+    if (!writeFile("robot_pins.h", pinsHeader) || !writeFile("pins_arduino.h", variantHeader) || !writeFile("sketch.cpp", wrapped)) {
         jobs.clear();
         finish(false, "Can't write the firmware build files to " + sketchDir);
         return;
     }
-    pins.write(pinsHeader.toUtf8());
-    source.write(wrapped.toUtf8());
-    pins.close();
-    source.close();
 
-    jobs.append({flags + QStringList{"-I" + sketchDir} + linkFlags()
+    jobs.append({flags + defineFlags + QStringList{"-I" + sketchDir, "-I" + userDir} + linkFlags()
                      + QStringList{sketchDir + "/sketch.cpp"} + coreObjects + QStringList{"-o", wasmPath + ".tmp"},
                  wasmPath});
     if (!coreReady) Log::info("Building the firmware core (first time only)...");
@@ -281,6 +295,9 @@ void FirmwareCompiler::parseOutput(const QString& text) {
             d.message = m.captured(5);
             d.inSketch = d.file == sketchName;
             if (!fw.isEmpty() && d.file.startsWith(fw)) d.file = "firmware" + d.file.mid(fw.size());
+            if (d.message == "'robot_pins.h' file not found")
+                d.message += " (the Real level generates no robot_pins.h: use the board's pin numbers, e.g. "
+                             "servo.attach(9), or put your own robot_pins.h next to the sketch; see firmware.md, Pins)";
         } else if ((m = linkerLine.match(line)).hasMatch()) {
             d.severity = m.captured(1);
             d.message = m.captured(2);

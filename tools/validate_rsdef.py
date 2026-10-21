@@ -226,7 +226,7 @@ def check_pins(errs, d):
             numbers[p["number"]] = pid
     if board is None:
         return
-    for key in ("fqbn", "header_folder", "logic_voltage"):
+    for key in ("fqbn", "logic_voltage"):
         if not board.get(key):
             errs.add(f"board: missing '{key}'")
     by_id = {p.get("id"): p for p in pins}
@@ -247,6 +247,14 @@ def check_pins(errs, d):
     check_ref("spi.miso", spi.get("miso"), "spi_miso")
     for pin_id in board.get("analog_write", {}).get("pins", {}):
         check_ref("analog_write.pins", pin_id, "pwm")
+    variant = board.get("variant", {})
+    for name, num in variant.get("pins", {}).items():
+        if not isinstance(num, int) or isinstance(num, bool) or num < 0:
+            errs.add(f"board.variant.pins: '{name}' must be a pin number >= 0")
+        elif not name.isidentifier():
+            errs.add(f"board.variant.pins: '{name}' is not a C++ name")
+    if any(not isinstance(x, str) or not x.split("=")[0].isidentifier() for x in variant.get("defines", [])):
+        errs.add("board.variant.defines: each entry is NAME or NAME=VALUE")
 
 
 def validate(d):

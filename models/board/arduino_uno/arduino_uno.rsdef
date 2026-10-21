@@ -346,7 +346,6 @@
     ],
     "board": {
         "fqbn": "arduino:avr:uno",
-        "header_folder": "uno",
         "logic_voltage": 5,
         "adc": {
             "bits": 10,
@@ -375,7 +374,33 @@
             "adc": "datasheet: ATmega328P, 10-bit ADC; Arduino core default reference AVcc = 5 V",
             "analog_write": "Arduino AVR core (wiring.c): timers 1 and 2 at 16 MHz/64/510 = 490 Hz, timer 0 (pins 5, 6) fast PWM 976.6 Hz",
             "i2c": "Arduino Wire library: TWI_FREQ 100 kHz by default",
-            "spi": "datasheet: ATmega328P, SPI clock up to f_osc/2 = 8 MHz"
+            "spi": "datasheet: ATmega328P, SPI clock up to f_osc/2 = 8 MHz",
+            "variant": "arduino:avr 1.8.8 core: variants/standard/pins_arduino.h (pin names) and boards.txt/platform.txt (uno.build.board=AVR_UNO: -DARDUINO_AVR_UNO -DARDUINO_ARCH_AVR, -DARDUINO=10607 from arduino-cli, F_CPU 16 MHz). A6/A7 exist in the variant but not on the Uno's header"
+        },
+        "variant": {
+            "pins": {
+                "SS": 10,
+                "MOSI": 11,
+                "MISO": 12,
+                "SCK": 13,
+                "SDA": 18,
+                "SCL": 19,
+                "LED_BUILTIN": 13,
+                "A0": 14,
+                "A1": 15,
+                "A2": 16,
+                "A3": 17,
+                "A4": 18,
+                "A5": 19,
+                "A6": 20,
+                "A7": 21
+            },
+            "defines": [
+                "ARDUINO=10607",
+                "ARDUINO_AVR_UNO",
+                "ARDUINO_ARCH_AVR",
+                "F_CPU=16000000L"
+            ]
         }
     },
     "power": {

@@ -37,7 +37,8 @@ NewProjectDialog::NewProjectDialog(QWidget* parent) : QDialog(parent) {
     m_levelCombo = new QComboBox();
     m_levelCombo->addItem("Prototype: an ideal board, every part wired automatically", "prototype");
     m_levelCombo->addItem("Real: add a board from the library and wire it yourself", "real");
-    m_levelCombo->setToolTip("You can switch later in the project settings. A Real project starts with no board.");
+    m_levelCombo->setToolTip("The level stays with the project. A Prototype project can later make a Real copy of itself "
+                              "(project settings). A Real project starts with no board.");
     mainLayout->addWidget(m_levelCombo);
 
     // Buttons
@@ -101,7 +102,7 @@ void NewProjectDialog::generateProjectScaffolding(const QString& folderPath, con
     QString sketchFileName = projectName + ".ino";
     QFile sketchFile(dir.absoluteFilePath(sketchFileName));
     if (sketchFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        sketchFile.write(firmwareTemplate(nullptr).toUtf8());
+        sketchFile.write(firmwareTemplate(nullptr, m_levelCombo->currentData().toString() == "real").toUtf8());
         sketchFile.close();
     }
 

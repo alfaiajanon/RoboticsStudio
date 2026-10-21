@@ -68,12 +68,20 @@
         },
         "board": {
             "type": "object",
-            "required": ["fqbn", "header_folder", "logic_voltage"],
+            "required": ["fqbn", "logic_voltage"],
             "additionalProperties": false,
             "description": "Makes the component a board: it runs a firmware sketch at the Real level. Pin references name gpio pins with the matching capability.",
             "properties": {
                 "fqbn": { "type": "string", "description": "arduino-cli board, e.g. arduino:avr:uno" },
-                "header_folder": { "type": "string", "description": "Project subfolder that receives the board's generated robot_pins.h (uno, esp32cam)" },
+                "header_folder": { "type": "string", "description": "Unused since 2026-10-21 (was the folder of the generated robot_pins.h); kept on save" },
+                "variant": {
+                    "type": "object", "additionalProperties": false,
+                    "description": "The real Arduino core's variant for this board (its pins_arduino.h): pin names a sketch can use and the board's macros, so a sketch compiles here as with arduino-cli",
+                    "properties": {
+                        "pins": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 }, "description": "name -> pin number (A0, LED_BUILTIN, SDA, MOSI, ...)" },
+                        "defines": { "type": "array", "items": { "type": "string" }, "description": "macros the core defines for this board (ARDUINO_AVR_UNO, ESP32, ...); NAME or NAME=VALUE" }
+                    }
+                },
                 "logic_voltage": { "type": "number", "description": "Volts on a HIGH output" },
                 "adc": {
                     "type": "object", "additionalProperties": false,

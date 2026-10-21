@@ -306,7 +306,6 @@
     ],
     "board": {
         "fqbn": "esp32:esp32:esp32cam",
-        "header_folder": "esp32cam",
         "logic_voltage": 3.3,
         "adc": {
             "bits": 12,
@@ -331,7 +330,57 @@
             "adc": "arduino-esp32 core: analogRead() 12-bit by default (0..4095); full scale with 11 dB attenuation ~3.1 V, 3.3 V used (estimate)",
             "analog_write": "arduino-esp32 core 3.x: analogWrite() uses LEDC at 1 kHz, 8-bit",
             "i2c": "Wire library default 100 kHz; on this board the camera takes the default pins (21/22), so I2C parts go on 14/15 (common practice)",
-            "spi": "datasheet: ESP32 Technical Reference Manual, SPI through the GPIO matrix up to 40 MHz"
+            "spi": "datasheet: ESP32 Technical Reference Manual, SPI through the GPIO matrix up to 40 MHz",
+            "variant": "esp32:esp32 3.3.12 core: esp32cam builds with the generic variant (boards.txt esp32cam.build.variant=esp32, build.board=ESP32_DEV), variants/esp32/pins_arduino.h; -DESP32=ESP32 from the core's flags/defines. That variant is the generic ESP32's: SDA/SCL (21/22), SPI and most A/T pins are camera or flash pins on an ESP32-CAM, and it has no LED_BUILTIN; ESP32-CAM sketches use the GPIO numbers (Wire.begin(14, 15))"
+        },
+        "variant": {
+            "pins": {
+                "TX": 1,
+                "RX": 3,
+                "SDA": 21,
+                "SCL": 22,
+                "SS": 5,
+                "MOSI": 23,
+                "MISO": 19,
+                "SCK": 18,
+                "A0": 36,
+                "A3": 39,
+                "A4": 32,
+                "A5": 33,
+                "A6": 34,
+                "A7": 35,
+                "A10": 4,
+                "A11": 0,
+                "A12": 2,
+                "A13": 15,
+                "A14": 13,
+                "A15": 12,
+                "A16": 14,
+                "A17": 27,
+                "A18": 25,
+                "A19": 26,
+                "T0": 4,
+                "T1": 0,
+                "T2": 2,
+                "T3": 15,
+                "T4": 13,
+                "T5": 12,
+                "T6": 14,
+                "T7": 27,
+                "T8": 33,
+                "T9": 32,
+                "DAC1": 25,
+                "DAC2": 26
+            },
+            "defines": [
+                "ARDUINO=10607",
+                "ESP32=ESP32",
+                "ARDUINO_ESP32_DEV",
+                "ARDUINO_ARCH_ESP32",
+                "ARDUINO_BOARD=\"ESP32_DEV\"",
+                "ARDUINO_VARIANT=\"esp32\"",
+                "F_CPU=240000000L"
+            ]
         }
     },
     "power": {

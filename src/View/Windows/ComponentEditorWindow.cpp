@@ -2158,7 +2158,7 @@ void ComponentEditorWindow::build_data() {
         typeCombo->addItem("(untyped)", QString());
         for (const QString& t : PinDef::types()) typeCombo->addItem(t, t);
         typeCombo->setCurrentIndex(std::max(0, typeCombo->findData(pin.type)));
-        typeCombo->setToolTip("Part pins: every type except power/ground gets a pin on the board (robot_pins.h). "
+        typeCombo->setToolTip("Part pins: every type except power/ground gets a pin on the ideal board (robot_pins.h) and can be wired to a real board. "
                               "gpio and power_out are board pins (parts with a board block)");
         form->addRow("Type:", typeCombo);
 

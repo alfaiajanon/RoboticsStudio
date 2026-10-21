@@ -1,4 +1,5 @@
 #include "ComponentData.h"
+#include <QRegularExpression>
 #include "Utils/Graph.h"
 #include "HintClass.h"
 #include <QDir>
@@ -928,7 +929,7 @@ static BoardDef parseBoard(const QJsonObject& b, const QList<PinDef>& pins, Load
     BoardDef board;
     board.present = true;
     board.fqbn = readString(b, "fqbn", "board", err, true);
-    board.headerFolder = readString(b, "header_folder", "board", err, true);
+    board.headerFolder = readString(b, "header_folder", "board", err, false);
     board.logicVoltage = readNumber(b, "logic_voltage", "board", err, true);
     const QJsonObject adc = b["adc"].toObject();
     board.adcBits = int(readNumber(adc, "bits", "board.adc", err, false, 10));
@@ -946,6 +947,16 @@ static BoardDef parseBoard(const QJsonObject& b, const QList<PinDef>& pins, Load
     board.spiMosi = spi["mosi"].toString();
     board.spiMiso = spi["miso"].toString();
     board.spiMaxHz = readNumber(spi, "max_hz", "board.spi", err, false, 8000000.0);
+    const QJsonObject variant = b["variant"].toObject();
+    const QJsonObject vpins = variant["pins"].toObject();
+    for (auto it = vpins.begin(); it != vpins.end(); ++it) {
+        if (!it.value().isDouble() || it.value().toInt(-1) < 0)
+            err.set(QString("board.variant.pins: '%1' must be a pin number >= 0").arg(it.key()));
+        else if (!QRegularExpression("^[A-Za-z_][A-Za-z0-9_]*$").match(it.key()).hasMatch())
+            err.set(QString("board.variant.pins: '%1' is not a C++ name").arg(it.key()));
+        board.variantPins[it.key()] = it.value().toInt();
+    }
+    for (const QJsonValue& v : variant["defines"].toArray()) board.defines << v.toString();
     const QJsonObject src = b["sources"].toObject();
     for (auto it = src.begin(); it != src.end(); ++it) board.sources[it.key()] = it.value().toString();
     if (err.has()) return board;
@@ -971,7 +982,7 @@ static BoardDef parseBoard(const QJsonObject& b, const QList<PinDef>& pins, Load
 static QJsonObject boardToJson(const BoardDef& b) {
     QJsonObject o;
     o["fqbn"] = b.fqbn;
-    o["header_folder"] = b.headerFolder;
+    if (!b.headerFolder.isEmpty()) o["header_folder"] = b.headerFolder;
     o["logic_voltage"] = b.logicVoltage;
     o["adc"] = QJsonObject{{"bits", b.adcBits}, {"vref", b.adcVref}};
     QJsonObject aw{{"hz", b.analogWriteHz}};
@@ -992,6 +1003,11 @@ static QJsonObject boardToJson(const BoardDef& b) {
         QJsonObject src;
         for (auto it = b.sources.begin(); it != b.sources.end(); ++it) src[it.key()] = it.value();
         o["sources"] = src;
+    }
+    if (!b.variantPins.isEmpty() || !b.defines.isEmpty()) {
+        QJsonObject vpins;
+        for (auto it = b.variantPins.begin(); it != b.variantPins.end(); ++it) vpins[it.key()] = it.value();
+        o["variant"] = QJsonObject{{"pins", vpins}, {"defines", QJsonArray::fromStringList(b.defines)}};
     }
     return o;
 }

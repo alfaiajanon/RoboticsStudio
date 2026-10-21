@@ -31,9 +31,13 @@ void loop() {
 
 The first Play compiles the Arduino core too (about a second); after that a sketch compiles in a fraction of a second, and an unchanged sketch starts at once.
 
-## 2. Pins: `robot_pins.h`
+## 2. Pins
 
-At the Prototype level every part is wired automatically to an ideal controller with as many pins as needed. `robot_pins.h` names them, and is regenerated on every Play:
+**At the Real level** ([wiring.md](wiring.md)) the sketch uses the board's own pins, exactly as on the real board: `servo.attach(9)`, `analogRead(A0)`, `digitalWrite(LED_BUILTIN, HIGH)`. Nothing is generated for you. Name them in the sketch as you like (`const int SHOULDER_SIGNAL = 9;`). The board's pin names (`A0`, `LED_BUILTIN`, `SDA`, `MOSI`, ...) and macros (`ARDUINO_AVR_UNO`, `ESP32`) are the real Arduino core's, so `#ifdef ESP32` works as there. What is wired where is on the Wiring page and in the Inspector: select a part for **Pins (wired to Uno)**, or the board for the whole list. Wire a part to D9 and write to pin 10, and nothing happens, as on the bench.
+
+The ESP32-CAM's names are the real ESP32 core's generic variant. That variant was written for a dev board, so on an ESP32-CAM `SDA`/`SCL` (21/22) and most `A`/`T` names are camera or flash pins. ESP32-CAM sketches use GPIO numbers (`Wire.begin(14, 15)`, the usual `PWDN_GPIO_NUM 32` ... list for the camera), and so do the demos.
+
+**At the Prototype level** every part is wired automatically to an ideal controller with as many pins as needed. There are no real pins, so the generated `robot_pins.h` names them, and is regenerated on every Play:
 
 ```cpp
 // Shoulder (servo_mg996r, uid 6)
@@ -45,15 +49,14 @@ constexpr int SHOULDER_SIGNAL = COMP_6_SIGNAL;
 - When a part's name is unique and a valid C++ name, it also gets a readable alias (`SHOULDER_SIGNAL`). Rename the part in the Inspector to change it.
 - Select a part to see its pins in the Inspector, under **Pins (ideal board)**.
 - Only pins whose part file gives them a type (`pwm`, `digital`, `analog`) are on the board: a part with untyped pins can't be reached from firmware. See [component_basics.md](component_basics.md#pins).
+- The ideal board has no `A0` or `LED_BUILTIN`: use the names.
 
-Always use the names, never the numbers: on a real board only the header changes (see [section 8](#8-move-it-to-a-real-board)).
-
-At the **Real level** ([wiring.md](wiring.md)) the header comes from your wiring instead: the same names, on the board's real pin numbers (`constexpr int EMULATED_SERVO_SIGNAL = COMP_2_SIGNAL;` with `COMP_2_SIGNAL = 9` on an Uno). A board's own hard-wired pins are named after the board (`ESP32_CAM_SDA = 26`). Select a part to see its pins under **Pins (wired to Uno)**, or the board for the whole list.
+**From Prototype to Real** (one way): **Create Real copy...** in the project settings makes a new Real project next to this one, with the same robot and sketches. The Prototype project stays as it is. The copy gets a `robot_pins.h` of its own, **yours to edit** (never regenerated), with the same names set to `-1` ("not wired yet"). Add a board, wire the parts, then put each board pin there (`constexpr int COMP_6_SIGNAL = 9;`), and the sketch builds unchanged. Or replace the names with the pin numbers in the sketch and delete the file.
 
 ## 3. Sketch structure
 
 - `setup()` runs once, then `loop()` over and over, as on an Arduino.
-- A `.ino` file gets `#include <Arduino.h>` added automatically, as the Arduino IDE does. Include everything else yourself: `#include <Servo.h>`, `#include "robot_pins.h"`.
+- A `.ino` file gets `#include <Arduino.h>` added automatically, as the Arduino IDE does. Include everything else yourself: `#include <Servo.h>`, and at the Prototype level `#include "robot_pins.h"`. Headers you put next to the sketch (`#include "pins.h"`) are found, as in an Arduino sketch folder.
 - **Declare a function before you use it.** The Arduino IDE generates these declarations for `.ino` files; this version does not yet.
 - A `.cpp` robot script works too (PlatformIO style). It gets nothing added: write `#include <Arduino.h>` at the top.
 - The whole firmware is one file.
@@ -137,13 +140,11 @@ The physics keeps running; press **⬛ STOP** and **▶ PLAY** to start again. A
 
 The sketch is ordinary Arduino code. To run it on a real Uno:
 
-1. Make an Arduino sketch folder: the folder and the `.ino` share a name (letters, digits, underscores), e.g. `Sweep/Sweep.ino`.
-2. Add a `robot_pins.h` for that board, with the **same names** on the board's real pins. At the Real level the app writes it for you on every save and Play, into the project's board folder (`uno/robot_pins.h`, `esp32cam/robot_pins.h`), from your wiring. For example, for the Servo Comparison demo (`demo/Servo Comparison (Uno)/uno/robot_pins.h`):
+1. Make an Arduino sketch folder: the folder and the `.ino` share a name (letters, digits, underscores), e.g. `Sweep/Sweep.ino`. Copy any header the sketch includes from its project folder (a Real copy's `robot_pins.h`) next to it.
+2. A Real project's sketch already uses the board's pins: nothing else to do. A Prototype sketch needs a `robot_pins.h` with its names on the board's pins: make a Real copy of the project (section 2), or write it by hand, as the examples do (`examples/firmware/dc_motor/uno/robot_pins.h`):
    ```cpp
-   constexpr int COMP_2_SIGNAL = 9;   // pwm
-   constexpr int EMULATED_SERVO_SIGNAL = COMP_2_SIGNAL;
-   constexpr int COMP_3_SIGNAL = 10;   // pwm
-   constexpr int STANDARD_SERVO_SIGNAL = COMP_3_SIGNAL;
+   constexpr int COMP_2_MOTOR_A = 5;   // pwm
+   constexpr int LEFT_MOTOR_A = COMP_2_MOTOR_A;
    ```
 3. Build and upload it with the Arduino IDE, or with `arduino-cli`:
    ```bash
@@ -153,7 +154,7 @@ The sketch is ordinary Arduino code. To run it on a real Uno:
    arduino-cli upload  --fqbn arduino:avr:uno -p /dev/ttyACM0 Sweep
    ```
 
-Every demo and example with a board folder is checked this way automatically (`tools/check_transfer.sh`): `uno/` for an Uno, `esp32cam/` for an ESP32-CAM (`arduino-cli compile --fqbn esp32:esp32:esp32cam`). The demos come in pairs: a Prototype copy on the ideal board (`demo/Robot arm`, `demo/Servo Comparison`) and a Real copy with its board wired in the simulator (`demo/Robot arm (ESP32-CAM)`, which uses `ESP32Servo.h` and the board's own camera, and `demo/Servo Comparison (Uno)`). The Real copies' `robot_pins.h` is generated from their wiring; see [wiring.md](wiring.md).
+Every demo and example is checked this way automatically (`tools/check_transfer.sh`). It compiles each Real demo's board sketch for its board (`arduino:avr:uno`, `esp32:esp32:esp32cam`), and each Prototype sketch that has a board folder (`uno/`, `esp32cam/`) with that folder's `robot_pins.h`. The demos come in pairs: a Prototype copy on the ideal board (`demo/Robot arm`, `demo/Servo Comparison`) and a Real copy with its board wired in the simulator. The Real copies are `demo/Robot arm (ESP32-CAM)`, which uses `ESP32Servo.h`, GPIO numbers and the board's own camera, and `demo/Servo Comparison (Uno)`, on pins 9 and 10. See [wiring.md](wiring.md).
 
 ## 9. Porting a JavaScript robot script
 

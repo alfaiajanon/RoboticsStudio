@@ -15,7 +15,7 @@ A project folder holds:
 | File | What it is |
 |---|---|
 | `<name>.rsproj` | the assembly (which parts, how they are connected), level and wiring, script list, plot layout |
-| `uno/robot_pins.h`, `esp32cam/robot_pins.h` | Real level: the board's pin header, generated from the wiring for the real board |
+| `robot_pins.h` | in a Real copy of a Prototype project: your own file with the sketch's pin names on the board's pins ([firmware.md](firmware.md#2-pins)) |
 | `*.ino` | robot firmware (C++ Arduino sketches), see [firmware.md](firmware.md) |
 | `*.js` | stage scripts (JavaScript, they move props), see [stage.md](stage.md) |
 | `Components/<id>/<id>.rsdef` | parts you created yourself ("Local Components") |
@@ -38,7 +38,7 @@ The robot is programmed like a real microcontroller: an **Arduino sketch** in C+
 
 ```cpp
 #include <Servo.h>
-#include "robot_pins.h"     // the project's pin names, generated on Play
+#include "robot_pins.h"     // Prototype: the project's pin names, generated on Play
 
 Servo shoulder;
 

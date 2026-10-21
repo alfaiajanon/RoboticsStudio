@@ -7,28 +7,30 @@ A project has a **level**. It decides what runs your firmware and how much of th
 | **Prototype** (default) | One ideal controller, built in | Unlimited; every part is wired automatically | Ideal: buses take no time, no power limits |
 | **Real** | A board you add from the library (Arduino Uno, ESP32-CAM) | The board's real pins; you wire them | The board's limits: which pins have PWM or an ADC, PWM frequency, ADC resolution, bus speed, logic voltage; and [power](#power): supplies sag under load, parts without enough supply are dead, the board resets on a brownout |
 
-The firmware API is the same at both levels, and so are the pin **names** in `robot_pins.h`. A sketch written at the Prototype level keeps working at the Real level; only the numbers behind the names change.
+The firmware API is the same at both levels. The pins differ. At the Real level a sketch uses the board's own pins, as on the real board (`servo.attach(9)`, `analogRead(A0)`). At the Prototype level, which has no real pins, it uses the names of the generated `robot_pins.h` ([firmware.md](firmware.md#2-pins)).
 
 ## Choosing the level
 
-- **New Project** asks for the level. A Real project starts with **no board**.
-- Later: select nothing in the robot tree (or click the level badge in the top-left of the 3D view) and change **Level** in the Inspector. Both directions are one undo step.
-  - **Prototype → Real**: add a board from the library (**Components → Boards**). The first board you add takes over the project's firmware sketch.
-  - **Real → Prototype**: the ideal board wires everything again. Your wiring stays in the project, unused, until you switch back.
+- **New Project** asks for the level, and the project keeps it. A Real project starts with **no board**.
+- **Prototype → Real** is one way, into a new project: select nothing in the robot tree (or click the level badge in the top-left of the 3D view) and press **Create Real copy...** in the Inspector. The copy opens next to the Prototype project, which stays as it is. Then:
+  1. Add a board from the library (**Components → Boards**). The first board you add takes over the project's firmware sketch.
+  2. Wire the parts to it (Wiring page, below).
+  3. Set the pins in the sketch. The copy has a `robot_pins.h` of its own with the Prototype's names set to `-1` (not wired yet): put the board pins there, or write the numbers into the sketch ([firmware.md](firmware.md#2-pins)).
+- There is no way back to Prototype: keep the Prototype project for that.
 
 ## Boards
 
 A board is a component like any other: drag it from **Components → Boards** onto a free connector (the stand, a bracket). Select it to see, in the Inspector:
 
 - **Firmware**: the sketch this board runs (its *firmware slot*). Pick any `.ino` of the project, or create one with **+** in the Script view.
-- **Pins in robot_pins.h**: what is wired to its pins, under the names the sketch uses.
+- **Pins**: what is wired to each of its pins (`D9 (pin 9): Emulated Servo signal`); the sketch uses the pin numbers.
 
 | Board | Logic | PWM (`analogWrite`) | ADC | I2C | SPI |
 |---|---|---|---|---|---|
 | Arduino Uno R3 | 5 V | D3, D5, D6, D9, D10, D11 (`~` on the schematic); 490 Hz, 980 Hz on D5/D6 | A0-A5, 10-bit on 5 V | A4 (SDA), A5 (SCL) | D11 MOSI, D12 MISO, D13 SCK, up to 8 MHz |
 | ESP32-CAM (AI-Thinker) | 3.3 V | every header GPIO except 1, 3, 16; 1 kHz | 12-bit on 3.3 V | IO14 (SDA), IO15 (SCL), as `Wire.begin(14, 15)` | IO14 SCK, IO13 MOSI, IO12 MISO |
 
-The **ESP32-CAM has its camera on the board**: its OV2640 is wired to the ESP32 on the PCB, so it needs no wires. The sketch reaches it through the board's own pin names (`ESP32_CAM_SDA`, `ESP32_CAM_D0`, ...; see [create_camera.md](create_camera.md#firmware-esp32-camera)). A separate camera module (the OV7670) is a part you wire like any other.
+The **ESP32-CAM has its camera on the board**: its OV2640 is wired to the ESP32 on the PCB, so it needs no wires. The sketch reaches it through the GPIOs it is wired to on the PCB, the usual AI-Thinker list (`SIOD_GPIO_NUM 26`, `Y2_GPIO_NUM 5`, ...; see [create_camera.md](create_camera.md#firmware-esp32-camera) and the Robot arm (ESP32-CAM) demo). A separate camera module (the OV7670) is a part you wire like any other.
 
 One board runs at a time for now. A second board shows up, but stays idle until boards can talk to each other (UART, a later step).
 
@@ -67,7 +69,7 @@ The side panel lists what a real board would do wrong with this wiring. A red or
 
 ## What changes at the Real level
 
-- **`robot_pins.h`** comes from the wiring: the same names (`EMULATED_SERVO_SIGNAL`), the board's numbers (9). On every save and Play it is also written to the project's board folder (`uno/robot_pins.h`, `esp32cam/robot_pins.h`), ready for the real board ([firmware.md](firmware.md#8-move-it-to-a-real-board)).
+- **Pins**: the sketch uses the board's own pin numbers and names (`9`, `A0`, `LED_BUILTIN`), from the real Arduino core's variant for that board, along with its macros (`ARDUINO_AVR_UNO`, `ESP32`). The sketch is the same file you upload to the real board ([firmware.md](firmware.md#8-move-it-to-a-real-board)).
 - **PWM**: `analogWrite()` runs at the board's frequency for that pin; on a pin without PWM it is a plain HIGH/LOW.
 - **ADC**: `analogRead()` gives the board's counts (0..1023 on an Uno, 0..4095 on an ESP32).
 - **Bus time**: an I2C transaction takes its bit time (9 bits per byte at 100 kHz, or the `Wire.setClock()` value); an SPI transfer 8 bits per byte at its clock. Reading the MPU6050's 14 data bytes takes about 1.5 ms at 100 kHz.

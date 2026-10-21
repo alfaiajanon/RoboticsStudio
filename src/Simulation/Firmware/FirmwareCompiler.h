@@ -17,10 +17,15 @@ class QProcess;
  *
  *   core: resources/firmware/core/*.cpp -> objects, built once per core
  *         version and cached (~/.cache/.../firmware/core-<hash>)
- *   sketch: written with robot_pins.h into sketch-<hash>/, compiled and
- *         linked with the core objects -> firmware.wasm. The hash covers the
- *         sketch, the pins header, the flags and the core, so pressing Play
- *         again without changes reuses the result.
+ *   sketch: written into sketch-<hash>/ with the generated headers (the
+ *         ideal board's robot_pins.h at the Prototype level; a real board's
+ *         variant, pins_arduino.h, at the Real level), compiled and linked
+ *         with the core objects -> firmware.wasm. The sketch's own folder is
+ *         on the include path after them, so the user's headers next to the
+ *         sketch are found. The hash covers the sketch, the generated
+ *         headers, the user's headers in the sketch folder, the defines, the
+ *         flags and the core, so pressing Play again without changes reuses
+ *         the result.
  *
  * A .ino sketch gets what the Arduino IDE adds, `#include <Arduino.h>`, and a
  * #line so diagnostics point at the sketch's own lines. Everything else
@@ -46,7 +51,11 @@ class FirmwareCompiler : public QObject {
 
         // Starts a compile; finished() always follows (at once from the cache).
         // A compile still running is cancelled.
-        void compile(const QString& sketchPath, const QString& sketchText, const QString& pinsHeader);
+        // pinsHeader: robot_pins.h to generate (Prototype), or empty;
+        // variantHeader: the board's pins_arduino.h (Real), or empty;
+        // defines: the board's macros (NAME or NAME=VALUE).
+        void compile(const QString& sketchPath, const QString& sketchText, const QString& pinsHeader,
+                     const QString& variantHeader = QString(), const QStringList& defines = QStringList());
         void cancel();
         bool isBusy() const { return process != nullptr; }
 

@@ -97,17 +97,18 @@ A part with a `"board"` block is a board: it runs a firmware sketch at the Real 
 
 - `"type": "gpio"`: a pin the firmware drives, with `"number"` (what the sketch passes, Uno A0 = 14) and `"caps"`: what it can do (`digital`, `pwm`, `analog`, `interrupt`, `i2c_sda`, `i2c_scl`, `spi_sck`, `spi_mosi`, `spi_miso`, `uart_tx`, `uart_rx`).
 - `"type": "power_out"`: a supply output (5V, 3V3), with its voltage in `voltage_range`; its regulator, the board's USB feed and its brownout threshold go in the `power` block ([create_power.md](create_power.md)). Batteries and regulator modules have `power_out` pins too.
-- `"internal": true` (with a `number`): a pin wired on the board's PCB to an on-board part, like the ESP32-CAM's camera pins. It can't take a wire; the sketch sees it as `<BOARD NAME>_<PIN>`.
+- `"internal": true` (with a `number`): a pin wired on the board's PCB to an on-board part, like the ESP32-CAM's camera pins. It can't take a wire; the sketch uses its `number` (the GPIO it is wired to on the PCB).
 
 ```json
 "board": {
     "fqbn": "arduino:avr:uno",               // what arduino-cli compiles for
-    "header_folder": "uno",                  // project folder for its robot_pins.h
     "logic_voltage": 5,
     "adc": {"bits": 10, "vref": 5},
     "analog_write": {"hz": 490, "pins": {"d5": 980, "d6": 980}},
     "i2c": {"sda": "a4", "scl": "a5", "default_hz": 100000},
     "spi": {"sck": "d13", "mosi": "d11", "miso": "d12", "max_hz": 8000000},
+    "variant": {"pins": {"A0": 14, "LED_BUILTIN": 13, "SDA": 18, "...": 0},   // the real core's pins_arduino.h
+                "defines": ["ARDUINO=10607", "ARDUINO_AVR_UNO", "ARDUINO_ARCH_AVR"]},  // and its board macros
     "sources": {"adc": "datasheet: ATmega328P, 10-bit ADC", "...": "..."}
 }
 ```

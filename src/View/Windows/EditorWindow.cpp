@@ -8,6 +8,7 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 #include <QMessageBox>
+#include <QInputDialog>
 #include <QWidget>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -244,6 +245,35 @@ bool EditorWindow::isProjectModified() const {
 }
 
 
+void EditorWindow::createRealCopy() {
+    Project* project = Application::getInstance()->getProject();
+    if (!project || project->getLevel() != ProjectLevel::Prototype) return;
+    if (!confirmUnsavedChanges()) return;   // the copy is made from the saved files
+    if (isProjectModified()) {
+        QMessageBox::information(this, "Create Real Copy", "Save the project first: the copy is made from the saved project.");
+        return;
+    }
+    bool ok = false;
+    const QString name = QInputDialog::getText(this, "Create Real Copy",
+        "A new project at the Real level, next to this one: the same robot and sketches, no board yet.\n"
+        "This project stays as it is.\n\nName of the copy:",
+        QLineEdit::Normal, project->getName() + " (Real)", &ok).trimmed();
+    if (!ok || name.isEmpty()) return;
+    QDir parent(project->getProjectDirectory());
+    parent.cdUp();
+    QString error;
+    const QString path = project->createRealCopy(parent.filePath(name), name, &error);
+    if (path.isEmpty()) {
+        QMessageBox::warning(this, "Create Real Copy", error);
+        return;
+    }
+    Application::getInstance()->openProject(path);
+    Toast::showMessage(this, "Real copy opened: add a board (Components -> Boards), wire it (Ctrl+3), "
+                             "then set its pins in the sketch (robot_pins.h)", 6000);
+}
+
+
+
 bool EditorWindow::confirmUnsavedChanges() {
     const bool projectDirty = isProjectModified();
     const bool scriptDirty = scriptPanel && scriptPanel->hasUnsavedChanges();
@@ -371,7 +401,7 @@ void EditorWindow::setupMenuBar() {
         Project* project = Application::getInstance()->getProject();
         if (!centerStack || !wiringPage || !project) return;
         if (project->getLevel() != ProjectLevel::Real) {
-            Toast::showMessage(this, "Wiring is part of the Real level (project settings: Level)", 2500);
+            Toast::showMessage(this, "Wiring is part of the Real level (project settings: Create Real copy)", 2500);
             return;
         }
         centerStack->setCurrentPage(wiringPage);
@@ -944,13 +974,15 @@ void EditorWindow::setupMainViewport() {
 
             Project* project = Application::getInstance()->getProject();
             if (project->hasScriptAt(project->getCurrentScriptIdx())) project->reloadScript();
-            // The active sketch: the ideal board's (Prototype) or the active
-            // board's slot (Real), with that board's robot_pins.h.
+            // The active sketch: the ideal board's (Prototype, with its generated
+            // robot_pins.h) or the active board's slot (Real, with the board's
+            // variant and macros, as the real core builds it).
             if (project->usesFirmware()) {
-                project->writeBoardHeader();
                 setHudBtn(playBtn, "Compiling...", ":/icons/play.svg", playColor);
                 playBtn->setEnabled(false);
-                firmwareCompiler->compile(project->activeSketchPath(), project->readActiveSketch(), project->pinsHeader());
+                firmwareCompiler->compile(project->getProjectDirectory() + "/" + project->activeSketchPath(),
+                                          project->readActiveSketch(), project->pinsHeader(),
+                                          project->boardVariantHeader(), project->boardDefines());
                 return;
             }
             startRun();

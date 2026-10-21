@@ -51,7 +51,12 @@ struct PinDef {
 struct BoardDef {
     bool present = false;
     QString fqbn;              // arduino-cli board, e.g. arduino:avr:uno
-    QString headerFolder;      // project subfolder for its robot_pins.h ("uno")
+    QString headerFolder;      // unused since 2026-10-21 (the folder of a generated robot_pins.h); kept on save
+    // The real Arduino core's variant for this board (its pins_arduino.h):
+    // the pin names a sketch uses (A0, LED_BUILTIN, SDA, ...) and the
+    // board's macros (ARDUINO_AVR_UNO), so the sketch compiles here as there.
+    QMap<QString, int> variantPins;
+    QStringList defines;
     double logicVoltage = 5.0;
     int adcBits = 10;
     double adcVref = 5.0;

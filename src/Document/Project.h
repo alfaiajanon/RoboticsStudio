@@ -94,7 +94,6 @@ class Project {
 
         static constexpr int kSchemaVersion = 3;   // "schema" in the .rsproj; files without it are 2
         ProjectLevel getLevel() const { return level; }
-        void setLevel(ProjectLevel l) { level = l; }
         static QString levelName(ProjectLevel l) { return l == ProjectLevel::Real ? "real" : "prototype"; }
 
         Netlist& netlist() { return wiring; }
@@ -113,11 +112,22 @@ class Project {
         // Prototype, the active board's slot at Real. Empty = none.
         QString activeSketchPath() const;
         QString readActiveSketch() const;
-        // robot_pins.h for the active sketch (ideal or real board).
+        // Prototype: the ideal board's robot_pins.h for the sketch (its pin
+        // names). Real: empty; the sketch uses the board's own pins.
         QString pinsHeader();
-        // Real level: writes <project>/<header_folder>/robot_pins.h for the
-        // active board (what tools/check_transfer.sh compiles). False on error.
-        bool writeBoardHeader();
+        // Real: the active board's pins_arduino.h (A0, LED_BUILTIN, ...) and
+        // its macros, as the real core has them; empty at the Prototype level.
+        QString boardVariantHeader() const;
+        QStringList boardDefines() const;
+
+        // Prototype -> Real is one way: a new project at the Real level in
+        // `destDir` (must not exist), copied from this project as saved on
+        // disk. Same robot, sketches, stage and plots; no board, no wiring.
+        // A sketch that includes robot_pins.h gets one of its own there, with
+        // the Prototype's names set to -1 ("not wired yet") for the user to
+        // fill in with board pins; it is the user's file, never regenerated.
+        // Returns the new .rsproj path, or empty with `error` set.
+        QString createRealCopy(const QString& destDir, const QString& name, QString* error);
         // Writes the .rsproj only; the editor (EditorWindow::saveProject) owns
         // the "unsaved changes" state and marks it clean on success.
         bool saveProject();

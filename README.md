@@ -91,7 +91,7 @@ tools/fetch_wasi_sdk.sh   # one-time: firmware compiler
 
 ## Programming
 
-Robots are programmed as standard Arduino sketches. Pin names come from a generated `robot_pins.h`.
+Robots are programmed as standard Arduino sketches. At the Real level a sketch uses the board's own pins (`servo.attach(9)`, `analogRead(A0)`), as on the bench. At the Prototype level (an ideal board, no real pins) the pin names come from a generated `robot_pins.h`:
 
 ```cpp
 #include <Servo.h>

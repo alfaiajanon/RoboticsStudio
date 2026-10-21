@@ -11,7 +11,8 @@
  * own code takes no simulated time, except a small fixed cost per
  * millis()/micros() call and per loop().
  *
- * Pins are board pin numbers (robot_pins.h). An unknown pin is ignored (the
+ * Pins are board pin numbers (the ideal board's, named in robot_pins.h, at the
+ * Prototype level; the real board's own at the Real level). An unknown pin is ignored (the
  * simulator logs it once). What a pin can do, the PWM frequency, the ADC
  * resolution and the bus speeds are the board's: the ideal board (Prototype)
  * does everything, instantly; a real board (Real level) has its own limits.

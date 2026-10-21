@@ -3,8 +3,8 @@
  * esp32-camera driver (our own implementation), so camera sketches written
  * for an ESP32-CAM build and run here.
  *
- * The camera is found through config.pin_sccb_sda (its SCCB data pin, named
- * in robot_pins.h). frame_size must match the part's resolution and
+ * The camera is found through config.pin_sccb_sda (its SCCB data pin: a name
+ * in robot_pins.h at the Prototype level, the board's GPIO number at the Real level). frame_size must match the part's resolution and
  * pixel_format must be PIXFORMAT_GRAYSCALE or PIXFORMAT_RGB565 (RGB565 bytes
  * high byte first, as the ESP32 driver delivers them); otherwise
  * esp_camera_init() fails like the real driver. Frames come with the part's

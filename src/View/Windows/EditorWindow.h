@@ -101,6 +101,9 @@ class EditorWindow : public QMainWindow{
         // One Save All / Discard / Cancel prompt for the project and the open
         // script. False = cancelled (or a save failed): abort the close/switch.
         bool confirmUnsavedChanges();
+        // Prototype -> Real (one way): asks for a name, writes a Real copy of
+        // the saved project next to it (Project::createRealCopy) and opens it.
+        void createRealCopy();
         // Window title + its "*" marker.
         void updateModifiedIndicator();
 

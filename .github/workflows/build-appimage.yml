@@ -118,8 +118,9 @@ jobs:
         keep_files: true
 
   # Every demo and example firmware sketch must also compile, unchanged, for
-  # its real board (with that board's robot_pins.h): what is learned in the
-  # simulator transfers.
+  # its real board (Real demos on the board's own pins, Prototype sketches with
+  # their hand-written board robot_pins.h): what is learned in the simulator
+  # transfers.
   transfer-check:
     runs-on: ubuntu-22.04
 
