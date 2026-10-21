@@ -840,7 +840,7 @@ static QJsonArray interfaceToJson(const QMap<QString, InterfaceDef>& defs) {
 
 const QStringList& PinDef::types() {
     static const QStringList t{"pwm", "digital", "analog", "i2c_sda", "i2c_scl", "spi_sck", "spi_mosi", "spi_miso",
-                               "uart_tx", "uart_rx", "power", "ground", "gpio", "power_out"};
+                               "uart_tx", "uart_rx", "power", "ground", "gpio", "power_out", "motor", "motor_out"};
     return t;
 }
 
@@ -947,6 +947,9 @@ static BoardDef parseBoard(const QJsonObject& b, const QList<PinDef>& pins, Load
     board.spiMosi = spi["mosi"].toString();
     board.spiMiso = spi["miso"].toString();
     board.spiMaxHz = readNumber(spi, "max_hz", "board.spi", err, false, 8000000.0);
+    board.pinOutputOhm = readNumber(b, "pin_output_ohm", "board", err, false, 0.0);
+    board.pinAbsMaxA = readNumber(b, "pin_abs_max_ma", "board", err, false, 0.0) / 1000.0;
+    if (!err.has() && (board.pinOutputOhm < 0.0 || board.pinAbsMaxA < 0.0)) err.set("board: 'pin_output_ohm' and 'pin_abs_max_ma' must be >= 0");
     const QJsonObject variant = b["variant"].toObject();
     const QJsonObject vpins = variant["pins"].toObject();
     for (auto it = vpins.begin(); it != vpins.end(); ++it) {
@@ -1004,6 +1007,8 @@ static QJsonObject boardToJson(const BoardDef& b) {
         for (auto it = b.sources.begin(); it != b.sources.end(); ++it) src[it.key()] = it.value();
         o["sources"] = src;
     }
+    if (b.pinOutputOhm > 0.0) o["pin_output_ohm"] = b.pinOutputOhm;
+    if (b.pinAbsMaxA > 0.0) o["pin_abs_max_ma"] = b.pinAbsMaxA * 1000.0;
     if (!b.variantPins.isEmpty() || !b.defines.isEmpty()) {
         QJsonObject vpins;
         for (auto it = b.variantPins.begin(); it != b.variantPins.end(); ++it) vpins[it.key()] = it.value();

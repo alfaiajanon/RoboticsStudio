@@ -1,0 +1,398 @@
+{
+    "schema": 3,
+    "id": "driver_l298n",
+    "meta": {
+        "name": "L298N dual H-bridge motor driver module",
+        "version": "1.0.0",
+        "author": "Anon",
+        "icon_path": "",
+        "hint_class": "part"
+    },
+    "specs": {
+        "chip": "L298N (+ 78M05 regulator)",
+        "motor_supply_v": [
+            5,
+            35
+        ],
+        "current_per_channel_a": 2,
+        "weight_kg": 0.03,
+        "size_mm": [
+            43,
+            43,
+            27
+        ]
+    },
+    "pins": [
+        {
+            "id": "vs",
+            "type": "power",
+            "description": "+12V screw terminal: motor supply VS (5-35 V on the module; feeds the 78M05 too)",
+            "voltage_range": [
+                5,
+                35
+            ]
+        },
+        {
+            "id": "gnd",
+            "type": "ground",
+            "description": "GND screw terminal (common with the board's GND)"
+        },
+        {
+            "id": "5v",
+            "type": "power_out",
+            "description": "+5V screw terminal: the on-board 78M05's output while the 5V-EN jumper is fitted (VS <= 12 V); can feed a board",
+            "voltage_range": [
+                4.75,
+                5.25
+            ]
+        },
+        {
+            "id": "ena",
+            "type": "pwm",
+            "description": "ENA: channel A enable (PWM here for speed once its jumper is removed)",
+            "voltage_range": [
+                0,
+                7
+            ]
+        },
+        {
+            "id": "in1",
+            "type": "digital",
+            "description": "IN1: drives OUT1 HIGH/LOW",
+            "voltage_range": [
+                0,
+                7
+            ]
+        },
+        {
+            "id": "in2",
+            "type": "digital",
+            "description": "IN2: drives OUT2 HIGH/LOW",
+            "voltage_range": [
+                0,
+                7
+            ]
+        },
+        {
+            "id": "in3",
+            "type": "digital",
+            "description": "IN3: drives OUT3 HIGH/LOW",
+            "voltage_range": [
+                0,
+                7
+            ]
+        },
+        {
+            "id": "in4",
+            "type": "digital",
+            "description": "IN4: drives OUT4 HIGH/LOW",
+            "voltage_range": [
+                0,
+                7
+            ]
+        },
+        {
+            "id": "enb",
+            "type": "pwm",
+            "description": "ENB: channel B enable",
+            "voltage_range": [
+                0,
+                7
+            ]
+        },
+        {
+            "id": "out1",
+            "type": "motor_out",
+            "description": "OUT1 (motor A)"
+        },
+        {
+            "id": "out2",
+            "type": "motor_out",
+            "description": "OUT2 (motor A)"
+        },
+        {
+            "id": "out3",
+            "type": "motor_out",
+            "description": "OUT3 (motor B)"
+        },
+        {
+            "id": "out4",
+            "type": "motor_out",
+            "description": "OUT4 (motor B)"
+        }
+    ],
+    "resources": {
+        "meshes": {},
+        "materials": {}
+    },
+    "kinematics": {
+        "default_body": "base",
+        "bodies": [
+            {
+                "id": "base",
+                "overrideGeom": false,
+                "transform": {
+                    "pos": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "quat": [
+                        1,
+                        0,
+                        0,
+                        0
+                    ]
+                },
+                "geoms": [
+                    {
+                        "id": "pcb",
+                        "type": "box",
+                        "size": [
+                            0.0215,
+                            0.0215,
+                            0.0008
+                        ],
+                        "pos": [
+                            0,
+                            0,
+                            0.0008
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.75,
+                            0.1,
+                            0.1
+                        ],
+                        "mass": 0.008
+                    },
+                    {
+                        "id": "heatsink",
+                        "type": "box",
+                        "size": [
+                            0.0115,
+                            0.0125,
+                            0.008
+                        ],
+                        "pos": [
+                            0,
+                            0.004,
+                            0.0096
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.08,
+                            0.08,
+                            0.08
+                        ],
+                        "mass": 0.016
+                    },
+                    {
+                        "id": "terminals_a",
+                        "type": "box",
+                        "size": [
+                            0.0035,
+                            0.008,
+                            0.005
+                        ],
+                        "pos": [
+                            -0.018,
+                            0.008,
+                            0.0066
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.1,
+                            0.3,
+                            0.8
+                        ],
+                        "mass": 0.002
+                    },
+                    {
+                        "id": "terminals_b",
+                        "type": "box",
+                        "size": [
+                            0.0035,
+                            0.008,
+                            0.005
+                        ],
+                        "pos": [
+                            0.018,
+                            0.008,
+                            0.0066
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.1,
+                            0.3,
+                            0.8
+                        ],
+                        "mass": 0.002
+                    },
+                    {
+                        "id": "terminals_power",
+                        "type": "box",
+                        "size": [
+                            0.011,
+                            0.0035,
+                            0.005
+                        ],
+                        "pos": [
+                            0,
+                            -0.018,
+                            0.0066
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.1,
+                            0.3,
+                            0.8
+                        ],
+                        "mass": 0.002
+                    }
+                ]
+            }
+        ]
+    },
+    "connectors": [
+        {
+            "id": "base",
+            "body": "base",
+            "description": "Bottom (stand-offs, M3 holes in the corners)",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    90,
+                    180,
+                    270
+                ]
+            },
+            "transform": {
+                "pos": [
+                    0,
+                    0,
+                    0
+                ],
+                "quat": [
+                    0,
+                    1,
+                    0,
+                    0
+                ]
+            }
+        },
+        {
+            "id": "top",
+            "body": "base",
+            "description": "Top face",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    90,
+                    180,
+                    270
+                ]
+            },
+            "transform": {
+                "pos": [
+                    0,
+                    0,
+                    0.018
+                ],
+                "quat": [
+                    1,
+                    0,
+                    0,
+                    0
+                ]
+            }
+        }
+    ],
+    "devices": {
+        "actuators": [],
+        "sensors": [],
+        "cameras": [],
+        "displays": []
+    },
+    "interface": {
+        "inputs": [],
+        "outputs": []
+    },
+    "power": {
+        "regulators": [
+            {
+                "id": "reg_5v",
+                "in": "vs",
+                "out": "5v",
+                "kind": "linear",
+                "v_out": 5.0,
+                "dropout_v": 2.0,
+                "i_max_a": 0.5,
+                "i_quiescent_ma": 6
+            }
+        ],
+        "loads": [
+            {
+                "pin": "vs",
+                "current_ma": 13,
+                "min_v": 4.5
+            },
+            {
+                "pin": "5v",
+                "current_ma": 24
+            }
+        ],
+        "sources": {
+            "regulators.reg_5v": "78M05 (500 mA) datasheet: 5 V, ~2 V dropout, ~6 mA quiescent; the module's 5V-EN jumper fitted (not modelled: above 12 V VS the module asks to remove it)",
+            "loads.vs": "ST L298 datasheet (Dual Full-Bridge Driver), electrical characteristics at 25 C (copies at ece.nus.edu.sg, makerguides.com): quiescent supply current IS (VS pin) 13 mA typ with EN high and inputs low (50 mA with inputs high); VS must exceed VIH + 2.5 V (min_v ~4.5 V, estimate)",
+            "loads.5v": "ST L298 datasheet (Dual Full-Bridge Driver), electrical characteristics at 25 C (copies at ece.nus.edu.sg, makerguides.com): logic supply current ISS 24 mA typ (EN high, inputs low)"
+        }
+    },
+    "emulator": {
+        "type": "hbridge_emulator",
+        "parameters": {
+            "truth_table": "l298",
+            "high_v0": 0.7,
+            "high_r": 0.65,
+            "low_v0": 0.7,
+            "low_r": 0.5,
+            "ideal_supply_v": 12,
+            "channel_max_a": 2.0
+        },
+        "parameter_sources": {
+            "truth_table": "ST L298 datasheet (Dual Full-Bridge Driver), electrical characteristics at 25 C (copies at ece.nus.edu.sg, makerguides.com): function table: EN low = fast motor stop (outputs off); EN high: IN1 = IN2 = brake (fast stop), IN1 H / IN2 L = forward",
+            "high_v0": "ST L298 datasheet (Dual Full-Bridge Driver), electrical characteristics at 25 C (copies at ece.nus.edu.sg, makerguides.com): source saturation VCEsat(H) 1.35 V typ at 1 A, 2.0 V typ at 2 A -> a line 0.70 V + 0.65 ohm x I",
+            "high_r": "ST L298 datasheet (Dual Full-Bridge Driver), electrical characteristics at 25 C (copies at ece.nus.edu.sg, makerguides.com): see high_v0",
+            "low_v0": "ST L298 datasheet (Dual Full-Bridge Driver), electrical characteristics at 25 C (copies at ece.nus.edu.sg, makerguides.com): sink saturation VCEsat(L) 1.2 V typ at 1 A, 1.7 V typ at 2 A -> 0.70 V + 0.5 ohm x I (total drop at 1 A: 2.55 V, datasheet range 1.80-3.2 V)",
+            "low_r": "ST L298 datasheet (Dual Full-Bridge Driver), electrical characteristics at 25 C (copies at ece.nus.edu.sg, makerguides.com): see low_v0",
+            "ideal_supply_v": "assumption: VS when the power model isn't running (no Real-level wiring)",
+            "channel_max_a": "ST L298 datasheet: DC output current 2 A per bridge (repetitive peak 2.5 A, non-repetitive 3 A); the module's heatsink is rated for the same"
+        },
+        "source": {}
+    }
+}

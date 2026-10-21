@@ -101,6 +101,7 @@ class SimulationManager : public QObject {
     // Real level: parts with no supply or ground (set at Play): their device
     // models don't run and their actuators get no drive, like a dead part.
     QSet<int> unpoweredUids;
+    QSet<int> overloadedPins;   // board pin nets warned for their current (once per run)
 
     // Real level: the power network during the run (physics thread). Parts
     // whose supply sags below their min_v are off: not updated, no drive,
@@ -150,6 +151,7 @@ class SimulationManager : public QObject {
         float getTimeScale() const { return timeScale.load(); }
 
         void pushTelemetry(ComponentInstance* comp, double time);
+        void checkBoardPins(double now);
         void initEmulators(ComponentInstance* comp);
         void resetEmulators(ComponentInstance* comp);
         SimulationState getState() const;

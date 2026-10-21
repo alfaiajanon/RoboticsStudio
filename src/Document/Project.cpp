@@ -98,6 +98,7 @@ void Project::clear() {
 
     qDeleteAll(constraintList);
     constraintList.clear();
+    unknownComponents = QJsonArray();
 
     rootComponent = nullptr;
 }
@@ -487,6 +488,7 @@ bool Project::saveProject() {
     }
 
     QJsonObject assemblyObj;
+    for (const QJsonValue& v : unknownComponents) componentsArray.append(v);
     assemblyObj["components"] = componentsArray;
     assemblyObj["constraints"] = constraintsArray;
     assemblyObj["transform"] = QJsonObject{
@@ -597,7 +599,15 @@ void Project::parseAssembly() {
         }
 
         QString model_id = component->modelId;
-        component->setBlueprint(LibraryManager::getInstance().getBlueprint(model_id));
+        ComponentBlueprint* blueprint = LibraryManager::getInstance().getBlueprint(model_id);
+        if (!blueprint) {
+            Log::error(QString("Part \"%1\" (uid %2): its model '%3' is not in the component library; it is left out "
+                               "(and kept in the project file)").arg(component->name).arg(component->uid).arg(model_id));
+            unknownComponents.append(obj);
+            delete component;
+            continue;
+        }
+        component->setBlueprint(blueprint);
         // component->initializeIO();
 
 

@@ -1,0 +1,347 @@
+{
+    "level": "real",
+    "schema": 3,
+    "assembly": {
+        "components": [
+            {
+                "uid": 1,
+                "model_id": "motor_stand",
+                "name": "Stand",
+                "parameters": {},
+                "connection": {
+                    "parent_uid": 0,
+                    "parent_connector": "root",
+                    "self_connector": "",
+                    "snap_angle": 0
+                }
+            },
+            {
+                "uid": 2,
+                "model_id": "motor_dc_gear_60rpm",
+                "name": "Left",
+                "parameters": {},
+                "connection": {
+                    "parent_uid": 1,
+                    "parent_connector": "motor",
+                    "self_connector": "chassie_right_1",
+                    "snap_angle": 0
+                }
+            },
+            {
+                "uid": 3,
+                "model_id": "wheel_D_65_25",
+                "name": "Wheel",
+                "parameters": {},
+                "connection": {
+                    "parent_uid": 2,
+                    "parent_connector": "shaft_left",
+                    "self_connector": "center_mount",
+                    "snap_angle": 0
+                }
+            },
+            {
+                "uid": 4,
+                "model_id": "arduino_uno",
+                "name": "Uno",
+                "parameters": {},
+                "connection": {
+                    "parent_uid": 1,
+                    "parent_connector": "board",
+                    "self_connector": "base",
+                    "snap_angle": 0
+                },
+                "firmware": "script/dc_motor_uno/dc_motor_uno.ino"
+            },
+            {
+                "uid": 5,
+                "model_id": "driver_l298n",
+                "name": "Driver",
+                "parameters": {},
+                "connection": {
+                    "parent_uid": 1,
+                    "parent_connector": "driver",
+                    "self_connector": "base",
+                    "snap_angle": 0
+                }
+            },
+            {
+                "uid": 6,
+                "model_id": "battery_lipo_2s",
+                "name": "Battery",
+                "parameters": {},
+                "connection": {
+                    "parent_uid": 1,
+                    "parent_connector": "battery",
+                    "self_connector": "base",
+                    "snap_angle": 0
+                }
+            }
+        ],
+        "constraints": [],
+        "transform": {
+            "rotation": [
+                0,
+                0,
+                0
+            ]
+        }
+    },
+    "meta": {
+        "author": "",
+        "icon": "logo.png",
+        "name": "DC Motor (Uno)",
+        "version": "1.0.0"
+    },
+    "plotting": {
+        "canvases": [
+            {
+                "enabled": true,
+                "name": "Speed",
+                "targets": [
+                    {
+                        "color": "#34bef0",
+                        "signal": "current_velocity",
+                        "uid": 2
+                    }
+                ],
+                "type": "scalar"
+            },
+            {
+                "enabled": true,
+                "name": "Drive",
+                "targets": [
+                    {
+                        "color": "#f0a034",
+                        "signal": "drive",
+                        "uid": 2
+                    }
+                ],
+                "type": "scalar"
+            },
+            {
+                "enabled": true,
+                "name": "Motor current",
+                "targets": [
+                    {
+                        "color": "#f03480",
+                        "signal": "current",
+                        "uid": 2
+                    }
+                ],
+                "type": "scalar"
+            }
+        ],
+        "motion": {
+            "targets": []
+        }
+    },
+    "script": {
+        "current": 0,
+        "paths": [
+            "script/dc_motor_uno/dc_motor_uno.ino"
+        ]
+    },
+    "stage": {
+        "environment": {
+            "ambient": [
+                0.1,
+                0.1,
+                0.1
+            ],
+            "fog": {
+                "color": [
+                    0.5,
+                    0.5,
+                    0.5
+                ],
+                "enabled": false,
+                "end": 10,
+                "start": 3
+            },
+            "gravity": [
+                0,
+                0,
+                -9.81
+            ],
+            "headlight": [
+                0.4,
+                0.4,
+                0.4
+            ],
+            "light": {
+                "castShadow": true,
+                "diffuse": [
+                    0.8,
+                    0.8,
+                    0.8
+                ],
+                "dir": [
+                    0,
+                    0,
+                    -1
+                ]
+            },
+            "shadowSize": 4096,
+            "skyBottom": [
+                0,
+                0,
+                0
+            ],
+            "skyTop": [
+                0.4,
+                0.6,
+                0.8
+            ],
+            "timestep": 0.002
+        },
+        "floor": {
+            "color1": [
+                0.2,
+                0.3,
+                0.4
+            ],
+            "color2": [
+                0.1,
+                0.15,
+                0.2
+            ],
+            "euler": [
+                0,
+                0,
+                0
+            ],
+            "file": "",
+            "friction": [
+                1,
+                0.005,
+                0.0001
+            ],
+            "pattern": "checker",
+            "pos": [
+                0,
+                0,
+                0
+            ],
+            "scale": [
+                1,
+                1,
+                1
+            ],
+            "texRepeat": 10,
+            "type": "plane"
+        },
+        "props": [],
+        "robotSpawn": [
+            0,
+            0,
+            0
+        ],
+        "script": {
+            "current": -1,
+            "paths": []
+        }
+    },
+    "version": "0.3.0-alpha",
+    "wiring": {
+        "wires": [
+            {
+                "a": {
+                    "uid": 6,
+                    "pin": "plus"
+                },
+                "b": {
+                    "uid": 5,
+                    "pin": "vs"
+                }
+            },
+            {
+                "a": {
+                    "uid": 6,
+                    "pin": "minus"
+                },
+                "b": {
+                    "uid": 5,
+                    "pin": "gnd"
+                }
+            },
+            {
+                "a": {
+                    "uid": 6,
+                    "pin": "plus"
+                },
+                "b": {
+                    "uid": 4,
+                    "pin": "vin"
+                }
+            },
+            {
+                "a": {
+                    "uid": 6,
+                    "pin": "minus"
+                },
+                "b": {
+                    "uid": 4,
+                    "pin": "gnd"
+                }
+            },
+            {
+                "a": {
+                    "uid": 4,
+                    "pin": "d5"
+                },
+                "b": {
+                    "uid": 5,
+                    "pin": "in1"
+                }
+            },
+            {
+                "a": {
+                    "uid": 4,
+                    "pin": "d6"
+                },
+                "b": {
+                    "uid": 5,
+                    "pin": "in2"
+                }
+            },
+            {
+                "a": {
+                    "uid": 5,
+                    "pin": "out1"
+                },
+                "b": {
+                    "uid": 2,
+                    "pin": "motor_a"
+                }
+            },
+            {
+                "a": {
+                    "uid": 5,
+                    "pin": "out2"
+                },
+                "b": {
+                    "uid": 2,
+                    "pin": "motor_b"
+                }
+            }
+        ],
+        "layout": {
+            "4": [
+                0,
+                0
+            ],
+            "5": [
+                340,
+                0
+            ],
+            "6": [
+                340,
+                290
+            ],
+            "2": [
+                640,
+                0
+            ]
+        }
+    }
+}

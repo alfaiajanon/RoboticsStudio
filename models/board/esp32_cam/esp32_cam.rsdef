@@ -331,7 +331,9 @@
             "analog_write": "arduino-esp32 core 3.x: analogWrite() uses LEDC at 1 kHz, 8-bit",
             "i2c": "Wire library default 100 kHz; on this board the camera takes the default pins (21/22), so I2C parts go on 14/15 (common practice)",
             "spi": "datasheet: ESP32 Technical Reference Manual, SPI through the GPIO matrix up to 40 MHz",
-            "variant": "esp32:esp32 3.3.12 core: esp32cam builds with the generic variant (boards.txt esp32cam.build.variant=esp32, build.board=ESP32_DEV), variants/esp32/pins_arduino.h; -DESP32=ESP32 from the core's flags/defines. That variant is the generic ESP32's: SDA/SCL (21/22), SPI and most A/T pins are camera or flash pins on an ESP32-CAM, and it has no LED_BUILTIN; ESP32-CAM sketches use the GPIO numbers (Wire.begin(14, 15))"
+            "variant": "esp32:esp32 3.3.12 core: esp32cam builds with the generic variant (boards.txt esp32cam.build.variant=esp32, build.board=ESP32_DEV), variants/esp32/pins_arduino.h; -DESP32=ESP32 from the core's flags/defines. That variant is the generic ESP32's: SDA/SCL (21/22), SPI and most A/T pins are camera or flash pins on an ESP32-CAM, and it has no LED_BUILTIN; ESP32-CAM sketches use the GPIO numbers (Wire.begin(14, 15))",
+            "pin_output_ohm": "ESP32 datasheet: VOH >= 0.8 x VDD (2.64 V) at IOH = 40 mA at the strongest drive (level 3); the Arduino core's default drive (level 2, ~20 mA) is about half as strong: ~30 ohm (estimate); 40 mA taken as the per-pin maximum (estimate)",
+            "pin_abs_max_ma": "ESP32 datasheet: VOH >= 0.8 x VDD (2.64 V) at IOH = 40 mA at the strongest drive (level 3); the Arduino core's default drive (level 2, ~20 mA) is about half as strong: ~30 ohm (estimate); 40 mA taken as the per-pin maximum (estimate)"
         },
         "variant": {
             "pins": {
@@ -381,7 +383,9 @@
                 "ARDUINO_VARIANT=\"esp32\"",
                 "F_CPU=240000000L"
             ]
-        }
+        },
+        "pin_output_ohm": 30,
+        "pin_abs_max_ma": 40
     },
     "power": {
         "supplies": [

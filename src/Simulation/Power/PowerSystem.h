@@ -113,6 +113,9 @@ class PowerSystem {
         // percent and available are fuel-gauge readings (0..100 %).
         bool battery(int uid, double* percent, double* volts, double* amps, double* available = nullptr) const;
         double boardRailVolts(int boardUid) const;
+        // Current the board's pins carry into loads this step (A): drawn from
+        // the board's MCU rail, on top of its own load.
+        void setBoardLoad(int boardUid, double amps) { boardLoads[boardUid] = amps; }
 
         // One line per source and per board MCU rail, for the Output at Stop.
         QStringList summary() const;
@@ -129,6 +132,7 @@ class PowerSystem {
         QVector<Extremes> boardExtremes;     // per board
         QHash<int, int> partIndex;           // uid -> partList index
         QHash<int, QString> names;           // uid -> part name
+        QHash<int, double> boardLoads;       // board uid -> A from its pins (setBoardLoad)
 
         QString supplyName(int i) const;
         void stepBattery(Battery& b, double now, double dt);

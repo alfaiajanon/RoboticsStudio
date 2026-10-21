@@ -106,7 +106,7 @@ Everything runs on **simulated time**. Your code itself takes no simulated time,
 | Part | How the sketch reaches it | Example |
 |---|---|---|
 | Servo | `Servo.attach(SHOULDER_SIGNAL, 1000, 2000)` | `demo/Servo Comparison` |
-| DC gear motor | two driver pins: `analogWrite(LEFT_MOTOR_A, duty)`, the other LOW (both HIGH brakes) | `examples/firmware/dc_motor` |
+| DC gear motor | Prototype: two driver pins, `analogWrite(LEFT_MOTOR_A, duty)`, the other LOW (both HIGH brakes); Real: the motor driver's inputs on the board's pins ([create_driver.md](create_driver.md)) | `examples/firmware/dc_motor`, `demo/DC Motor (Uno)` |
 | Stepper | STEP pulses and DIR with `digitalWrite` | `examples/firmware/stepper` |
 | IMU (MPU6050) | `Wire`, registers at 0x68 (wake it first) | `examples/firmware/imu_mpu6050` |
 | TFT display | `Adafruit_ST7735 tft(TFT_CS, TFT_DC, TFT_RST)` | `examples/firmware/tft_display` |

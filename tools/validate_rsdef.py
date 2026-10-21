@@ -39,7 +39,7 @@ class Errors(list):
 
 # mirrors PinDef::types() / PinDef::capabilities() in ComponentData.cpp
 PIN_TYPES = ("pwm", "digital", "analog", "i2c_sda", "i2c_scl", "spi_sck", "spi_mosi", "spi_miso",
-             "uart_tx", "uart_rx", "power", "ground", "gpio", "power_out")
+             "uart_tx", "uart_rx", "power", "ground", "gpio", "power_out", "motor", "motor_out")
 PIN_CAPS = ("digital", "pwm", "analog", "interrupt", "i2c_sda", "i2c_scl",
             "spi_sck", "spi_mosi", "spi_miso", "uart_tx", "uart_rx")
 SCHEMA_VERSION, MIN_SCHEMA_VERSION = 3, 2

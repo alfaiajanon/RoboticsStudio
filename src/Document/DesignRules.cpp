@@ -120,6 +120,43 @@ QString railName(Project& project, const PowerNetwork& pn, int node) {
     return pins.isEmpty() ? QString("a rail") : partName(project, pins[0].uid) + " " + label(pins[0].pin);
 }
 
+double emuParam(const ComponentBlueprint* bp, const char* key, double def) {
+    return bp->emulatorDef.parameters.contains(key) ? bp->emulatorDef.parameters.value(key).toDouble() : def;
+}
+
+bool isDriver(const ComponentInstance* comp) {
+    return comp && comp->getBlueprint() && comp->getBlueprint()->emulatorDef.type == "hbridge_emulator";
+}
+
+// A motor on a driver's outputs, with its stall current through the driver
+// at the driver's motor supply `volts` (the datasheet drops of both sides).
+struct DrivenMotor { ComponentInstance* motor; double stallA; };
+QList<DrivenMotor> drivenMotors(const Wiring& w, ComponentInstance* driver, double volts) {
+    QList<DrivenMotor> out;
+    const ComponentBlueprint* dbp = driver->getBlueprint();
+    const double drop = emuParam(dbp, "high_v0", 0.0) + emuParam(dbp, "low_v0", 0.0);
+    const double rOn = emuParam(dbp, "high_r", 0.0) + emuParam(dbp, "low_r", 0.0);
+    QSet<int> seen;
+    for (const PinDef& p : dbp->pins) {
+        if (p.type != "motor_out") continue;
+        for (const PinRef& r : w.pins(w.net(driver->uid, p.id), "motor")) {
+            ComponentInstance* m = w.project.getComponentByUid(r.uid);
+            if (!m || seen.contains(r.uid)) continue;
+            seen.insert(r.uid);
+            const ComponentBlueprint* mbp = m->getBlueprint();
+            const double rated = emuParam(mbp, "rated_voltage", 12.0), stall = emuParam(mbp, "stall_current_a", 1.0);
+            const double rArm = rated / std::max(1e-3, stall);
+            out.append({m, std::max(0.0, volts - drop) / (rOn + rArm)});
+        }
+    }
+    return out;
+}
+
+QString partTypeName(const ComponentInstance* comp) {
+    const ComponentBlueprint* bp = comp->getBlueprint();
+    return bp && !bp->meta.name.isEmpty() ? bp->meta.name : comp->modelId;
+}
+
 // The power checks: sources fighting, ranges, the budget, regulator headroom.
 void checkPower(Project& project, QList<RuleIssue>& issues) {
     using S = RuleIssue::Severity;
@@ -128,6 +165,7 @@ void checkPower(Project& project, QList<RuleIssue>& issues) {
     };
     const PowerNetwork pn = PowerNetwork::build(project);
     if (pn.isEmpty()) return;
+    const Wiring w(project);
     if (pn.hasLoop) add(S::Error, "A regulator feeds its own input (through other rails): the power wiring loops");
 
     const PowerNetwork::Solution nominal = pn.solveStatic();
@@ -187,10 +225,22 @@ void checkPower(Project& project, QList<RuleIssue>& issues) {
         const int node = pin.isEmpty() ? -1 : pn.nodeOf(comp->uid, pin);
         if (node < 0 || !pn.nodes[node].live) continue;
         const PowerLoadDef* l = comp->getBlueprint()->power.loadOn(pin);
+        if (isDriver(comp)) {
+            // A motor driver draws its motors' current from its supply: all stalled at once.
+            const double rated = emuParam(comp->getBlueprint(), "channel_max_a", 0.0);
+            for (const DrivenMotor& m : drivenMotors(w, comp, nominal.voltage[node])) {
+                peakExtra[node] += m.stallA;
+                motorCount[node][partTypeName(m.motor)]++;
+                if (rated > 0.0 && m.stallA > rated + 1e-6)
+                    add(S::Warning, QString("%1 stalls at %2 A through %3: over its %4 A per channel (it heats up and shuts down)")
+                            .arg(m.motor->name).arg(m.stallA, 0, 'f', 2).arg(comp->name).arg(rated), comp->uid);
+            }
+            continue;
+        }
         const double extra = PowerNetwork::peakCurrent(comp, nominal.voltage[node]) - (l ? l->current : 0.0);
         if (extra <= 1e-9) continue;
         peakExtra[node] += extra;
-        motorCount[node][comp->getBlueprint()->meta.name.isEmpty() ? comp->modelId : comp->getBlueprint()->meta.name]++;
+        motorCount[node][partTypeName(comp)]++;
     }
     const PowerNetwork::Solution peak = pn.solve(peakExtra, &nominal);
     auto motorsUpstream = [&](int node) {
@@ -254,13 +304,6 @@ void checkPower(Project& project, QList<RuleIssue>& issues) {
                     .arg(b->name, label(bo.rail)).arg(peak.voltage[node], 0, 'f', 2).arg(motorsUpstream(node)).arg(bo.threshold),
                 b->uid, bo.rail);
     }
-
-    // DC motors still run on their built-in ideal driver (real driver parts come later).
-    for (ComponentInstance* comp : project.getComponentMap()) {
-        if (comp->getBlueprint() && comp->getBlueprint()->emulatorDef.type == "dc_gear_emulator")
-            add(S::Warning, QString("%1: the DC motor's supply is not modelled yet (its built-in ideal driver runs at a fixed voltage)")
-                    .arg(comp->name), comp->uid);
-    }
 }
 
 } // namespace
@@ -307,6 +350,19 @@ QList<RuleIssue> DesignRules::check(Project& project) {
         if (!sources.isEmpty() && !grounds.isEmpty())
             add(S::Error, QString("Short: %1 %2 is wired to ground").arg(partName(project, sources[0].uid), label(sources[0].pin)),
                 sources[0].uid, sources[0].pin, n.id);
+        // A motor driver's output fights anything else that drives the net.
+        const QList<PinRef> outs = w.pins(n.id, "motor_out");
+        if (!outs.isEmpty()) {
+            const QString out0 = partName(project, outs[0].uid) + " " + label(outs[0].pin);
+            QString other;
+            if (outs.size() > 1) other = partName(project, outs[1].uid) + " " + label(outs[1].pin);
+            else if (!gpios.isEmpty()) other = partName(project, gpios[0].uid) + " " + label(gpios[0].pin);
+            else if (!sources.isEmpty()) other = partName(project, sources[0].uid) + " " + label(sources[0].pin);
+            else if (!grounds.isEmpty()) other = partName(project, grounds[0].uid) + " " + label(grounds[0].pin);
+            if (!other.isEmpty())
+                add(S::Error, QString("Short: %1 is wired to %2 (a driver output fights it when it drives the other way)").arg(out0, other),
+                    outs[0].uid, outs[0].pin, n.id);
+        }
         for (const PinRef& r : n.pins) {
             const PinDef* p = w.pinDef(r);
             if (p && p->internal)
@@ -348,6 +404,17 @@ QList<RuleIssue> DesignRules::check(Project& project) {
             if (!g) continue;
             const QString where = QString("%1 %2").arg(active->name, label(board.pin));
 
+            if (p.type == "motor") {
+                // A board pin is a signal, not a power output: it can't run a motor.
+                const double stall = emuParam(bp, "stall_current_a", 1.0) * def.logicVoltage / emuParam(bp, "rated_voltage", 12.0);
+                add(S::Error, QString("%1 %2 is wired straight to %3: a board pin gives at most %4 mA, this motor wants up to "
+                                      "%5 mA at stall. It barely moves and the pin is overloaded: drive it through a motor driver "
+                                      "(Components -> Drivers)")
+                        .arg(name, label(p.id), where).arg(def.pinAbsMaxA > 0.0 ? def.pinAbsMaxA * 1000.0 : 40.0, 0, 'f', 0)
+                        .arg(stall * 1000.0, 0, 'f', 0), comp->uid, p.id, net);
+                continue;
+            }
+
             if (busPin.contains(p.type)) {
                 const QString want = busPin.value(p.type);
                 if (want.isEmpty())
@@ -370,6 +437,34 @@ QList<RuleIssue> DesignRules::check(Project& project) {
             if (limit > 0.0 && def.logicVoltage > limit + 0.3)
                 add(S::Warning, QString("%1 %2 gets %3 V logic from %4 but takes at most %5 V: add a level shifter")
                         .arg(name, label(p.id)).arg(def.logicVoltage).arg(where).arg(limit), comp->uid, p.id, net);
+        }
+        // L298N module: an EN pin wired while its jumper still ties it to 5 V.
+        if (isDriver(comp) && bp->emulatorDef.parameters.value("truth_table").toString() == "l298") {
+            for (const auto& [enPin, key] : {std::pair<QString, QString>{"ena", "driver.ena_jumper"}, {"enb", "driver.enb_jumper"}}) {
+                const int net = w.net(comp->uid, enPin);
+                if (net >= 0 && !w.boardPins(net, "gpio").isEmpty() && comp->parameters.value(key, true).toBool())
+                    add(S::Warning, QString("%1 %2 is wired, but its jumper still ties it to the module's 5 V: the board pin fights "
+                                            "the jumper. Remove the jumper (Inspector) to drive %2 from the board")
+                            .arg(name, label(enPin)), comp->uid, enPin, net);
+            }
+        }
+        // A dual driver: a channel whose outputs aren't wired is simply unused;
+        // an L298N EN pin under its jumper needs no wire.
+        if (isDriver(comp)) {
+            const bool tb = bp->emulatorDef.parameters.value("truth_table").toString() == "tb6612";
+            const QList<QPair<QStringList, QStringList>> channels = tb
+                ? QList<QPair<QStringList, QStringList>>{{{"ain1", "ain2", "pwma"}, {"ao1", "ao2"}}, {{"bin1", "bin2", "pwmb"}, {"bo1", "bo2"}}}
+                : QList<QPair<QStringList, QStringList>>{{{"in1", "in2", "ena"}, {"out1", "out2"}}, {{"in3", "in4", "enb"}, {"out3", "out4"}}};
+            bool anyUsed = false;
+            for (const auto& ch : channels) {
+                bool used = false;
+                for (const QString& o : ch.second) used = used || w.net(comp->uid, o) >= 0;
+                anyUsed = anyUsed || used;
+                if (!used) for (const QString& i : ch.first) floating.removeAll(i);
+            }
+            if (!anyUsed) floating.removeAll("stby");
+            if (comp->parameters.value("driver.ena_jumper", true).toBool()) floating.removeAll("ena");
+            if (comp->parameters.value("driver.enb_jumper", true).toBool()) floating.removeAll("enb");
         }
         if (!floating.isEmpty()) {
             QStringList labels;

@@ -125,6 +125,7 @@ Each demo in [`demo/`](demo) is provided at both levels.
 | --- | --- | --- |
 | Robot arm | Three-servo arm that finds and tracks an orange ball with its camera. | ESP32-CAM |
 | Servo Comparison | An emulated SG90 next to an ideal one, sweeping together. | Arduino Uno |
+| DC Motor | A 12 V gearmotor with a wheel on a stand: ramp, brake, reverse. The Real copy drives it through an L298N from a 2S LiPo. | Arduino Uno |
 
 ## Documentation
 
@@ -134,7 +135,7 @@ Each demo in [`demo/`](demo) is provided at both levels.
 | Firmware | [firmware.md](docs/user/firmware.md) |
 | Levels, boards and wiring | [wiring.md](docs/user/wiring.md) |
 | Stage | [stage.md](docs/user/stage.md) |
-| Creating parts | [Basics](docs/user/component_basics.md) · [Power block](docs/user/create_power.md) · [Servo](docs/user/create_servo.md) · [Stepper](docs/user/create_stepper.md) · [DC motor](docs/user/create_dc_motor.md) · [IMU](docs/user/create_imu.md) · [Structural](docs/user/create_structural.md) · [Camera](docs/user/create_camera.md) · [Display](docs/user/create_display.md) |
+| Creating parts | [Basics](docs/user/component_basics.md) · [Power block](docs/user/create_power.md) · [Servo](docs/user/create_servo.md) · [Stepper](docs/user/create_stepper.md) · [DC motor](docs/user/create_dc_motor.md) · [Motor driver](docs/user/create_driver.md) · [IMU](docs/user/create_imu.md) · [Structural](docs/user/create_structural.md) · [Camera](docs/user/create_camera.md) · [Display](docs/user/create_display.md) |
 | Developer docs | [docs/dev](docs/dev/overview.md) |
 
 ## Roadmap
@@ -147,7 +148,8 @@ Each demo in [`demo/`](demo) is provided at both levels.
 | Done | Boards and wiring (Uno, ESP32-CAM) |
 | Done | Power: supply sag, current budget, brownout resets, batteries |
 | Planned | Multiple boards linked over UART |
-| Planned | Interface boards: PCA9685, motor drivers |
+| Done | Motor drivers (L298N, TB6612FNG), DC motors as circuits, board pin strength |
+| Planned | Interface boards: PCA9685, level shifters |
 | Planned | Built-in robotics library: kinematics, IK, PID, filters |
 | Planned | Validation against measurements of real parts |
 

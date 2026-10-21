@@ -57,7 +57,7 @@
                 "additionalProperties": false,
                 "properties": {
                     "id": { "type": "string" },
-                    "type": { "enum": ["pwm", "digital", "analog", "i2c_sda", "i2c_scl", "spi_sck", "spi_mosi", "spi_miso", "uart_tx", "uart_rx", "power", "ground", "gpio", "power_out"], "description": "Electrical role. Part pins: every type except power/ground is on the ideal board (it gets a pin number in robot_pins.h) and, at the Real level, is wired to a board gpio pin; power = a supply input (load). Board pins (only with a 'board' block): gpio = a pin the firmware drives, with 'number' and 'caps'; power_out = a supply output (5V, 3V3). Omit while untyped." },
+                    "type": { "enum": ["pwm", "digital", "analog", "i2c_sda", "i2c_scl", "spi_sck", "spi_mosi", "spi_miso", "uart_tx", "uart_rx", "power", "ground", "gpio", "power_out", "motor", "motor_out"], "description": "Electrical role. motor = a motor terminal (carries the motor current; an ideal driver at the Prototype level); motor_out = a motor driver's output (driven by its part, not a board pin). Part pins: every type except power/ground is on the ideal board (it gets a pin number in robot_pins.h) and, at the Real level, is wired to a board gpio pin; power = a supply input (load). Board pins (only with a 'board' block): gpio = a pin the firmware drives, with 'number' and 'caps'; power_out = a supply output (5V, 3V3). Omit while untyped." },
                     "number": { "type": "integer", "minimum": 0, "description": "Board pins only: the number the sketch uses (Uno D9 = 9, A0 = 14). Required on gpio and internal pins; unique per board." },
                     "caps": { "type": "array", "items": { "enum": ["digital", "pwm", "analog", "interrupt", "i2c_sda", "i2c_scl", "spi_sck", "spi_mosi", "spi_miso", "uart_tx", "uart_rx"] }, "description": "gpio pins only: what the pin can do." },
                     "internal": { "type": "boolean", "description": "Board pins only: hard-wired on the board's PCB (the ESP32-CAM's camera pins). Not wireable; the sketch still sees its number." },
@@ -83,6 +83,8 @@
                     }
                 },
                 "logic_voltage": { "type": "number", "description": "Volts on a HIGH output" },
+                "pin_output_ohm": { "type": "number", "minimum": 0, "description": "A gpio pin's output resistance as a source/sink (from the VOH/VOL vs current curves)" },
+                "pin_abs_max_ma": { "type": "number", "minimum": 0, "description": "A gpio pin's absolute maximum current" },
                 "adc": {
                     "type": "object", "additionalProperties": false,
                     "properties": { "bits": { "type": "integer" }, "vref": { "type": "number" } }

@@ -729,6 +729,22 @@ void InspectorPanel::build_power(ComponentInstance* comp) {
         form->addRow(QString("Draws (%1):").arg(l.pin.toUpper()), createShrinkableLabel(text, box));
     }
     if (form->rowCount() == 0) { delete box; return; }
+    // L298N module: its ENA/ENB jumpers tie the enable pins to 5 V (fitted on a new module).
+    const ComponentBlueprint* bpd = comp->getBlueprint();
+    if (bpd->emulatorDef.type == "hbridge_emulator" && bpd->emulatorDef.parameters.value("truth_table").toString() == "l298") {
+        for (const auto& [key, label] : {std::pair<const char*, const char*>{"driver.ena_jumper", "ENA jumper fitted"},
+                                          {"driver.enb_jumper", "ENB jumper fitted"}}) {
+            QCheckBox* jumper = new QCheckBox(label, box);
+            jumper->setChecked(comp->parameters.value(key, true).toBool());
+            jumper->setToolTip("Fitted: the enable pin is tied to the module's 5 V, so that channel is always on and "
+                               "the IN pins alone drive it (both LOW = brake). Remove it to PWM the enable pin from the board.");
+            form->addRow(jumper);
+            const char* k = key;
+            connect(jumper, &QCheckBox::toggled, this, [setParam, k](bool on) {
+                setParam(k, on, on ? "Fit L298N jumper" : "Remove L298N jumper");
+            });
+        }
+    }
     mainLayout->addWidget(box);
 }
 

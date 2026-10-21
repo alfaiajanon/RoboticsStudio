@@ -33,6 +33,7 @@ void PowerSystem::clear() {
     boardExtremes.clear();
     partIndex.clear();
     names.clear();
+    boardLoads.clear();
 }
 
 
@@ -120,6 +121,7 @@ PowerSystem::Events PowerSystem::step(double now, double dt) {
         p.amps = p.on ? p.staticLoad + (p.emulator ? p.emulator->supplyCurrent() : 0.0) : 0.0;
         extra[p.node] += p.amps - p.staticLoad;   // the network already counts the static load
     }
+    for (const Board& b : boardList) extra[b.node] += boardLoads.value(b.uid, 0.0);
 
     // ---- batteries at the level of their available charge ----
     for (Battery& b : batteryList) {

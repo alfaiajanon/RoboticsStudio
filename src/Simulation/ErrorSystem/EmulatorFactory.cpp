@@ -7,11 +7,12 @@
 #include "Simulation/ErrorSystem/ServoEmulatorCpp.h"
 #include "Simulation/ErrorSystem/StepperEmulatorCpp.h"
 #include "Simulation/ErrorSystem/DcGearEmulatorCpp.h"
+#include "Simulation/ErrorSystem/HBridgeEmulatorCpp.h"
 #include "Simulation/ErrorSystem/CameraEmulatorCpp.h"
 #include "Simulation/ErrorSystem/DisplayEmulatorCpp.h"
 
 QStringList EmulatorFactory::types() {
-    return {"servo_emulator", "stepper_emulator", "dc_gear_emulator", "imu_emulator",
+    return {"servo_emulator", "stepper_emulator", "dc_gear_emulator", "hbridge_emulator", "imu_emulator",
             "camera_emulator", "display_emulator", "default_emulator"};
 }
 
@@ -25,6 +26,9 @@ Emulator* EmulatorFactory::create(const QString& type, ComponentInstance* comp) 
     }
     else if (type == "dc_gear_emulator") {
         return new DcGearEmulatorCpp(comp);
+    }
+    else if (type == "hbridge_emulator") {
+        return new HBridgeEmulatorCpp(comp);
     }
     else if (type == "imu_emulator") {
         return new IMUEmulatorCpp(comp);

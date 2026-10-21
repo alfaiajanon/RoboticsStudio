@@ -117,7 +117,9 @@ flowchart LR
 3. The motor draws current from the 5V net. At stall the net sags; the servo's torque drops, and if the voltage falls below the MCU's brownout threshold, the MCU resets. No special-case code is needed for this classic failure.
 4. A missing GND wire is flagged by the design-rule check before Play.
 
-**Built (Phase 2, power pass):** `Document/PowerNetwork` (rails, supplies, regulators, loads, ground domains; a few-pass DC solve) and `Simulation/Power/PowerSystem` (per step, with the parts' live currents; part on/off at `min_v`; MCU brownout reset and restart; batteries with a per-cell discharge curve that continues past the rated cut-off, a Kinetic Battery Model for the rate-capacity and recovery effects, over-discharge warnings and an optional protection circuit). Parts: the boards' USB feed and regulators, 4×AA, 9 V, 2S LiPo, bench supply, LM2596 buck. Design rules: back-feeding, ranges on every rail, regulator headroom, typical/peak budget, brownout at peak, common ground. User guides: [wiring.md](../user/wiring.md#power), [create_power.md](../user/create_power.md). Not yet: the DC motor's supply (with driver parts), pin output strength, polyfuse trip.
+**Built (Phase 2, power pass):** `Document/PowerNetwork` (rails, supplies, regulators, loads, ground domains; a few-pass DC solve) and `Simulation/Power/PowerSystem` (per step, with the parts' live currents; part on/off at `min_v`; MCU brownout reset and restart; batteries with a per-cell discharge curve that continues past the rated cut-off, a Kinetic Battery Model for the rate-capacity and recovery effects, over-discharge warnings and an optional protection circuit). Parts: the boards' USB feed and regulators, 4×AA, 9 V, 2S LiPo, bench supply, LM2596 buck. Design rules: back-feeding, ranges on every rail, regulator headroom, typical/peak budget, brownout at peak, common ground. User guides: [wiring.md](../user/wiring.md#power), [create_power.md](../user/create_power.md). Not yet: polyfuse trip.
+
+**Built (Phase 2, pass 2: motor drivers):** the DC motor is a two-terminal circuit at the Real level (pin types `motor` / `motor_out`); `PinBus` carries each net's source (a driver output, a board pin with the board's `pin_output_ohm`, ground) and the current back; `HBridgeEmulatorCpp` (L298N, TB6612FNG modules) with the datasheets' drops and truth tables; a pin's current over `pin_abs_max_ma` is warned about and loads the board's rail; design rules for motor-to-pin wiring, shorted outputs, per-channel current, L298N jumpers, and the stall current through drivers in the budget. Prototype behaviour is unchanged (same torque table). Demo: `DC Motor` / `DC Motor (Uno)`.
 
 ## 5. Boards
 
@@ -125,7 +127,7 @@ A board is a component like any other, with many pins and a **firmware slot** (t
 
 - **Ideal controller** (Prototype): unlimited channels of every kind, ideal electrical behaviour.
 - First real boards: Arduino Uno, Mega, an ESP32 dev board.
-- Interface parts are ordinary components with pins on both sides: PCA9685 (I2C PWM driver), motor drivers (L298N, TB6612), level shifters, battery packs, buck converters.
+- Interface parts are ordinary components with pins on both sides: PCA9685 (I2C PWM driver), motor drivers (L298N, TB6612: built), level shifters, battery packs, buck converters (built).
 
 ## 6. Device models
 

@@ -14,6 +14,7 @@ void PinBus::build(const IdealBoard& board) {
     for (const BoardPin& p : board.pins()) {
         PinState s;
         s.type = p.type;
+        s.ideal = true;
         const int h = int(states.size());
         states.push_back(s);
         byPart.insert(partKey(p.uid, p.pinId), h);
@@ -34,9 +35,17 @@ void PinBus::build(const RealBoard& board, const Netlist& netlist) {
     }
     ComponentInstance* comp = board.instance();
     if (!comp || !comp->getBlueprint()) return;
+    const BoardDef& def = comp->getBlueprint()->board;
     for (const PinDef& p : comp->getBlueprint()->pins) {
         if (p.number < 0) continue;
-        byNumber.insert(p.number, ensurePin(comp->uid, p.id, p.type));
+        const int h = ensurePin(comp->uid, p.id, p.type);
+        byNumber.insert(p.number, h);
+        if (p.type == "gpio") {
+            states[h].onBoard = true;
+            states[h].boardOhm = def.pinOutputOhm;
+            states[h].boardVolts = def.logicVoltage;
+            states[h].boardMaxA = def.pinAbsMaxA;
+        }
     }
 }
 
@@ -58,6 +67,13 @@ int PinBus::handleOf(int uid, const QString& pinId) const {
 
 int PinBus::handleForNumber(int boardNumber) const {
     return byNumber.value(boardNumber, -1);
+}
+
+
+
+int PinBus::numberOf(int h) const {
+    for (auto it = byNumber.begin(); it != byNumber.end(); ++it) if (it.value() == h) return it.key();
+    return -1;
 }
 
 
@@ -163,4 +179,77 @@ void PinBus::releaseBoardPins() {
 
 double PinBus::voltage(int h) const {
     return valid(h) ? states[h].voltage : 0.0;
+}
+
+
+
+void PinBus::writeSource(int h, double v, double r, double conn) {
+    if (!valid(h)) return;
+    PinState& s = states[h];
+    s.src = conn > 0.0;
+    s.srcV = v;
+    s.srcR = std::max(0.0, r);
+    s.srcConn = std::clamp(conn, 0.0, 1.0);
+}
+
+
+
+void PinBus::openSource(int h) {
+    if (!valid(h)) return;
+    states[h].src = false;
+    states[h].srcConn = 0.0;
+}
+
+
+
+void PinBus::markGround(int h) {
+    if (valid(h)) states[h].ground = true;
+}
+
+
+
+PinSource PinBus::source(int h) const {
+    PinSource out;
+    if (!valid(h)) return out;
+    const PinState& s = states[h];
+    if (s.ground) {
+        out.open = false;
+        out.conn = 1.0;
+        return out;
+    }
+    if (s.src) {
+        out.open = false;
+        out.v = s.srcV;
+        out.r = s.srcR;
+        out.conn = s.srcConn;
+        return out;
+    }
+    if (s.onBoard && s.drive != PinState::Drive::None) {
+        // A push-pull pin: HIGH for the duty, LOW the rest; averaged.
+        out.open = false;
+        out.v = s.drive == PinState::Drive::Voltage ? s.voltage : dutyCycle(h) * s.boardVolts;
+        out.r = s.boardOhm;
+        out.conn = 1.0;
+    }
+    return out;
+}
+
+
+
+void PinBus::setAmps(int h, double a) {
+    if (valid(h)) states[h].amps = a;
+}
+
+
+
+double PinBus::amps(int h) const {
+    return valid(h) ? states[h].amps : 0.0;
+}
+
+
+
+std::vector<int> PinBus::boardNets() const {
+    std::vector<int> out;
+    for (int h = 0; h < int(states.size()); ++h) if (states[h].onBoard) out.push_back(h);
+    return out;
 }

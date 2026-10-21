@@ -66,6 +66,10 @@ The side panel lists what a real board would do wrong with this wiring. A red or
 | A regulator's input too low for its output (a 4×AA pack at half charge on the Uno's VIN) | Flagged; its output follows the input down |
 | More current than a supply is rated for: at rest, or with the motors stalled | Flagged with the numbers; see [Power](#power) |
 | A board's supply rail that would fall below its brownout threshold with the motors stalled | Flagged: the board would reset |
+| A DC motor wired straight to a board pin | Error: the pin gives a few tens of mA; the motor barely moves and the pin is overloaded. Use a motor driver |
+| A driver output (`motor_out`) on another output, a board pin, a supply or ground | A short: fix the wiring |
+| A motor that stalls above its driver's current per channel | Flagged: a real driver heats up and shuts down |
+| An L298N's ENA/ENB wired to the board with its jumper still fitted | Flagged: the pin fights the jumper; untick the jumper in the Inspector |
 
 ## What changes at the Real level
 
@@ -74,6 +78,19 @@ The side panel lists what a real board would do wrong with this wiring. A red or
 - **ADC**: `analogRead()` gives the board's counts (0..1023 on an Uno, 0..4095 on an ESP32).
 - **Bus time**: an I2C transaction takes its bit time (9 bits per byte at 100 kHz, or the `Wire.setClock()` value); an SPI transfer 8 bits per byte at its clock. Reading the MPU6050's 14 data bytes takes about 1.5 ms at 100 kHz.
 - **Servo libraries** keep their own habits at every level: the Uno's `Servo` starts pulsing at 1500 µs on `attach()`; `ESP32Servo` sends nothing until the first `write()`, and its default 10-bit timer gives 19.5 µs steps (about 3.5° on a 1000..2000 µs servo) until `setTimerWidth(16)` is called after `attach()`.
+
+## Motors and drivers
+
+A DC motor at the Real level is a two-terminal part: wire its **MOTOR_A** and **MOTOR_B** to a motor driver's outputs, the driver's inputs to the board's pins, and the driver's motor supply (L298N **VS**, TB6612 **VM**) to a battery or a bench supply, with a common ground (**Components → Drivers**, guide: [create_driver.md](create_driver.md)).
+
+| Driver | Inputs | Speed | Both inputs LOW | Drop |
+|---|---|---|---|---|
+| **L298N module** | IN1/IN2 (IN3/IN4), ENA/ENB | PWM on ENA with its jumper removed, or on IN1/IN2 with the jumper fitted (default) | brake (both outputs to ground) | about 2.5 V at 1 A: a 7.4 V pack gives the motor less than 5 V |
+| **TB6612FNG** | AIN1/AIN2, PWMA (B the same), STBY HIGH | PWM on PWMA | coast (outputs off) | 0.5 Ω on-resistance |
+
+The run solves each motor as a circuit: the driver's output voltages, the drops, the motor's winding resistance and its back-EMF. The motor's current comes from the driver's supply, so a battery sags and drains with the motors. Note that the Prototype level's ideal driver coasts on both LOW, but an L298N with its jumpers fitted brakes: the same sketch stops faster on the real module. To let a motor coast on an L298N, remove the jumper and drive EN LOW.
+
+A motor wired straight to a board pin runs on what the pin can give: the pin is a source of 5 V (or 3.3 V) through its output resistance (`pin_output_ohm`, about 25 Ω on an Uno). A 12 V gearmotor barely turns, and Output warns when a pin carries more than its absolute maximum: `MCU: Uno pin 5 carries 51 mA at 0.1 s (absolute maximum 40 mA): ...`. That current also counts as load on the board's rail.
 
 ## Power
 
@@ -107,15 +124,15 @@ Boards carry their own regulators: the Uno makes 5V from VIN (needs about 6.1 V 
 
 **The budget check** works with datasheet numbers: what each supply carries at rest, and with every motor stalled (the worst case, e.g. all servos starting at once). The stalled case is rare but real: if the check says a board's rail would brown out, give the motors their own supply, with a common ground.
 
-**Simplifications:** the rails are solved with the currents of the step before (a 2 ms lag, like a rail's capacitors); no ripple or transients; a battery's quick voltage rebound in the first seconds after a load stops isn't modelled (only the slower recovery); temperature doesn't change a battery; the DC motor still runs on its built-in ideal driver at a fixed voltage until motor driver parts arrive.
+**Simplifications:** the rails are solved with the currents of the step before (a 2 ms lag, like a rail's capacitors); no ripple or transients; a battery's quick voltage rebound in the first seconds after a load stops isn't modelled (only the slower recovery); temperature doesn't change a battery; motors and drivers are averaged over each PWM period (no ripple, no motor inductance).
 
 ## Not modelled yet
 
-- Several boards talking to each other (UART), and interface boards (PCA9685, motor drivers, level shifters).
-- A real polyfuse's cut-out, and damage (a pin or a part driven past its absolute maximum, a LiPo over-discharged: only a warning).
+- Several boards talking to each other (UART), and interface boards (PCA9685, level shifters).
+- A real polyfuse's cut-out, a driver's thermal shutdown, and damage (a pin or a part driven past its absolute maximum, a LiPo over-discharged: only a warning).
 - A protection circuit's over-current and short-circuit cut-outs (only its under-voltage cut-out is modelled), and charging.
 - A guided Prototype → Real migration that maps the ideal wiring onto a board for you.
 
 ## Demos
 
-`demo/Servo Comparison (Uno)` (an Uno on the stand, servos on D9 and D10, powered by USB) and `demo/Robot arm (ESP32-CAM)` (the ESP32-CAM on the arm's tip, servos on IO13-15, everything fed by a 2S LiPo through an LM2596 at 5 V with a common ground) are Real projects. Their Prototype twins (`demo/Servo Comparison`, `demo/Robot arm`) run the same firmware on the ideal board.
+`demo/Servo Comparison (Uno)` (an Uno on the stand, servos on D9 and D10, powered by USB), `demo/Robot arm (ESP32-CAM)` (the ESP32-CAM on the arm's tip, servos on IO13-15, everything fed by a 2S LiPo through an LM2596 at 5 V with a common ground) and `demo/DC Motor (Uno)` (a 12 V gearmotor on a stand, through an L298N on pins 5 and 6, fed by a 2S LiPo that also powers the Uno through VIN) are Real projects. Their Prototype twins (`demo/Servo Comparison`, `demo/Robot arm`, `demo/DC Motor`) run the same firmware on the ideal board.

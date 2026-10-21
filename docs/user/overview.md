@@ -110,6 +110,7 @@ Step-by-step guides:
 - [create_servo.md](create_servo.md): hobby servo (position control).
 - [create_stepper.md](create_stepper.md): stepper motor (STEP/DIR pulses).
 - [create_dc_motor.md](create_dc_motor.md): geared DC motor.
+- [create_driver.md](create_driver.md): motor driver module (L298N, TB6612FNG).
 - [create_imu.md](create_imu.md): accelerometer and gyro board.
 - [create_structural.md](create_structural.md): brackets, plates, wheels (no electronics).
 - [create_camera.md](create_camera.md): RGB or depth camera.

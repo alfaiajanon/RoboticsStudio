@@ -375,7 +375,9 @@
             "analog_write": "Arduino AVR core (wiring.c): timers 1 and 2 at 16 MHz/64/510 = 490 Hz, timer 0 (pins 5, 6) fast PWM 976.6 Hz",
             "i2c": "Arduino Wire library: TWI_FREQ 100 kHz by default",
             "spi": "datasheet: ATmega328P, SPI clock up to f_osc/2 = 8 MHz",
-            "variant": "arduino:avr 1.8.8 core: variants/standard/pins_arduino.h (pin names) and boards.txt/platform.txt (uno.build.board=AVR_UNO: -DARDUINO_AVR_UNO -DARDUINO_ARCH_AVR, -DARDUINO=10607 from arduino-cli, F_CPU 16 MHz). A6/A7 exist in the variant but not on the Uno's header"
+            "variant": "arduino:avr 1.8.8 core: variants/standard/pins_arduino.h (pin names) and boards.txt/platform.txt (uno.build.board=AVR_UNO: -DARDUINO_AVR_UNO -DARDUINO_ARCH_AVR, -DARDUINO=10607 from arduino-cli, F_CPU 16 MHz). A6/A7 exist in the variant but not on the Uno's header",
+            "pin_output_ohm": "ATmega328P datasheet: absolute maximum DC current per I/O pin 40 mA (200 mA through VCC/GND); DC characteristics VOH >= 4.0 V at IOH = 20 mA, VCC = 5 V (worst case, 85 C: <= 50 ohm); the typical VOH/VOL-vs-current curves at 25 C give ~0.5 V at 20 mA, ~25 ohm (estimate read from the curves). Above 40 mA a real pin is damaged (not simulated)",
+            "pin_abs_max_ma": "ATmega328P datasheet: absolute maximum DC current per I/O pin 40 mA (200 mA through VCC/GND); DC characteristics VOH >= 4.0 V at IOH = 20 mA, VCC = 5 V (worst case, 85 C: <= 50 ohm); the typical VOH/VOL-vs-current curves at 25 C give ~0.5 V at 20 mA, ~25 ohm (estimate read from the curves). Above 40 mA a real pin is damaged (not simulated)"
         },
         "variant": {
             "pins": {
@@ -401,7 +403,9 @@
                 "ARDUINO_ARCH_AVR",
                 "F_CPU=16000000L"
             ]
-        }
+        },
+        "pin_output_ohm": 25,
+        "pin_abs_max_ma": 40
     },
     "power": {
         "supplies": [

@@ -41,7 +41,9 @@ struct PinDef {
     static const QStringList& capabilities();
     // A part's signal or bus pin: the ideal board gives it a number, and at
     // the Real level it is wired to a board gpio pin.
-    bool isBoardPin() const { return !type.isEmpty() && !isPower() && type != "ground" && type != "gpio"; }
+    // motor = a motor's terminal (it gets an ideal-board pin: the ideal driver);
+    // motor_out = a motor driver's output, driven by its own part, never a board pin.
+    bool isBoardPin() const { return !type.isEmpty() && !isPower() && type != "ground" && type != "gpio" && type != "motor_out"; }
     bool isPower() const { return type == "power" || type == "power_out"; }
     bool hasCap(const QString& cap) const { return caps.contains(cap); }
 };
@@ -66,6 +68,10 @@ struct BoardDef {
     double i2cDefaultHz = 100000.0;
     QString spiSck, spiMosi, spiMiso;
     double spiMaxHz = 8000000.0;
+    // A gpio pin as a source: its output resistance (Ω, from the VOH/VOL vs
+    // current curves) and its absolute maximum current (A). 0 = not modelled.
+    double pinOutputOhm = 0.0;
+    double pinAbsMaxA = 0.0;
     QMap<QString, QString> sources;   // field -> datasheet / estimate
 };
 

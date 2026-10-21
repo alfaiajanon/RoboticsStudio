@@ -41,6 +41,8 @@ class Project {
         ComponentInstance* rootComponent = nullptr;
         QMap<int, ComponentInstance*> componentMap;
         QList<Constraint*> constraintList;
+        // Parts whose model isn't in the library: not loaded, written back on save.
+        QJsonArray unknownComponents;
         Rotation rootRotation;
 
         FirmwareRuntime firmware{"MCU"};   // the robot's firmware while it is C++ (.ino/.cpp)
