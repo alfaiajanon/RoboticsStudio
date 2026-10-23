@@ -5,7 +5,7 @@ A project has a **level**. It decides what runs your firmware and how much of th
 | Level | What runs the firmware | Pins | Electrical |
 |---|---|---|---|
 | **Prototype** (default) | One ideal controller, built in | Unlimited; every part is wired automatically | Ideal: buses take no time, no power limits |
-| **Real** | A board you add from the library (Arduino Uno, ESP32-CAM) | The board's real pins; you wire them | The board's limits: which pins have PWM or an ADC, PWM frequency, ADC resolution, bus speed, logic voltage; and [power](#power): supplies sag under load, parts without enough supply are dead, the board resets on a brownout |
+| **Real** | The boards you add from the library (Arduino Uno, ESP32-CAM), as many as the robot needs | The boards' real pins; you wire them | The board's limits: which pins have PWM or an ADC, PWM frequency, ADC resolution, bus speed, logic voltage; and [power](#power): supplies sag under load, parts without enough supply are dead, the board resets on a brownout |
 
 The firmware API is the same at both levels. The pins differ. At the Real level a sketch uses the board's own pins, as on the real board (`servo.attach(9)`, `analogRead(A0)`). At the Prototype level, which has no real pins, it uses the names of the generated `robot_pins.h` ([firmware.md](firmware.md#2-pins)).
 
@@ -25,14 +25,42 @@ A board is a component like any other: drag it from **Components → Boards** on
 - **Firmware**: the sketch this board runs (its *firmware slot*). Pick any `.ino` of the project, or create one with **+** in the Script view.
 - **Pins**: what is wired to each of its pins (`D9 (pin 9): Emulated Servo signal`); the sketch uses the pin numbers.
 
-| Board | Logic | PWM (`analogWrite`) | ADC | I2C | SPI |
-|---|---|---|---|---|---|
-| Arduino Uno R3 | 5 V | D3, D5, D6, D9, D10, D11 (`~` on the schematic); 490 Hz, 980 Hz on D5/D6 | A0-A5, 10-bit on 5 V | A4 (SDA), A5 (SCL) | D11 MOSI, D12 MISO, D13 SCK, up to 8 MHz |
-| ESP32-CAM (AI-Thinker) | 3.3 V | every header GPIO except 1, 3, 16; 1 kHz | 12-bit on 3.3 V | IO14 (SDA), IO15 (SCL), as `Wire.begin(14, 15)` | IO14 SCK, IO13 MOSI, IO12 MISO |
+| Board | Logic | PWM (`analogWrite`) | ADC | I2C | SPI | Serial |
+|---|---|---|---|---|---|---|
+| Arduino Uno R3 | 5 V | D3, D5, D6, D9, D10, D11 (`~` on the schematic); 490 Hz, 980 Hz on D5/D6 | A0-A5, 10-bit on 5 V | A4 (SDA), A5 (SCL) | D11 MOSI, D12 MISO, D13 SCK, up to 8 MHz | `Serial` on D0 (RX) / D1 (TX), shared with USB; `SoftwareSerial` on any pins; 64-byte buffers |
+| ESP32-CAM (AI-Thinker) | 3.3 V | every header GPIO except 1, 3, 16; 1 kHz | 12-bit on 3.3 V | IO14 (SDA), IO15 (SCL), as `Wire.begin(14, 15)` | IO14 SCK, IO13 MOSI, IO12 MISO | `Serial` on IO3 (RX) / IO1 (TX), the programmer; `Serial1`, `Serial2` on any GPIO; 256-byte RX buffer |
 
 The **ESP32-CAM has its camera on the board**: its OV2640 is wired to the ESP32 on the PCB, so it needs no wires. The sketch reaches it through the GPIOs it is wired to on the PCB, the usual AI-Thinker list (`SIOD_GPIO_NUM 26`, `Y2_GPIO_NUM 5`, ...; see [create_camera.md](create_camera.md#firmware-esp32-camera) and the Robot arm (ESP32-CAM) demo). A separate camera module (the OV7670) is a part you wire like any other.
 
-One board runs at a time for now. A second board shows up, but stays idle until boards can talk to each other (UART, a later step).
+## Several boards
+
+A robot can have several boards, each with its own sketch: an ESP32-CAM that sees and an Uno that drives the servos, a board per leg. **Every board with a sketch in its firmware slot runs at Play**, all at once, on the same simulated clock, so a run with several boards still repeats exactly. A board without a sketch stays idle (its pins float). The 3D view's level badge reads "Real · 2 boards".
+
+Each board prints to its own tab of the **Serial Monitor** (next to Output), and its lines also appear in Output, tagged with the board's name: `[Uno]: ...`, `[ESP32-CAM]: ...`.
+
+Boards talk over wires, as on the bench:
+
+- **Serial (UART)**: wire one board's TX to the other's RX, and back if both send. **Wire their GNDs together**: a signal is a voltage against ground. A 5 V board's TX into a 3.3 V board's RX needs a [level shifter](#level-shifter) (the ESP32 is not 5 V tolerant).
+- Which port: on an Uno, `Serial` is D0/D1, but those pins are also its USB link to the computer, so a sketch that uses the Serial Monitor talks to another board with `SoftwareSerial` on two other pins. On an ESP32, `Serial1` or `Serial2` go to any two GPIOs: `Serial1.begin(57600, SERIAL_8N1, rxPin, txPin)`. Details: [firmware.md](firmware.md#serial-ports).
+- **A plain signal**: one board's output pin on another's input (a "ready" line, an interrupt) works too. Two boards both driving the same wire are warned about at run time.
+
+**On the wire:**
+- A byte takes 10 bits at the baud rate (8N1): 0.87 ms at 115200, 1.04 ms at 9600. It reaches the other board when its stop bit ends.
+- **Both ends must use the same baud rate.** A receiver more than about 2.5 % off reads garbage, as on the bench; Output names both rates.
+- What comes in waits in the receiving board's buffer (64 bytes on an Uno, `Serial` and `SoftwareSerial`; 256 on an ESP32) until the sketch reads it. A sketch that doesn't read often enough loses bytes: Output says when a buffer overflowed, and `SoftwareSerial::overflow()` returns true.
+- Sending is buffered too (64 bytes on an Uno, the 128-byte FIFO on an ESP32): `print()` returns at once while there is room and waits while the buffer is full. `SoftwareSerial` has no buffer: `write()` takes the whole byte's time.
+- A board listens only from its `begin()` on: what was sent before is lost. Two boards that start at the same time race, as on the bench, so a robust link repeats its messages (the demo sends a full command every tick).
+- Only one `SoftwareSerial` receives at a time, the one that called `listen()` last (`begin()` listens).
+- Boards take turns within each physics step (in the order they were added), so bytes from a board that runs later reach one that runs earlier up to one physics step (2 ms) late. The order is fixed, so this doesn't change from run to run.
+
+### Level shifter
+
+**Components → Interface → Logic level shifter (BSS138, 4 channels)** connects a 5 V board to a 3.3 V board or part. Wire:
+
+- **HV** to the 5 V side's supply (the Uno's 5V), **LV** to the 3.3 V side's (the ESP32-CAM's 3V3), and **GND** to the common ground. LV must not be above HV.
+- Each channel's **HVn** to the 5 V board's pin and **LVn** to the 3.3 V pin. Channels work both ways: the same module carries TX in one direction and RX in the other, or I2C's SDA and SCL.
+
+At run time a powered shifter passes each channel's signal through unchanged: digital levels, I2C transactions (an MPU6050 on the 3.3 V side answers an Uno on the other) and serial bytes. Without its supply nothing crosses, and the checks say so. It is rated for about 400 kbit/s (its 10 kΩ pull-ups make slow edges): I2C at 400 kHz and serial up to 400000 baud. Faster serial through it gets a warning; fast SPI needs a push-pull shifter.
 
 ## The Wiring page
 
@@ -45,7 +73,7 @@ At the Real level the editor gets a third page, **Wiring** (**Ctrl+3**, or the w
 - Every change is undoable (**Ctrl+Z**) and saved with the project.
 - The page is read-only while the simulation runs.
 
-Wire colours follow the net: red for power, grey for ground, orange PWM, blue digital, green analog, purple I2C, teal SPI.
+Wire colours follow the net: red for power, grey for ground, orange PWM, blue digital, green analog, purple I2C, teal SPI, yellow serial.
 
 ## Checks
 
@@ -59,7 +87,12 @@ The side panel lists what a real board would do wrong with this wiring. A red or
 | An I2C part's SDA/SCL not on the board's I2C pins (an SPI part's SCK/MOSI not on its SPI pins) | The part doesn't answer on the bus (`endTransmission()` returns 2) |
 | A PWM input on a pin without hardware PWM | `Servo` still works (the library makes its own pulses); `analogWrite()` there acts as `digitalWrite()`: HIGH from 128 |
 | An analog input on a pin without an ADC | `analogRead()` returns 0 |
-| Two board pins, a board pin and a supply, or a supply and ground, on one net | A short: fix the wiring |
+| Two pins of the same board, a board pin and a supply, or a supply and ground, on one net | A short: fix the wiring |
+| Two boards' serial TX pins on one wire (Uno D1 to ESP32-CAM IO1) | Error: two outputs fight; wire TX to RX. Two RX pins together: nothing sends on that wire |
+| Two boards wired together whose GNDs aren't | Error: the signals have no common reference |
+| A 5 V board's pin wired straight to a 3.3 V board's pin | Flagged: add a level shifter |
+| A level shifter without LV, HV or GND | It is dead: no signal crosses it |
+| A level shifter with LV above HV, or a board on the wrong side (a 5 V pin on LVn, a 3.3 V pin on HVn) | Flagged: swap the wires |
 | Two supplies driving one rail (a battery on the Uno's 5V while VIN is also fed) | A short: they back-feed each other |
 | A 5 V board driving a 3.3 V part's signal pin | Flagged: add a level shifter |
 | A supply outside the part's voltage range (a servo on 3V3, a 9 V battery on a servo) | Flagged; the part runs at that voltage (a servo is weaker on less) |
@@ -77,6 +110,7 @@ The side panel lists what a real board would do wrong with this wiring. A red or
 - **PWM**: `analogWrite()` runs at the board's frequency for that pin; on a pin without PWM it is a plain HIGH/LOW.
 - **ADC**: `analogRead()` gives the board's counts (0..1023 on an Uno, 0..4095 on an ESP32).
 - **Bus time**: an I2C transaction takes its bit time (9 bits per byte at 100 kHz, or the `Wire.setClock()` value); an SPI transfer 8 bits per byte at its clock. Reading the MPU6050's 14 data bytes takes about 1.5 ms at 100 kHz.
+- **Serial**: bytes take their time on the wire at the baud rate, through the board's buffers (see [Several boards](#several-boards)); printing a lot at 9600 baud slows `loop()` down as on a real Uno. The Serial Monitor has its own baud rate, which must match `Serial.begin()`.
 - **Servo libraries** keep their own habits at every level: the Uno's `Servo` starts pulsing at 1500 µs on `attach()`; `ESP32Servo` sends nothing until the first `write()`, and its default 10-bit timer gives 19.5 µs steps (about 3.5° on a 1000..2000 µs servo) until `setTimerWidth(16)` is called after `attach()`.
 
 ## Motors and drivers
@@ -128,11 +162,13 @@ Boards carry their own regulators: the Uno makes 5V from VIN (needs about 6.1 V 
 
 ## Not modelled yet
 
-- Several boards talking to each other (UART), and interface boards (PCA9685, level shifters).
+- Interface boards beyond the level shifter (PCA9685).
+- Serial at the bit level: a `digitalRead()` of an RX pin reads the idle HIGH, not the bits going by. Frame formats other than 8N1 are timed as 8N1. `SoftwareSerial` above 57600 baud is only warned about (on a real Uno it starts losing bits).
+- A level shifter that loses its supply during the run keeps passing signals (it is checked at Play).
 - A real polyfuse's cut-out, a driver's thermal shutdown, and damage (a pin or a part driven past its absolute maximum, a LiPo over-discharged: only a warning).
 - A protection circuit's over-current and short-circuit cut-outs (only its under-voltage cut-out is modelled), and charging.
 - A guided Prototype → Real migration that maps the ideal wiring onto a board for you.
 
 ## Demos
 
-`demo/Servo Comparison (Uno)` (an Uno on the stand, servos on D9 and D10, powered by USB), `demo/Robot arm (ESP32-CAM)` (the ESP32-CAM on the arm's tip, servos on IO13-15, everything fed by a 2S LiPo through an LM2596 at 5 V with a common ground) and `demo/DC Motor (Uno)` (a 12 V gearmotor on a stand, through an L298N on pins 5 and 6, fed by a 2S LiPo that also powers the Uno through VIN) are Real projects. Their Prototype twins (`demo/Servo Comparison`, `demo/Robot arm`, `demo/DC Motor`) run the same firmware on the ideal board.
+`demo/Servo Comparison (Uno)` (an Uno on the stand, servos on D9 and D10, powered by USB), `demo/Robot arm (ESP32-CAM)` (the ESP32-CAM on the arm's tip, servos on IO13-15, everything fed by a 2S LiPo through an LM2596 at 5 V with a common ground) and `demo/DC Motor (Uno)` (a 12 V gearmotor on a stand, through an L298N on pins 5 and 6, fed by a 2S LiPo that also powers the Uno through VIN) are Real projects. `demo/Robot arm (ESP32-CAM + Uno)` splits the arm between two boards: the ESP32-CAM finds the ball and sends the servo pulses at 57600 baud (`Serial1` on IO14/IO15) through a level shifter to an Uno, which drives the servos (`SoftwareSerial` on D2/D3, servos on D9-D11); each board has its own tab in the Serial Monitor. Their Prototype twins (`demo/Servo Comparison`, `demo/Robot arm`, `demo/DC Motor`) run the same firmware on the ideal board.

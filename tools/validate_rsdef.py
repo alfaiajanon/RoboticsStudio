@@ -247,6 +247,26 @@ def check_pins(errs, d):
     check_ref("spi.miso", spi.get("miso"), "spi_miso")
     for pin_id in board.get("analog_write", {}).get("pins", {}):
         check_ref("analog_write.pins", pin_id, "pwm")
+    uart = board.get("uart", {})
+    names = set()
+    for port in uart.get("ports", []):
+        name = port.get("name", "")
+        if not str(name).isidentifier():
+            errs.add(f"board.uart.ports: '{name}' is not a C++ name")
+        if name in names:
+            errs.add(f"board.uart.ports: '{name}' is listed twice")
+        names.add(name)
+        if port.get("matrix"):
+            if port.get("rx") or port.get("tx"):
+                errs.add(f"board.uart.ports: '{name}' is a matrix port: its pins are chosen in begin(), not listed")
+        elif not port.get("rx") or not port.get("tx"):
+            errs.add(f"board.uart.ports: '{name}' needs 'rx' and 'tx'")
+        else:
+            check_ref(f"uart.ports.{name}.rx", port.get("rx"), "uart_rx")
+            check_ref(f"uart.ports.{name}.tx", port.get("tx"), "uart_tx")
+    for key in ("rx_buffer", "tx_buffer"):
+        if key in uart and (not isinstance(uart[key], int) or uart[key] < 1):
+            errs.add(f"board.uart: '{key}' must be an integer >= 1")
     variant = board.get("variant", {})
     for name, num in variant.get("pins", {}).items():
         if not isinstance(num, int) or isinstance(num, bool) or num < 0:
@@ -461,7 +481,7 @@ def warnings(d):
     board = d.get("board")
     if board is not None:
         bsrc = board.get("sources", {}) if isinstance(board.get("sources"), dict) else {}
-        for key in ("logic_voltage", "adc", "analog_write", "i2c", "spi"):
+        for key in ("logic_voltage", "adc", "analog_write", "i2c", "spi", "uart"):
             if key in board and not str(bsrc.get(key, "")).strip():
                 out.append(f"board '{key}' has no source (datasheet, measurement or 'estimate: ...')")
     pw = d.get("power")

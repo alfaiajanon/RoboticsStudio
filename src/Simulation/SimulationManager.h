@@ -12,12 +12,15 @@
 #include "Simulation/Controller/PinBus.h"
 #include "Simulation/Controller/DeviceBus.h"
 #include "Simulation/Power/PowerSystem.h"
+#include "Simulation/Controller/SerialHub.h"
 #include <QSet>
+#include <memory>
 
 class ComponentInstance;
 class Project;
 class Stage;
 class RobotController;
+class FirmwareRuntime;
 class Emulator;
 class CameraRenderer;
 class DisplayTextures;
@@ -57,8 +60,19 @@ class SimulationManager : public QObject {
     QElapsedTimer fpsTimer;
     double fpsWindowSimStart = 0.0;   // sim time when the current fps window began
     std::thread physicsThread;
-    std::thread firmwareThread;  // runs the robot's firmware
     std::thread stageThread;   // runs the stage script, same loop as the MCU
+
+    // The boards' firmware: one runtime and thread per board that runs, from
+    // a pool that grows as needed and lives as long as the manager (threads
+    // idle between runs). activeRuns: this run's, by board uid (the step
+    // order); changed under stepMutex.
+    struct BoardRun {
+        std::unique_ptr<FirmwareRuntime> fw;
+        std::thread thread;
+    };
+    std::vector<std::unique_ptr<BoardRun>> runs;
+    std::vector<FirmwareRuntime*> activeRuns;
+    FirmwareRuntime* runOf(int boardUid) const;
 
     std::chrono::steady_clock::time_point lastTickTime;
 
@@ -73,10 +87,6 @@ class SimulationManager : public QObject {
     // camera wait, mj_step); play()/edit() take it to change the schedule and
     // the scripts between steps. Lock order: stepMutex -> physicsMutex.
     std::mutex stepMutex;
-
-    // The robot's controller for this run (JS or firmware), chosen at play();
-    // the physics thread steps it. Changed under stepMutex.
-    RobotController* robotController = nullptr;
 
     // Telemetry is captured on a fixed sim-time period, not per step.
     static constexpr double kTelemetryPeriod = 0.01;
@@ -97,7 +107,8 @@ class SimulationManager : public QObject {
 
     // The pins between the robot's controller and its parts, rebuilt at Play.
     PinBus pinBus;
-    DeviceBus deviceBus;   // the board's I2C/SPI buses, rebuilt at Play
+    DeviceBus deviceBus;   // the boards' I2C/SPI buses, rebuilt at Play
+    SerialHub serialHub;   // the boards' USB serial <-> the Serial Monitor
     // Real level: parts with no supply or ground (set at Play): their device
     // models don't run and their actuators get no drive, like a dead part.
     QSet<int> unpoweredUids;
@@ -160,6 +171,7 @@ class SimulationManager : public QObject {
         CameraRenderer* getCameraRenderer() { return cameraRenderer; }
         PinBus* getPinBus() { return &pinBus; }
         DeviceBus* getDeviceBus() { return &deviceBus; }
+        SerialHub* getSerialHub() { return &serialHub; }
         // Real level, physics thread (telemetry capture): the run's power state.
         const PowerSystem& getPowerSystem() const { return power; }
 

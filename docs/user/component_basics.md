@@ -111,11 +111,16 @@ A part with a `"board"` block is a board: it runs a firmware sketch at the Real 
                 "defines": ["ARDUINO=10607", "ARDUINO_AVR_UNO", "ARDUINO_ARCH_AVR"]},  // and its board macros
     "pin_output_ohm": 25,                     // a gpio's output resistance (V drop per A)
     "pin_abs_max_ma": 40,                     // its absolute maximum current
+    "uart": {"ports": [{"name": "Serial", "rx": "d0", "tx": "d1", "usb": true}],   // the core's serial ports
+             "rx_buffer": 64, "tx_buffer": 64,                                       // their buffers, bytes
+             "software_serial": {"max_rx_baud": 57600}},                             // SoftwareSerial's reliable limit
     "sources": {"adc": "datasheet: ATmega328P, 10-bit ADC", "...": "..."}
 }
 ```
 
-`i2c`/`spi`/`analog_write.pins` name gpio pins that have the matching capability. `pin_output_ohm` and `pin_abs_max_ma` set what a part wired straight to a pin gets at the Real level (a DC motor on an Uno pin: 5 V through 25 Ω) and when a run warns that a pin is overloaded. A board may also carry devices and an emulator (the ESP32-CAM's camera). See `models/board/` for the Uno and the ESP32-CAM.
+`i2c`/`spi`/`analog_write.pins` and a `uart` port's `rx`/`tx` name gpio pins that have the matching capability. A `uart` port is named after the core's object (`Serial`, `Serial1`); `usb` marks the one wired to the board's USB-serial chip (the Serial Monitor); a port whose pins are chosen in `begin()` (an ESP32's `Serial1`) has `"matrix": true` instead of `rx`/`tx`. Leave out `software_serial` on a board whose core has no SoftwareSerial (ESP32). `pin_output_ohm` and `pin_abs_max_ma` set what a part wired straight to a pin gets at the Real level (a DC motor on an Uno pin: 5 V through 25 Ω) and when a run warns that a pin is overloaded. A board may also carry devices and an emulator (the ESP32-CAM's camera). See `models/board/` for the Uno and the ESP32-CAM.
+
+A **level shifter** is an ordinary part with `"emulator": {"type": "level_shifter_emulator", "parameters": {"channels": [["lv1", "hv1"], ...], "max_bitrate": 400000}}`: its `power` pins `lv` and `hv`, a `ground`, and `digital` channel pins. While it is powered, each channel's two nets carry one signal at run time ([wiring.md](wiring.md#level-shifter)); the checks compare each side with its supply. See `models/interface/level_shifter_bss138`.
 
 ## Interface signals
 

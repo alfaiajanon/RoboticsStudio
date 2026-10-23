@@ -11,9 +11,11 @@
 #include "View/Panels/PlotPanel.h"
 #include "View/Panels/ComponentsPanel.h"
 #include "View/Panels/ScriptPanel.h"
+#include "Document/Project.h"
 #include "View/Panels/Wiring/WiringPage.h"
 #include "View/Panels/StagePanel.h"
 #include "View/Panels/OutputPanel.h"
+#include "View/Panels/SerialMonitorPanel.h"
 #include "View/Viewport/MViewport.h"
 #include "View/Viewport/Camera.h"
 #include "View/Widgets/HudStack.h"
@@ -46,6 +48,10 @@ class EditorWindow : public QMainWindow{
 
         QPushButton* playBtn;
         FirmwareCompiler* firmwareCompiler = nullptr;   // C++ sketches, compiled on Play
+        // Play compiles one sketch per board that runs, one after the other.
+        QList<Project::FirmwareJob> compileQueue;
+        Project::FirmwareJob compiling;
+        QHash<QString, QList<LineMarker>> compileMarkers;   // per file, over the whole queue
         QPushButton* pauseBtn;
         QMenu* editMenu = nullptr;
         // Ctrl+S: saves the open script on the Script page, the project elsewhere.
@@ -72,6 +78,7 @@ class EditorWindow : public QMainWindow{
         InspectorPanel* inspector;
         ComponentsPanel* componentsPanel;
         OutputPanel* outputPanel;
+        SerialMonitorPanel* serialMonitor = nullptr;
         PlotPanel* plotPanel;
         ScriptPanel* scriptPanel;
         WiringPage* wiringPage = nullptr;   // Real level only

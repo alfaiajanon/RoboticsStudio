@@ -1,0 +1,316 @@
+{
+    "schema": 3,
+    "id": "level_shifter_bss138",
+    "meta": {
+        "name": "Logic level shifter (BSS138, 4 channels)",
+        "version": "1.0.0",
+        "author": "Anon",
+        "icon_path": "",
+        "hint_class": "part"
+    },
+    "specs": {
+        "chip": "4 x BSS138 N-MOSFET, 10 k pull-ups",
+        "channels": 4,
+        "direction": "bidirectional",
+        "lv_v": [
+            1.8,
+            5
+        ],
+        "hv_v": [
+            1.8,
+            10
+        ],
+        "weight_kg": 0.002,
+        "size_mm": [
+            16,
+            13,
+            3
+        ]
+    },
+    "pins": [
+        {
+            "id": "hv",
+            "type": "power",
+            "voltage_range": [
+                1.8,
+                10
+            ],
+            "description": "HV: the high-voltage side's supply (e.g. the Uno's 5V)"
+        },
+        {
+            "id": "lv",
+            "type": "power",
+            "voltage_range": [
+                1.8,
+                5
+            ],
+            "description": "LV: the low-voltage side's supply (e.g. the ESP32's 3V3); must not exceed HV"
+        },
+        {
+            "id": "gnd",
+            "type": "ground",
+            "description": "GND (common to both sides)"
+        },
+        {
+            "id": "gnd2",
+            "type": "ground",
+            "description": "GND (second header)"
+        },
+        {
+            "id": "hv1",
+            "type": "digital",
+            "description": "HV1: channel 1, high-voltage side (5 V logic here)"
+        },
+        {
+            "id": "hv2",
+            "type": "digital",
+            "description": "HV2: channel 2, high-voltage side (5 V logic here)"
+        },
+        {
+            "id": "hv3",
+            "type": "digital",
+            "description": "HV3: channel 3, high-voltage side (5 V logic here)"
+        },
+        {
+            "id": "hv4",
+            "type": "digital",
+            "description": "HV4: channel 4, high-voltage side (5 V logic here)"
+        },
+        {
+            "id": "lv1",
+            "type": "digital",
+            "description": "LV1: channel 1, low-voltage side (3.3 V logic here)"
+        },
+        {
+            "id": "lv2",
+            "type": "digital",
+            "description": "LV2: channel 2, low-voltage side (3.3 V logic here)"
+        },
+        {
+            "id": "lv3",
+            "type": "digital",
+            "description": "LV3: channel 3, low-voltage side (3.3 V logic here)"
+        },
+        {
+            "id": "lv4",
+            "type": "digital",
+            "description": "LV4: channel 4, low-voltage side (3.3 V logic here)"
+        }
+    ],
+    "power": {
+        "loads": [
+            {
+                "pin": "lv",
+                "current_ma": 0.1,
+                "min_v": 1.8
+            },
+            {
+                "pin": "hv",
+                "current_ma": 0.1,
+                "min_v": 1.8
+            }
+        ],
+        "sources": {
+            "loads.lv": "estimate: common 4-channel BSS138 module (the SparkFun BOB-12009 design: one BSS138 per channel, 10 k pull-ups to LV and HV). LV from 1.8 V (the BSS138's VGS(th) 0.8-1.5 V, onsemi BSS138 datasheet) up to HV; HV up to 10 V; the module draws nothing while the lines idle HIGH (the pull-ups' current flows only while a line is LOW), 0.1 mA as a token load",
+            "loads.hv": "estimate: common 4-channel BSS138 module (the SparkFun BOB-12009 design: one BSS138 per channel, 10 k pull-ups to LV and HV). LV from 1.8 V (the BSS138's VGS(th) 0.8-1.5 V, onsemi BSS138 datasheet) up to HV; HV up to 10 V; as LV"
+        }
+    },
+    "resources": {
+        "meshes": {},
+        "materials": {}
+    },
+    "kinematics": {
+        "default_body": "base",
+        "bodies": [
+            {
+                "id": "base",
+                "overrideGeom": false,
+                "transform": {
+                    "pos": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "quat": [
+                        1,
+                        0,
+                        0,
+                        0
+                    ]
+                },
+                "geoms": [
+                    {
+                        "id": "pcb",
+                        "type": "box",
+                        "size": [
+                            0.008,
+                            0.0065,
+                            0.0008
+                        ],
+                        "pos": [
+                            0,
+                            0,
+                            0.0008
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.55,
+                            0.1,
+                            0.12
+                        ],
+                        "mass": 0.0012
+                    },
+                    {
+                        "id": "header_hv",
+                        "type": "box",
+                        "size": [
+                            0.0075,
+                            0.0013,
+                            0.0013
+                        ],
+                        "pos": [
+                            0,
+                            0.0052,
+                            0.0029
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.1,
+                            0.1,
+                            0.1
+                        ],
+                        "mass": 0.0004
+                    },
+                    {
+                        "id": "header_lv",
+                        "type": "box",
+                        "size": [
+                            0.0075,
+                            0.0013,
+                            0.0013
+                        ],
+                        "pos": [
+                            0,
+                            -0.0052,
+                            0.0029
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "color": [
+                            0.1,
+                            0.1,
+                            0.1
+                        ],
+                        "mass": 0.0004
+                    }
+                ]
+            }
+        ]
+    },
+    "connectors": [
+        {
+            "id": "base",
+            "body": "base",
+            "description": "Bottom (tape, strap or stand-offs)",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    90,
+                    180,
+                    270
+                ]
+            },
+            "transform": {
+                "pos": [
+                    0,
+                    0,
+                    0
+                ],
+                "quat": [
+                    0,
+                    1,
+                    0,
+                    0
+                ]
+            }
+        },
+        {
+            "id": "top",
+            "body": "base",
+            "description": "Top face",
+            "mechanics": {
+                "snap_angles": [
+                    0,
+                    90,
+                    180,
+                    270
+                ]
+            },
+            "transform": {
+                "pos": [
+                    0,
+                    0,
+                    0.0042
+                ],
+                "quat": [
+                    1,
+                    0,
+                    0,
+                    0
+                ]
+            }
+        }
+    ],
+    "devices": {
+        "actuators": [],
+        "sensors": [],
+        "cameras": [],
+        "displays": []
+    },
+    "interface": {
+        "inputs": [],
+        "outputs": []
+    },
+    "emulator": {
+        "type": "level_shifter_emulator",
+        "parameters": {
+            "channels": [
+                [
+                    "lv1",
+                    "hv1"
+                ],
+                [
+                    "lv2",
+                    "hv2"
+                ],
+                [
+                    "lv3",
+                    "hv3"
+                ],
+                [
+                    "lv4",
+                    "hv4"
+                ]
+            ],
+            "max_bitrate": 400000
+        },
+        "parameter_sources": {
+            "channels": "the module's silkscreen: LVn and HVn are one channel (one BSS138 each)",
+            "max_bitrate": "estimate: the 10 k pull-ups and ~50-100 pF of wiring give rise times of ~1-2 us: fine for I2C at 400 kHz and UART up to ~400 kbaud (SparkFun BOB-12009 hookup guide: suitable for I2C and serial, not for fast SPI); faster signals need a push-pull shifter (74LVC245, TXB0104)"
+        }
+    }
+}

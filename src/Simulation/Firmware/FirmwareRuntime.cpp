@@ -9,6 +9,7 @@
 #include "wasm_export.h"
 #include "Simulation/Controller/PinBus.h"
 #include "Simulation/Controller/DeviceBus.h"
+#include "Simulation/Controller/SerialHub.h"
 #include "Document/RealBoard.h"
 #include "Document/Components/ComponentBlueprint.h"
 #include "Document/Components/ComponentInstance.h"
@@ -54,7 +55,7 @@ static void n_pin_mode(wasm_exec_env_t env, int32_t pin, int32_t mode) {
 
 static void n_digital_write(wasm_exec_env_t env, int32_t pin, int32_t level) {
     FirmwareRuntime* fw = runtimeOf(env);
-    fw->pinBus()->writeLevel(fw->pinHandle(pin, "digitalWrite"), level);
+    fw->pinBus()->writeLevel(fw->outHandle(pin, "digitalWrite"), level);
 }
 
 // Nothing drives a board input yet (sensors come with their device models):
@@ -74,7 +75,7 @@ static int32_t n_digital_read(wasm_exec_env_t env, int32_t pin) {
 // back to digitalWrite (value < 128 -> LOW).
 static void n_analog_write(wasm_exec_env_t env, int32_t pin, int32_t value) {
     FirmwareRuntime* fw = runtimeOf(env);
-    const int h = fw->pinHandle(pin, "analogWrite");
+    const int h = fw->outHandle(pin, "analogWrite");
     if (!fw->profile().can(pin, "pwm")) {
         fw->warnOnce(QString("pwm %1").arg(pin), QString("analogWrite on pin %1: %2 has no PWM on that pin, so it acts as "
                                                          "digitalWrite (HIGH from 128)").arg(pin).arg(fw->profile().name));
@@ -101,14 +102,14 @@ static int32_t n_analog_read(wasm_exec_env_t env, int32_t pin) {
 
 static void n_pwm_write_us(wasm_exec_env_t env, int32_t pin, int32_t us) {
     FirmwareRuntime* fw = runtimeOf(env);
-    const int h = fw->pinHandle(pin, "Servo");
+    const int h = us <= 0 ? fw->pinHandle(pin, "Servo") : fw->outHandle(pin, "Servo");
     if (us <= 0) fw->pinBus()->release(h);
     else fw->pinBus()->writePulseUs(h, us);
 }
 
 static void n_pwm_write_ns(wasm_exec_env_t env, int32_t pin, int32_t ns) {
     FirmwareRuntime* fw = runtimeOf(env);
-    const int h = fw->pinHandle(pin, "Servo");
+    const int h = ns <= 0 ? fw->pinHandle(pin, "Servo") : fw->outHandle(pin, "Servo");
     if (ns <= 0) fw->pinBus()->release(h);
     else fw->pinBus()->writePulseUs(h, ns / 1000.0);
 }
@@ -118,7 +119,7 @@ static void n_pwm_write_ns(wasm_exec_env_t env, int32_t pin, int32_t ns) {
 static int32_t n_i2c_write(wasm_exec_env_t env, int32_t address, const uint8_t* data, uint32_t len, int32_t stop) {
     FirmwareRuntime* fw = runtimeOf(env);
     DeviceBus* bus = fw->deviceBus();
-    const int32_t status = bus ? bus->i2cWrite(address, data, int(len), stop != 0) : 2;
+    const int32_t status = bus ? bus->i2cWrite(fw->busMaster(), address, data, int(len), stop != 0) : 2;
     fw->i2cBusTime(status == 2 ? 1 : 1 + int(len));
     return status;
 }
@@ -126,7 +127,7 @@ static int32_t n_i2c_write(wasm_exec_env_t env, int32_t address, const uint8_t* 
 static int32_t n_i2c_read(wasm_exec_env_t env, int32_t address, uint8_t* data, uint32_t len) {
     FirmwareRuntime* fw = runtimeOf(env);
     DeviceBus* bus = fw->deviceBus();
-    const int32_t n = bus ? bus->i2cRead(address, data, int(len)) : 0;
+    const int32_t n = bus ? bus->i2cRead(fw->busMaster(), address, data, int(len)) : 0;
     fw->i2cBusTime(n > 0 ? 1 + int(len) : 1);
     return n;
 }
@@ -139,7 +140,7 @@ static void n_i2c_set_clock(wasm_exec_env_t env, uint32_t hz) {
 // back yet (no SPI sensor parts), so MISO reads as 0.
 static void n_spi_transfer(wasm_exec_env_t env, const uint8_t* data, uint32_t len) {
     FirmwareRuntime* fw = runtimeOf(env);
-    if (DeviceBus* bus = fw->deviceBus()) bus->spiTransfer(data, int(len));
+    if (DeviceBus* bus = fw->deviceBus()) bus->spiTransfer(fw->busMaster(), data, int(len));
     fw->spiBusTime(int(len));
 }
 
@@ -213,9 +214,28 @@ static int32_t n_camera_frame(wasm_exec_env_t env, int32_t sdaPin, uint8_t* buf,
     return int32_t(bytes);
 }
 
-static void n_serial_write(wasm_exec_env_t env, const char* data, uint32_t len) {
-    runtimeOf(env)->appendText(FirmwareRuntime::SerialStream, data, len);
+// Serial ports: 0..2 = Serial, Serial1, Serial2; 16 and up = SoftwareSerial.
+static void n_serial_write(wasm_exec_env_t env, const char* data, uint32_t len) {   // older cores: Serial
+    runtimeOf(env)->uartWrite(0, reinterpret_cast<const uint8_t*>(data), int(len));
 }
+static int32_t n_uart_begin(wasm_exec_env_t env, int32_t port, uint32_t baud, int32_t rx, int32_t tx) {
+    return runtimeOf(env)->uartBegin(port, double(baud), rx, tx) ? 0 : -1;
+}
+static void n_uart_end(wasm_exec_env_t env, int32_t port) { runtimeOf(env)->uartEnd(port); }
+static int32_t n_uart_write(wasm_exec_env_t env, int32_t port, const uint8_t* data, uint32_t len) {
+    return runtimeOf(env)->uartWrite(port, data, int(len));
+}
+static int32_t n_uart_available(wasm_exec_env_t env, int32_t port) { return runtimeOf(env)->uartAvailable(port); }
+static int32_t n_uart_read(wasm_exec_env_t env, int32_t port) { return runtimeOf(env)->uartRead(port, false); }
+static int32_t n_uart_peek(wasm_exec_env_t env, int32_t port) { return runtimeOf(env)->uartRead(port, true); }
+static int32_t n_uart_available_for_write(wasm_exec_env_t env, int32_t port) { return runtimeOf(env)->uartAvailableForWrite(port); }
+static void n_uart_flush(wasm_exec_env_t env, int32_t port) { runtimeOf(env)->uartFlush(port); }
+static int32_t n_uart_wait(wasm_exec_env_t env, int32_t port, uint32_t timeoutUs) {
+    return runtimeOf(env)->uartWait(port, timeoutUs / 1e6) ? 1 : 0;
+}
+static int32_t n_soft_serial_open(wasm_exec_env_t env, int32_t rx, int32_t tx) { return runtimeOf(env)->softOpen(rx, tx); }
+static int32_t n_soft_serial_listen(wasm_exec_env_t env, int32_t port) { return runtimeOf(env)->softListen(port) ? 1 : 0; }
+static int32_t n_soft_serial_overflow(wasm_exec_env_t env, int32_t port) { return runtimeOf(env)->softOverflow(port) ? 1 : 0; }
 
 static NativeSymbol rsNatives[] = {
     {"millis", (void*)n_millis, "()i", nullptr},
@@ -232,6 +252,18 @@ static NativeSymbol rsNatives[] = {
     {"i2c_set_clock", (void*)n_i2c_set_clock, "(i)", nullptr},
     {"spi_set_clock", (void*)n_spi_set_clock, "(i)", nullptr},
     {"serial_write", (void*)n_serial_write, "(*~)", nullptr},
+    {"uart_begin", (void*)n_uart_begin, "(iiii)i", nullptr},
+    {"uart_end", (void*)n_uart_end, "(i)", nullptr},
+    {"uart_write", (void*)n_uart_write, "(i*~)i", nullptr},
+    {"uart_available", (void*)n_uart_available, "(i)i", nullptr},
+    {"uart_read", (void*)n_uart_read, "(i)i", nullptr},
+    {"uart_peek", (void*)n_uart_peek, "(i)i", nullptr},
+    {"uart_available_for_write", (void*)n_uart_available_for_write, "(i)i", nullptr},
+    {"uart_flush", (void*)n_uart_flush, "(i)", nullptr},
+    {"uart_wait", (void*)n_uart_wait, "(ii)i", nullptr},
+    {"soft_serial_open", (void*)n_soft_serial_open, "(ii)i", nullptr},
+    {"soft_serial_listen", (void*)n_soft_serial_listen, "(i)i", nullptr},
+    {"soft_serial_overflow", (void*)n_soft_serial_overflow, "(i)i", nullptr},
     {"i2c_write", (void*)n_i2c_write, "(i*~i)i", nullptr},
     {"i2c_read", (void*)n_i2c_read, "(i*~)i", nullptr},
     {"spi_transfer", (void*)n_spi_transfer, "(*~)", nullptr},
@@ -355,6 +387,7 @@ BoardProfile BoardProfile::fromBoard(const RealBoard& rb) {
     if (!comp || !comp->getBlueprint()) return p;
     const BoardDef& def = rb.def();
     p.ideal = false;
+    p.uid = comp->uid;
     p.name = comp->name;
     p.defaultPwmHz = def.analogWriteHz;
     p.adcBits = def.adcBits;
@@ -368,6 +401,15 @@ BoardProfile BoardProfile::fromBoard(const RealBoard& rb) {
         p.caps.insert(pin.number, caps);
         if (def.analogWriteHzByPin.contains(pin.id)) p.pwmHz.insert(pin.number, def.analogWriteHzByPin.value(pin.id));
     }
+    auto numberOf = [&](const QString& id) {
+        for (const PinDef& pin : comp->getBlueprint()->pins) if (pin.id == id) return pin.number;
+        return -1;
+    };
+    p.uarts.clear();
+    for (const UartPortDef& u : def.uarts) p.uarts.append({u.name, numberOf(u.rx), numberOf(u.tx), u.usb, u.matrix});
+    p.uartRxBuffer = def.uartRxBuffer;
+    p.uartTxBuffer = def.uartTxBuffer;
+    p.softSerialMaxRxBaud = def.softSerialMaxRxBaud;
     return p;
 }
 
@@ -395,7 +437,8 @@ void FirmwareRuntime::spiBusTime(int bytes) {
 
 
 
-bool FirmwareRuntime::load(const QByteArray& wasm, PinBus* pinBus, DeviceBus* deviceBus, const BoardProfile& profile) {
+bool FirmwareRuntime::load(const QByteArray& wasm, PinBus* pinBus, DeviceBus* deviceBus, const BoardProfile& profile,
+                           SerialHub* serialHub) {
     stop();
     if (!gate.waitUntilOutOfCall(LockstepGate::kWatchdog)) {
         Log::error(tag + ": previous firmware run did not stop; not loading");
@@ -407,12 +450,17 @@ bool FirmwareRuntime::load(const QByteArray& wasm, PinBus* pinBus, DeviceBus* de
     gate.reset();
     pins = pinBus;
     devices = deviceBus;
+    hub = serialHub;
+    master = deviceBus ? deviceBus->masterOf(profile.uid) : -1;
+    tag = profile.ideal ? QString("MCU") : profile.name;
+    gate.setTag(tag);
     pinModes.clear();
     cameraFormats.clear();
     cameraLastSeq.clear();
     reportedPins.clear();
     reported.clear();
     board = profile;
+    resetPorts();
     i2cHz = profile.i2cDefaultHz;
     spiHz = 4000000.0;   // SPI's default before any beginTransaction (an Uno's clock / 4)
     setupDone = false;
@@ -500,6 +548,7 @@ bool FirmwareRuntime::restart(double simTime) {
     pinModes.clear();
     cameraFormats.clear();
     cameraLastSeq.clear();
+    resetPorts();
     i2cHz = board.i2cDefaultHz;
     spiHz = 4000000.0;
     setupDone = false;
@@ -585,7 +634,7 @@ bool FirmwareRuntime::runCycle() {
 
 
 int FirmwareRuntime::pinHandle(int pin, const char* what) {
-    const int h = pins ? pins->handleForNumber(pin) : -1;
+    const int h = pins ? pins->handleForNumber(board.uid, pin) : -1;
     if (h < 0 && !reportedPins.contains(pin)) {
         reportedPins.insert(pin);
         if (pin < 0)
@@ -624,4 +673,311 @@ void FirmwareRuntime::flushText() {
     if (!serialLine.isEmpty()) appendText(SerialStream, "\n", 1);
     if (!stdoutLine.isEmpty()) appendText(StdoutStream, "\n", 1);
     if (!stderrLine.isEmpty()) appendText(StderrStream, "\n", 1);
+}
+
+
+int FirmwareRuntime::outHandle(int pin, const char* what) {
+    const int h = pinHandle(pin, what);
+    if (h >= 0 && pins && !pins->claim(h, board.uid)) {
+        const int other = pins->writer(h);
+        warnOnce(QString("drive %1").arg(pin),
+                 QString("%1 on pin %2: %3 drives this net too. Two outputs on one wire fight (a short when they differ)")
+                     .arg(what).arg(pin).arg(board.peers.value(other, "another board")));
+    }
+    return h;
+}
+
+
+
+#pragma region serial ports
+
+// A receiver more than 2.5 % off the sender's rate samples the wrong bits.
+static bool baudMatches(double sender, double receiver) {
+    return sender <= 0.0 || receiver <= 0.0 || std::fabs(sender / receiver - 1.0) <= 0.025;
+}
+
+// What a receiver at the wrong rate reads instead of a byte: repeatable noise.
+static uint8_t garbled(const UartByte& b) {
+    uint64_t x = uint64_t(std::llround(b.arrival * 1e9)) ^ (uint64_t(b.value) << 40) ^ (uint64_t(uint32_t(b.sender)) << 48);
+    x ^= x >> 30; x *= 0xbf58476d1ce4e5b9ULL;
+    x ^= x >> 27; x *= 0x94d049bb133111ebULL;
+    x ^= x >> 31;
+    return uint8_t(x);
+}
+
+
+
+void FirmwareRuntime::resetPorts() {
+    for (const Port& p : ports)
+        if (pins && p.reader >= 0) pins->uartClose(p.rxH, p.reader);
+    ports.clear();
+    listening = -1;
+    nextSoft = 16;
+    for (int i = 0; i < board.uarts.size() && i < 3; ++i) {
+        const BoardProfile::Uart& u = board.uarts[i];
+        Port p;
+        p.name = u.name;
+        p.usb = u.usb;
+        p.matrix = u.matrix;
+        p.fixedRx = u.rx;
+        p.fixedTx = u.tx;
+        const int id = u.name == "Serial" ? 0 : u.name == "Serial1" ? 1 : u.name == "Serial2" ? 2 : -1;
+        if (id >= 0) ports.insert(id, p);
+    }
+}
+
+
+
+FirmwareRuntime::Port* FirmwareRuntime::port(int id, const char* what) {
+    auto it = ports.find(id);
+    if (it != ports.end()) return &it.value();
+    const QString name = id >= 16 ? QString("SoftwareSerial") : id == 0 ? QString("Serial") : QString("Serial%1").arg(id);
+    warnOnce(QString("port %1").arg(id), QString("%1: %2 has no %3").arg(what, board.name, name));
+    return nullptr;
+}
+
+
+
+bool FirmwareRuntime::uartBegin(int id, double baud, int rxPin, int txPin) {
+    Port* p = port(id, "begin()");
+    if (!p) return false;
+    if (baud < 50.0) baud = 50.0;
+    if (p->begun) uartEnd(id);
+    if (!p->soft) {
+        if (p->matrix) {
+            // The ESP32 core's defaults when begin() names no pins.
+            if (rxPin < 0) rxPin = id == 1 ? 9 : 16;
+            if (txPin < 0) txPin = id == 1 ? 10 : 17;
+        } else {
+            rxPin = p->fixedRx;
+            txPin = p->fixedTx;
+        }
+        p->rxH = rxPin >= 0 ? pinHandle(rxPin, qPrintable(p->name + ".begin() RX")) : -1;
+        p->txH = txPin >= 0 ? pinHandle(txPin, qPrintable(p->name + ".begin() TX")) : -1;
+    }
+    p->begun = true;
+    p->baud = baud;
+    p->txEnd = gate.simTime();
+    p->rx.clear();
+    p->overflow = false;
+    if (!pins) return true;
+    if (p->txH >= 0) {
+        if (!pins->claim(p->txH, board.uid))
+            warnOnce(QString("tx %1").arg(id), QString("%1's TX: %2 drives that wire too (TX wired to TX?)")
+                                                   .arg(p->name, board.peers.value(pins->writer(p->txH), "another board")));
+        pins->writeLevel(p->txH, 1);   // a UART line idles HIGH
+    }
+    if (p->rxH >= 0) p->reader = pins->uartOpen(p->rxH, gate.simTime());
+    for (int h : {p->txH, p->rxH}) {
+        const PinState* s = pins->state(h);
+        if (s && s->maxBitrate > 0.0 && baud > s->maxBitrate)
+            warnOnce(QString("shifter %1").arg(id), QString("%1 at %2 baud goes through a level shifter rated for %3 bit/s: "
+                                                            "on the bench the edges would be too slow").arg(p->name).arg(baud).arg(s->maxBitrate));
+    }
+    if (p->soft && board.softSerialMaxRxBaud > 0.0 && baud > board.softSerialMaxRxBaud)
+        warnOnce(QString("softbaud %1").arg(id), QString("SoftwareSerial at %1 baud: reception is unreliable above %2 baud on a real %3 "
+                                                         "(not simulated: here it works)").arg(baud).arg(board.softSerialMaxRxBaud).arg(board.name));
+    if (p->soft) softListen(id);   // as the AVR library's begin() does
+    return true;
+}
+
+
+
+void FirmwareRuntime::uartEnd(int id) {
+    auto it = ports.find(id);
+    if (it == ports.end() || !it->begun) return;
+    if (pins && it->reader >= 0) pins->uartClose(it->rxH, it->reader);
+    it->reader = -1;
+    it->begun = false;
+    it->rx.clear();
+}
+
+
+
+int FirmwareRuntime::uartWrite(int id, const uint8_t* data, int len) {
+    Port* p = port(id, "write()");
+    if (!p || len <= 0) return 0;
+    if (board.ideal) {   // instant, and Serial works without begin()
+        if (p->usb) {
+            appendText(SerialStream, reinterpret_cast<const char*>(data), uint32_t(len));
+            if (hub) hub->output(board.uid, gate.simTime(), 0.0, reinterpret_cast<const char*>(data), len);
+        }
+        return len;
+    }
+    if (!p->begun) {
+        warnOnce(QString("nobegin %1").arg(id), QString("%1.print() before %1.begin(): a real board sends nothing").arg(p->name));
+        return 0;
+    }
+    const double byteTime = 10.0 / p->baud;   // start bit, 8 data bits, stop bit
+    // The core's TX buffer plus the byte in the shift register; SoftwareSerial
+    // has none: it sends each byte bit by bit before returning.
+    const double backlog = p->soft ? 0.0 : board.uartTxBuffer * byteTime;
+    for (int i = 0; i < len; ++i) {
+        if (gate.stopRequested()) return i;
+        double now = gate.simTime();
+        if (p->txEnd - now > backlog + 1e-12) {
+            gate.wait(p->txEnd - now - backlog);
+            now = gate.simTime();
+        }
+        UartByte b;
+        b.start = std::max(now, p->txEnd);
+        b.arrival = b.start + byteTime;
+        b.baud = p->baud;
+        b.sender = board.uid;
+        b.value = data[i];
+        p->txEnd = b.arrival;
+        if (pins && p->txH >= 0) pins->uartSend(p->txH, b);
+        if (p->usb) {
+            appendText(SerialStream, reinterpret_cast<const char*>(data + i), 1);
+            if (hub) hub->output(board.uid, b.start, p->baud, reinterpret_cast<const char*>(data + i), 1);
+        }
+        if (p->soft) gate.wait(byteTime);
+    }
+    return len;
+}
+
+
+
+void FirmwareRuntime::deliver(Port& p, const UartByte& b) {
+    UartByte in = b;
+    if (!board.ideal && !baudMatches(b.baud, p.baud)) {
+        in.value = garbled(b);
+        warnOnce(QString("baud %1 %2").arg(p.name).arg(b.sender),
+                 QString("%1 receives at %2 baud, the sender (%3) sends at %4 baud: it reads garbage")
+                     .arg(p.name).arg(p.baud).arg(b.sender == -3 ? QString("the Serial Monitor") : board.peers.value(b.sender, board.name))
+                     .arg(b.baud));
+    }
+    const int cap = p.soft ? 64 : board.uartRxBuffer;
+    if (int(p.rx.size()) >= cap) {
+        p.overflow = true;
+        warnOnce(QString("overflow %1").arg(p.name), QString("%1's receive buffer (%2 bytes) overflowed: bytes were lost. Read it more often")
+                                                         .arg(p.soft ? "SoftwareSerial" : p.name).arg(cap));
+        return;
+    }
+    p.rx.push_back(in.value);
+}
+
+
+
+// Moves the bytes that have arrived by now into the port's buffer.
+void FirmwareRuntime::pull(int id, Port& p) {
+    const double now = gate.simTime();
+    UartByte b;
+    const bool listens = !p.soft || listening == id;
+    if (pins && p.reader >= 0) {
+        while (pins->uartTake(p.rxH, p.reader, now, &b)) if (listens && p.begun) deliver(p, b);
+    }
+    if (!p.usb || !hub) return;
+    // The USB chip drives RX through a resistor: another driver on the wire wins.
+    bool external = false;
+    if (pins && p.rxH >= 0) {
+        for (int sender : pins->uartSenders(p.rxH)) external = external || sender != board.uid;
+        const int w = pins->writer(p.rxH);
+        external = external || (w != -2 && w != board.uid);
+    }
+    while (hub->takeInput(board.uid, now, &b)) {
+        if (external) {
+            warnOnce("usb rx", QString("the Serial Monitor's input doesn't reach %1: %2's RX pin is driven by another part "
+                                       "(on a real board the external driver wins over the USB chip)").arg(board.name, p.name));
+            continue;
+        }
+        if (!board.ideal && !p.begun) continue;
+        deliver(p, b);
+    }
+}
+
+
+
+int FirmwareRuntime::uartAvailable(int id) {
+    Port* p = port(id, "available()");
+    if (!p) return 0;
+    pull(id, *p);
+    return int(p->rx.size());
+}
+
+
+
+int FirmwareRuntime::uartRead(int id, bool peek) {
+    Port* p = port(id, "read()");
+    if (!p) return -1;
+    pull(id, *p);
+    if (p->rx.empty()) return -1;
+    const int c = p->rx.front();
+    if (!peek) p->rx.pop_front();
+    return c;
+}
+
+
+
+int FirmwareRuntime::uartAvailableForWrite(int id) {
+    Port* p = port(id, "availableForWrite()");
+    if (!p) return 0;
+    if (board.ideal || !p->begun || p->soft) return board.uartTxBuffer;
+    const double queued = std::max(0.0, p->txEnd - gate.simTime()) * p->baud / 10.0;
+    return std::max(0, board.uartTxBuffer - int(std::ceil(queued - 1e-9)));
+}
+
+
+
+void FirmwareRuntime::uartFlush(int id) {
+    Port* p = port(id, "flush()");
+    if (!p || board.ideal || !p->begun) return;
+    const double left = p->txEnd - gate.simTime();
+    if (left > 0.0) gate.wait(left);
+}
+
+
+
+bool FirmwareRuntime::uartWait(int id, double timeout) {
+    Port* p = port(id, "read()");
+    if (!p) return false;
+    const double deadline = gate.simTime() + std::max(0.0, timeout);
+    for (;;) {
+        pull(id, *p);
+        if (!p->rx.empty()) return true;
+        const double left = deadline - gate.simTime();
+        if (left <= 0.0 || gate.stopRequested()) return false;
+        gate.wait(std::min(left, 50e-6));   // a byte at 115200 baud takes 87 us
+    }
+}
+
+
+
+int FirmwareRuntime::softOpen(int rxPin, int txPin) {
+    const int id = nextSoft++;
+    Port p;
+    p.name = "SoftwareSerial";
+    p.soft = true;
+    p.rxH = pinHandle(rxPin, "SoftwareSerial RX");
+    p.txH = pinHandle(txPin, "SoftwareSerial TX");
+    ports.insert(id, p);
+    return id;
+}
+
+
+
+bool FirmwareRuntime::softListen(int id) {
+    if (id < 0) {   // stopListening()
+        const bool was = listening >= 0;
+        listening = -1;
+        return was;
+    }
+    auto it = ports.find(id);
+    if (it == ports.end() || !it->soft || listening == id) return false;
+    listening = id;
+    // The library empties the new port's buffer; what came meanwhile is gone.
+    UartByte b;
+    if (pins && it->reader >= 0) while (pins->uartTake(it->rxH, it->reader, gate.simTime(), &b)) {}
+    it->rx.clear();
+    return true;
+}
+
+
+
+bool FirmwareRuntime::softOverflow(int id) {
+    auto it = ports.find(id);
+    if (it == ports.end()) return false;
+    const bool o = it->overflow;
+    it->overflow = false;
+    return o;
 }

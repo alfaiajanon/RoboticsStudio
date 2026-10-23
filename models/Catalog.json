@@ -58,6 +58,22 @@
             "name": "Drivers"
         },
         {
+            "id": "interface",
+            "items": [
+                "interface/level_shifter_bss138/level_shifter_bss138.rsdef"
+            ],
+            "keys": [
+                "interface",
+                "level shifter",
+                "logic level",
+                "bss138",
+                "3.3v",
+                "5v",
+                "translator"
+            ],
+            "name": "Interface"
+        },
+        {
             "id": "dc_motor",
             "items": [
                 "motor/dc_gear_60rpm/dc_gear_60rpm.rsdef"

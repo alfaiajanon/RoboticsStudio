@@ -72,7 +72,8 @@ tools/fetch_wasi_sdk.sh   # one-time: firmware compiler
 | **Visual assembly** | Drag and drop servos, DC and stepper motors, IMUs, cameras, displays, brackets and wheels. |
 | **Realistic parts** | Each part follows its real mechanism: deadband, backlash, noise, torque limits, lost steps. Parameters come from datasheets or measurements. |
 | **C++ firmware** | Arduino sketches compiled in the app and run in lockstep with the physics. |
-| **Prototype and Real levels** | Prototype wires everything automatically. Real uses an actual board, wired pin by pin, with checks for common wiring mistakes. |
+| **Prototype and Real levels** | Prototype wires everything automatically. Real uses actual boards, wired pin by pin, with checks for common wiring mistakes. Several boards run at once and talk over serial wires, byte by byte at their baud rate. |
+| **Serial Monitor** | A tab per board, as in the Arduino IDE: what the sketch prints, and a line to send to it. |
 | **Power** | At the Real level supplies sag under load: batteries, bench supplies, regulators and the boards' USB feed. A stalling servo can brown out the board, which then resets as a real one does. |
 | **Stage** | Environment, floor and props, driven by a JavaScript stage script. |
 | **Live telemetry** | Real-time plots of any input, output or body motion. |
@@ -84,6 +85,7 @@ tools/fetch_wasi_sdk.sh   # one-time: firmware compiler
 | --- | --- |
 | Boards | Arduino Uno, ESP32-CAM |
 | Power | 4×AA pack, 9 V battery, 2S LiPo, bench supply, LM2596 buck converter |
+| Drivers and interface | L298N and TB6612FNG motor drivers, BSS138 logic level shifter |
 | Actuators | SG90 and MG996R servos, 60 RPM DC gear motor, NEMA 17 stepper |
 | Sensors | MPU6050 IMU, OV7670 camera, depth camera |
 | Displays | 160x128 ST7735 TFT |
@@ -119,13 +121,14 @@ Example sketches for each part are in [`examples/firmware`](examples/firmware).
 
 ## Demos
 
-Each demo in [`demo/`](demo) is provided at both levels.
+Each demo in [`demo/`](demo) is provided at both levels, except the two-board one.
 
 | Demo | Description | Real board |
 | --- | --- | --- |
 | Robot arm | Three-servo arm that finds and tracks an orange ball with its camera. | ESP32-CAM |
 | Servo Comparison | An emulated SG90 next to an ideal one, sweeping together. | Arduino Uno |
 | DC Motor | A 12 V gearmotor with a wheel on a stand: ramp, brake, reverse. The Real copy drives it through an L298N from a 2S LiPo. | Arduino Uno |
+| Robot arm (ESP32-CAM + Uno) | The robot arm split over two boards: the ESP32-CAM sees the ball and sends the servo commands over a serial link, through a level shifter, to an Uno that drives the servos. Real level only. | ESP32-CAM + Arduino Uno |
 
 ## Documentation
 
@@ -147,10 +150,11 @@ Each demo in [`demo/`](demo) is provided at both levels.
 | Done | C++ firmware with the Arduino API |
 | Done | Boards and wiring (Uno, ESP32-CAM) |
 | Done | Power: supply sag, current budget, brownout resets, batteries |
-| Planned | Multiple boards linked over UART |
 | Done | Motor drivers (L298N, TB6612FNG), DC motors as circuits, board pin strength |
-| Planned | Interface boards: PCA9685, level shifters |
+| Done | Several boards linked over UART, Serial Monitor with input, level shifter |
+| Planned | Prototype → Real migration wizard |
 | Planned | Built-in robotics library: kinematics, IK, PID, filters |
+| Planned | Workflow tools: serial plot, pin and bus monitor, run comparison, test runs |
 | Planned | Validation against measurements of real parts |
 
 Full design: [architecture-v2.md](docs/dev/architecture-v2.md).

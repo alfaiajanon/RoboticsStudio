@@ -1,0 +1,119 @@
+{
+    "connectors": [
+        {
+            "body": "body_1",
+            "description": "",
+            "id": "base",
+            "transform": {
+                "pos": [
+                    0,
+                    0,
+                    0.0051
+                ],
+                "quat": [
+                    1,
+                    0,
+                    0,
+                    0
+                ]
+            }
+        },
+        {
+            "body": "body_1",
+            "description": "Top face beside the arm (battery pack)",
+            "id": "battery",
+            "transform": {
+                "pos": [
+                    0,
+                    0.032,
+                    0.0051
+                ],
+                "quat": [
+                    1,
+                    0,
+                    0,
+                    0
+                ]
+            }
+        }
+    ],
+    "emulator": {
+        "parameters": {
+        },
+        "source": {
+        },
+        "type": ""
+    },
+    "id": "base",
+    "interface": {
+        "inputs": [
+        ],
+        "outputs": [
+        ]
+    },
+    "kinematics": {
+        "bodies": [
+            {
+                "geoms": [
+                    {
+                        "id": "geom_1",
+                        "mass": 10,
+                        "pos": [
+                            0,
+                            0,
+                            0
+                        ],
+                        "quat": [
+                            1,
+                            0,
+                            0,
+                            0
+                        ],
+                        "size": [
+                            0.05,
+                            0.05,
+                            0.005
+                        ],
+                        "type": "box"
+                    }
+                ],
+                "id": "body_1",
+                "overrideGeom": false,
+                "transform": {
+                    "pos": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "quat": [
+                        1,
+                        0,
+                        0,
+                        0
+                    ]
+                }
+            }
+        ],
+        "default_body": "body_1",
+        "joints": [
+        ]
+    },
+    "meta": {
+        "hint_class": "part",
+        "author": "",
+        "icon_path": "",
+        "name": "Base",
+        "version": ""
+    },
+    "pins": [
+    ],
+    "resources": {
+        "materials": {
+        },
+        "meshes": {
+        }
+    },
+    "schema": 3,
+    "specs": {
+    }
+}

@@ -132,6 +132,14 @@
                 }
             }
         },
+        "serial_monitor": {
+            "type": "object",
+            "description": "Serial Monitor settings per board (key: the board's uid as a string; \"-1\" = the ideal board). UI state, like the plot layout.",
+            "additionalProperties": {
+                "type": "object",
+                "properties": { "baud": { "type": "integer", "minimum": 1, "description": "the monitor's baud rate (a sketch at another rate shows garbage)" } }
+            }
+        },
         "plotting": {
             "type": "object",
             "description": "Plot panel layout: I/O canvases and body-motion targets.",

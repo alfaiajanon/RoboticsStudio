@@ -2,6 +2,7 @@
 
 #include <QMap>
 #include <algorithm>
+#include <functional>
 #include "Document/Project.h"
 #include "Document/Netlist.h"
 #include "Document/PowerNetwork.h"
@@ -18,7 +19,39 @@ struct Wiring {
     QList<Net> nets;
     QHash<PinRef, int> netOf;
 
-    explicit Wiring(Project& p) : project(p), nets(p.netlist().nets()), netOf(Netlist::indexOf(nets)) {}
+    // Nets joined through a level shifter's channels: one signal (by group id).
+    QVector<int> group;
+
+    explicit Wiring(Project& p) : project(p), nets(p.netlist().nets()), netOf(Netlist::indexOf(nets)) {
+        group.resize(nets.size());
+        for (int i = 0; i < group.size(); ++i) group[i] = i;
+        std::function<int(int)> find = [&](int i) { return group[i] == i ? i : group[i] = find(group[i]); };
+        for (ComponentInstance* c : p.getComponentMap()) {
+            for (const auto& [lv, hv] : shifterChannels(c)) {
+                const int a = net(c->uid, lv), b = net(c->uid, hv);
+                if (a >= 0 && b >= 0) group[find(a)] = find(b);
+            }
+        }
+        for (int i = 0; i < group.size(); ++i) group[i] = find(i);
+    }
+
+    static QList<std::pair<QString, QString>> shifterChannels(const ComponentInstance* c) {
+        QList<std::pair<QString, QString>> out;
+        const ComponentBlueprint* bp = c ? c->getBlueprint() : nullptr;
+        if (!bp || bp->emulatorDef.type != "level_shifter_emulator") return out;
+        for (const QVariant& ch : bp->emulatorDef.parameters.value("channels").toList()) {
+            const QVariantList pair = ch.toList();
+            if (pair.size() == 2) out.append({pair[0].toString(), pair[1].toString()});
+        }
+        return out;
+    }
+    // The nets of a net's signal group (itself, plus those across shifters).
+    QList<int> signalNets(int n) const {
+        QList<int> out;
+        if (n < 0) return out;
+        for (int i = 0; i < group.size(); ++i) if (group[i] == group[n]) out.append(i);
+        return out;
+    }
 
     const PinDef* pinDef(const PinRef& r) const {
         ComponentInstance* comp = project.getComponentByUid(r.uid);
@@ -49,7 +82,22 @@ struct Wiring {
         }
         return out;
     }
+    // The same over the net's signal group (through level shifters).
+    QList<PinRef> signalBoardPins(int net, const QString& type) const {
+        QList<PinRef> out;
+        for (int n : signalNets(net)) out += boardPins(n, type);
+        return out;
+    }
 };
+
+bool isShifter(const ComponentInstance* comp) {
+    return comp && comp->getBlueprint() && comp->getBlueprint()->emulatorDef.type == "level_shifter_emulator";
+}
+
+double logicOf(Project& project, int boardUid) {
+    ComponentInstance* b = project.getComponentByUid(boardUid);
+    return b && b->getBlueprint() ? b->getBlueprint()->board.logicVoltage : 0.0;
+}
 
 QString partName(Project& project, int uid) {
     ComponentInstance* comp = project.getComponentByUid(uid);
@@ -306,6 +354,52 @@ void checkPower(Project& project, QList<RuleIssue>& issues) {
     }
 }
 
+// A level shifter: LV at or below HV, each channel's sides in their own
+// logic domain, unused channels left alone.
+void checkShifter(Project& project, const Wiring& w, const PowerNetwork& pn, ComponentInstance* comp, QList<RuleIssue>& issues) {
+    using S = RuleIssue::Severity;
+    auto add = [&](S sev, const QString& msg, const QString& pin = QString(), int net = -1) {
+        issues.append(RuleIssue{sev, msg, comp->uid, pin, net});
+    };
+    const PowerNetwork::Solution nominal = pn.solveStatic();
+    auto railVolts = [&](const QString& pin) {
+        const int node = pn.nodeOf(comp->uid, pin);
+        return node >= 0 && pn.nodes[node].live ? nominal.voltage[node] : 0.0;
+    };
+    const double lv = railVolts("lv"), hv = railVolts("hv");
+    if (lv > 0.0 && hv > 0.0 && lv > hv + 0.05)
+        add(S::Warning, QString("%1: LV gets %2 V, more than HV (%3 V): swap the LV and HV supplies")
+                .arg(comp->name).arg(lv, 0, 'f', 2).arg(hv, 0, 'f', 2), "lv");
+
+    QStringList floating;
+    for (const auto& [lvPin, hvPin] : Wiring::shifterChannels(comp)) {
+        const int lvNet = w.net(comp->uid, lvPin), hvNet = w.net(comp->uid, hvPin);
+        if (lvNet < 0 && hvNet < 0) continue;   // an unused channel
+        if (lvNet < 0) floating.append(label(lvPin));
+        if (hvNet < 0) floating.append(label(hvPin));
+        for (const PinRef& r : w.boardPins(lvNet, "gpio")) {
+            const double logic = logicOf(project, r.uid);
+            if (lv > 0.0 && logic > lv + 0.3)
+                add(S::Warning, QString("%1 %2 (%3 V logic) is on %4 %5, the %6 V side: wire it to %7 (the HV side)")
+                        .arg(partName(project, r.uid), label(r.pin)).arg(logic).arg(comp->name, label(lvPin))
+                        .arg(lv, 0, 'f', 1).arg(label(hvPin)), lvPin, lvNet);
+        }
+        for (const PinRef& r : w.boardPins(hvNet, "gpio")) {
+            const double logic = logicOf(project, r.uid);
+            const PinDef* bp = w.pinDef(r);
+            const double limit = bp && bp->voltageRange.second > 0.0f ? bp->voltageRange.second : logic;
+            if (hv > 0.0 && hv > limit + 0.3)
+                add(S::Warning, QString("%1 %2 (%3 V logic) is on %4 %5, the %6 V side: its pull-up puts %6 V on the pin. "
+                                        "Wire it to %7 (the LV side)")
+                        .arg(partName(project, r.uid), label(r.pin)).arg(logic).arg(comp->name, label(hvPin))
+                        .arg(hv, 0, 'f', 1).arg(label(lvPin)), hvPin, hvNet);
+        }
+    }
+    if (!floating.isEmpty())
+        add(S::Warning, QString("%1: a channel is wired on one side only: %2 not wired").arg(comp->name, floating.join(", ")),
+            floating.size() == 1 ? floating[0].toLower() : QString());
+}
+
 } // namespace
 
 
@@ -319,19 +413,16 @@ QList<RuleIssue> DesignRules::check(Project& project) {
     using S = RuleIssue::Severity;
 
     // ---- boards ----
+    // Every board with a sketch runs; they share the sim clock and talk over wires.
     const QList<ComponentInstance*> boards = project.boards();
-    ComponentInstance* active = project.activeBoard();
     if (boards.isEmpty()) {
         add(S::Error, "No board: add one from the library (Boards). Without a board Play runs the physics only.");
         return issues;
     }
     for (ComponentInstance* b : boards) {
-        if (b != active)
-            add(S::Warning, QString("%1 stays idle: one board runs at a time until boards can talk to each other (UART)").arg(b->name), b->uid);
+        if (b->firmware.isEmpty())
+            add(S::Warning, QString("%1 has no firmware: pick a sketch in its Inspector (it stays idle)").arg(b->name), b->uid);
     }
-    if (active->firmware.isEmpty())
-        add(S::Warning, QString("%1 has no firmware: pick a sketch in its Inspector").arg(active->name), active->uid);
-    const BoardDef& def = active->getBlueprint()->board;
 
     const Wiring w(project);
 
@@ -342,11 +433,29 @@ QList<RuleIssue> DesignRules::check(Project& project) {
         QList<PinRef> grounds = w.pins(n.id, "ground");
         QStringList names;
         for (const PinRef& r : gpios) names.append(partName(project, r.uid) + " " + label(r.pin));
-        if (gpios.size() > 1)
+        // Two pins of one board on one wire: a short. Pins of different boards
+        // are a link between them (UART, a signal), checked below.
+        bool sameBoard = false;
+        for (int i = 0; i < gpios.size(); ++i)
+            for (int j = i + 1; j < gpios.size(); ++j) sameBoard = sameBoard || gpios[i].uid == gpios[j].uid;
+        if (sameBoard)
             add(S::Error, QString("Short: %1 are wired together").arg(names.join(" and ")), gpios[0].uid, gpios[0].pin, n.id);
         else if (!gpios.isEmpty() && !sources.isEmpty())
-            add(S::Error, QString("Short: %1 is wired to %2 %3").arg(names.join(""), partName(project, sources[0].uid), label(sources[0].pin)),
+            add(S::Error, QString("Short: %1 is wired to %2 %3").arg(names.join(", "), partName(project, sources[0].uid), label(sources[0].pin)),
                 gpios[0].uid, gpios[0].pin, n.id);
+        // Boards of different logic levels on one wire: the higher one's HIGH
+        // goes into the lower one's pin.
+        for (const PinRef& hi : gpios) {
+            for (const PinRef& lo : gpios) {
+                if (hi.uid == lo.uid) continue;
+                const PinDef* lp = w.pinDef(lo);
+                const double limit = lp && lp->voltageRange.second > 0.0f ? lp->voltageRange.second : logicOf(project, lo.uid);
+                if (logicOf(project, hi.uid) > limit + 0.3)
+                    add(S::Warning, QString("%1 %2 (%3 V logic) is wired to %4 %5, which takes at most %6 V: add a level shifter")
+                            .arg(partName(project, hi.uid), label(hi.pin)).arg(logicOf(project, hi.uid))
+                            .arg(partName(project, lo.uid), label(lo.pin)).arg(limit), lo.uid, lo.pin, n.id);
+            }
+        }
         if (!sources.isEmpty() && !grounds.isEmpty())
             add(S::Error, QString("Short: %1 %2 is wired to ground").arg(partName(project, sources[0].uid), label(sources[0].pin)),
                 sources[0].uid, sources[0].pin, n.id);
@@ -370,12 +479,43 @@ QList<RuleIssue> DesignRules::check(Project& project) {
         }
     }
 
+    // ---- board to board: links (UART) ----
+    const PowerNetwork pn = PowerNetwork::build(project);
+    QSet<int> seenGroups;
+    for (const Net& n : w.nets) {
+        if (seenGroups.contains(w.group[n.id])) continue;
+        seenGroups.insert(w.group[n.id]);
+        const QList<PinRef> gpios = w.signalBoardPins(n.id, "gpio");
+        QList<PinRef> tx, rx;
+        QSet<int> uids;
+        for (const PinRef& r : gpios) {
+            uids.insert(r.uid);
+            const PinDef* p = w.pinDef(r);
+            if (p && p->hasCap("uart_tx")) tx.append(r);
+            if (p && p->hasCap("uart_rx")) rx.append(r);
+        }
+        if (uids.size() < 2) continue;
+        if (tx.size() > 1 && tx[0].uid != tx[1].uid)
+            add(S::Error, QString("%1 %2 and %3 %4 are both serial TX: two outputs on one wire. Wire TX to RX")
+                    .arg(partName(project, tx[0].uid), label(tx[0].pin), partName(project, tx[1].uid), label(tx[1].pin)),
+                tx[1].uid, tx[1].pin, n.id);
+        else if (tx.isEmpty() && rx.size() > 1 && rx[0].uid != rx[1].uid)
+            add(S::Warning, QString("%1 %2 and %3 %4 are both serial RX: nothing sends on this wire. Wire TX to RX")
+                    .arg(partName(project, rx[0].uid), label(rx[0].pin), partName(project, rx[1].uid), label(rx[1].pin)),
+                rx[1].uid, rx[1].pin, n.id);
+        // Boards that share a signal need a common ground: it is what HIGH and LOW are measured against.
+        const QList<int> list = uids.values();
+        for (int i = 1; i < list.size(); ++i) {
+            const int a = pn.groundDomainOfPart(list[0]), b = pn.groundDomainOfPart(list[i]);
+            if (a >= 0 && b >= 0 && a != b)
+                add(S::Error, QString("%1 and %2 are wired together but their GNDs aren't: the signals have no common reference. "
+                                      "Wire a GND of one to a GND of the other")
+                        .arg(partName(project, list[0]), partName(project, list[i])), list[i], QString(), n.id);
+        }
+    }
+
     // ---- parts ----
     const QHash<int, QString> unpowered = unpoweredParts(project);
-    // The active board's bus pins (pin ids on the board), by bus line type.
-    const QMap<QString, QString> busPin{
-        {"i2c_sda", def.i2cSda}, {"i2c_scl", def.i2cScl},
-        {"spi_sck", def.spiSck}, {"spi_mosi", def.spiMosi}, {"spi_miso", def.spiMiso}};
 
     for (ComponentInstance* comp : project.getComponentMap()) {
         ComponentBlueprint* bp = comp->getBlueprint();
@@ -383,7 +523,13 @@ QList<RuleIssue> DesignRules::check(Project& project) {
         const QString name = comp->name;
 
         if (unpowered.contains(comp->uid))
-            add(S::Error, QString("%1 is not powered (%2): it stays dead").arg(name, unpowered[comp->uid]), comp->uid);
+            add(S::Error, QString("%1 is not powered (%2): it stays dead%3").arg(name, unpowered[comp->uid],
+                                                                                  isShifter(comp) ? ", no signal crosses it" : ""), comp->uid);
+
+        if (isShifter(comp)) {
+            checkShifter(project, w, pn, comp, issues);
+            continue;
+        }
 
         QStringList floating;
         for (const PinDef& p : bp->pins) {
@@ -391,18 +537,25 @@ QList<RuleIssue> DesignRules::check(Project& project) {
 
             if (!p.isBoardPin()) continue;
 
-            const QList<PinRef> gpios = w.boardPins(net, "gpio");
-            const bool onActive = std::any_of(gpios.begin(), gpios.end(), [&](const PinRef& r) { return r.uid == active->uid; });
+            // The board the pin reaches: on its own net, else through a level shifter.
+            QList<PinRef> gpios = w.boardPins(net, "gpio");
+            const bool direct = !gpios.isEmpty();
+            if (!direct) gpios = w.signalBoardPins(net, "gpio");
             if (net < 0 || gpios.isEmpty()) {
                 // Wired only to other parts (e.g. part to part) is fine; nothing at all floats.
                 if (net < 0) floating.append(p.id);
                 continue;
             }
-            if (!onActive) continue;   // on an idle board: reported with that board
-            const PinRef board = *std::find_if(gpios.begin(), gpios.end(), [&](const PinRef& r) { return r.uid == active->uid; });
+            const PinRef board = gpios.first();
+            ComponentInstance* boardComp = project.getComponentByUid(board.uid);
             const PinDef* g = w.pinDef(board);
-            if (!g) continue;
-            const QString where = QString("%1 %2").arg(active->name, label(board.pin));
+            if (!g || !boardComp) continue;
+            const BoardDef& def = boardComp->getBlueprint()->board;
+            const QString where = QString("%1 %2").arg(boardComp->name, label(board.pin));
+            // The board's bus pins (pin ids on the board), by bus line type.
+            const QMap<QString, QString> busPin{
+                {"i2c_sda", def.i2cSda}, {"i2c_scl", def.i2cScl},
+                {"spi_sck", def.spiSck}, {"spi_mosi", def.spiMosi}, {"spi_miso", def.spiMiso}};
 
             if (p.type == "motor") {
                 // A board pin is a signal, not a power output: it can't run a motor.
@@ -418,7 +571,7 @@ QList<RuleIssue> DesignRules::check(Project& project) {
             if (busPin.contains(p.type)) {
                 const QString want = busPin.value(p.type);
                 if (want.isEmpty())
-                    add(S::Warning, QString("%1 %2: %3 has no hardware bus for it").arg(name, label(p.id), active->name), comp->uid, p.id, net);
+                    add(S::Warning, QString("%1 %2: %3 has no hardware bus for it").arg(name, label(p.id), boardComp->name), comp->uid, p.id, net);
                 else if (want != board.pin)
                     add(S::Warning, QString("%1 %2 is on %3, not on the board's %4 pin (%5): the part won't answer")
                             .arg(name, label(p.id), where, p.type.toUpper().replace('_', ' '), label(want)), comp->uid, p.id, net);
@@ -428,13 +581,14 @@ QList<RuleIssue> DesignRules::check(Project& project) {
             } else if (p.type == "analog" && !g->hasCap("analog")) {
                 add(S::Error, QString("%1 %2 is on %3, which has no ADC: analogRead() can't read it").arg(name, label(p.id), where),
                     comp->uid, p.id, net);
-            } else if ((p.type == "uart_tx" || p.type == "uart_rx") && !g->hasCap(p.type == "uart_tx" ? "uart_rx" : "uart_tx")) {
+            } else if ((p.type == "uart_tx" || p.type == "uart_rx") && !g->hasCap(p.type == "uart_tx" ? "uart_rx" : "uart_tx")
+                       && !std::any_of(def.uarts.begin(), def.uarts.end(), [](const UartPortDef& u) { return u.matrix; })) {
                 add(S::Warning, QString("%1 %2 is on %3, which is not a hardware UART pin").arg(name, label(p.id), where),
                     comp->uid, p.id, net);
             }
 
             const double limit = signalLimit(bp, p);
-            if (limit > 0.0 && def.logicVoltage > limit + 0.3)
+            if (direct && limit > 0.0 && def.logicVoltage > limit + 0.3)
                 add(S::Warning, QString("%1 %2 gets %3 V logic from %4 but takes at most %5 V: add a level shifter")
                         .arg(name, label(p.id)).arg(def.logicVoltage).arg(where).arg(limit), comp->uid, p.id, net);
         }

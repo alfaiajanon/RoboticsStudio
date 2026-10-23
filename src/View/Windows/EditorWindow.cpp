@@ -39,6 +39,7 @@
 #include "View/Panels/SceneTreePanel.h"
 #include "View/Panels/InspectorPanel.h"
 #include "View/Panels/OutputPanel.h"
+#include "View/Panels/SerialMonitorPanel.h"
 #include "View/Panels/ComponentsPanel.h"
 #include "View/Viewport/InputManager.h"
 #include "View/Viewport/CameraController.h"
@@ -708,6 +709,12 @@ void EditorWindow::setupSplitting(){
     connect(LogDispatcher::getInstance(), &LogDispatcher::messageLogged,
             outputPanel, &OutputPanel::appendMessage);
 
+    // add SerialMonitorPanel: each board's Serial, with input
+    serialMonitor = new SerialMonitorPanel();
+    serialMonitor->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Ignored);
+    serialMonitor->setMinimumHeight(0);
+    bottomTabs->addTab(serialMonitor, Theme::icon(":/icons/terminal.svg"), "Serial Monitor");
+
     // add ComponentsPanel
     componentsPanel = new ComponentsPanel();
     componentsPanel->setMinimumHeight(0);
@@ -936,39 +943,62 @@ void EditorWindow::setupMainViewport() {
         if (wiringPage) wiringPage->setEditable(false);
     };
 
-    // A C++ sketch is compiled first; the run starts only if that succeeds.
-    connect(firmwareCompiler, &FirmwareCompiler::finished, this, [this, startRun, setHudBtn](bool ok) {
-        playBtn->setEnabled(true);
-        setHudBtn(playBtn, "Play", ":/icons/play.svg", playColor);
+    // The sketches are compiled first, one per board that runs (each for its
+    // board: its variant and macros); the run starts only if all succeed.
+    auto compileNext = [this, startRun]() {
+        Project* project = Application::getInstance()->getProject();
+        if (compileQueue.isEmpty()) {
+            scriptPanel->setCompileMarkers(compileMarkers);
+            playBtn->setEnabled(true);
+            startRun();
+            return;
+        }
+        compiling = compileQueue.takeFirst();
+        const QString rel = compiling.sketchPath;
+        firmwareCompiler->compile(project->getProjectDirectory() + "/" + rel, project->readSketch(rel),
+                                  compiling.uid < 0 ? project->pinsHeader() : QString(),
+                                  project->boardVariantHeader(compiling.uid), project->boardDefines(compiling.uid));
+    };
+
+    connect(firmwareCompiler, &FirmwareCompiler::finished, this, [this, compileNext, setHudBtn](bool ok) {
         SimulationManager* sim = Application::getInstance()->getSimulationManager();
         if (sim->getState() != SimulationState::EDITING) return;
 
         // The errors and warnings in the sketch's own files (.ino, .h, .cpp),
         // as markers in the script editor, per file.
         Project* project = Application::getInstance()->getProject();
-        QHash<QString, QList<LineMarker>> markers;
         QString firstError;
         for (const FirmwareCompiler::Diagnostic& d : firmwareCompiler->diagnostics()) {
             if (!d.inSketch || d.severity == "note") continue;
-            markers[d.path].append({d.line, d.severity == "error", d.message});
+            QList<LineMarker>& list = compileMarkers[d.path];
+            const LineMarker m{d.line, d.severity == "error", d.message};
+            bool dup = false;   // the same sketch on two boards reports the same line twice
+            for (const LineMarker& x : list) dup = dup || (x.line == m.line && x.message == m.message);
+            if (!dup) list.append(m);
             if (firstError.isEmpty() && d.severity == "error") firstError = d.path;
         }
-        scriptPanel->setCompileMarkers(markers);
         if (!ok) {
+            compileQueue.clear();
+            playBtn->setEnabled(true);
+            setHudBtn(playBtn, "Play", ":/icons/play.svg", playColor);
+            scriptPanel->setCompileMarkers(compileMarkers);
             // Show the file with the first error (the sketch for a link error).
-            const QString target = firstError.isEmpty() ? project->getProjectDirectory() + "/" + project->activeSketchPath() : firstError;
+            const QString target = firstError.isEmpty() ? project->getProjectDirectory() + "/" + compiling.sketchPath : firstError;
             centerStack->setCurrentPage(scriptPanel);
             if (QFileInfo(scriptPanel->currentPath()) != QFileInfo(target) && scriptPanel->confirmLeaveUnsaved())
                 scriptPanel->loadScript(target);
             scriptPanel->goToFirstError();
-            Toast::showMessage(this, "Firmware didn't compile: see the marked lines and the Output panel", 3000);
+            Toast::showMessage(this, compiling.uid < 0 ? QString("Firmware didn't compile: see the marked lines and the Output panel")
+                                                       : QString("Firmware for %1 didn't compile: see the marked lines and the Output panel")
+                                                             .arg(compiling.name), 3000);
             return;
         }
-        Application::getInstance()->getProject()->setFirmwareBinary(firmwareCompiler->wasm());
-        startRun();
+        project->setFirmwareBinary(compiling.uid, firmwareCompiler->wasm());
+        if (compileQueue.isEmpty()) setHudBtn(playBtn, "Play", ":/icons/play.svg", playColor);
+        compileNext();
     });
 
-    connect(playBtn, &QPushButton::clicked, this, [this, startRun, reloadSimulation, setHudBtn]() {
+    connect(playBtn, &QPushButton::clicked, this, [this, startRun, compileNext, reloadSimulation, setHudBtn]() {
         SimulationManager* sim = Application::getInstance()->getSimulationManager();
 
         if (sim->getState() == SimulationState::EDITING) {
@@ -978,15 +1008,19 @@ void EditorWindow::setupMainViewport() {
 
             Project* project = Application::getInstance()->getProject();
             if (project->hasScriptAt(project->getCurrentScriptIdx())) project->reloadScript();
-            // The active sketch: the ideal board's (Prototype, with its generated
-            // robot_pins.h) or the active board's slot (Real, with the board's
-            // variant and macros, as the real core builds it).
-            if (project->usesFirmware()) {
+            // One sketch per board that runs: the ideal board's (Prototype, with
+            // its generated robot_pins.h) or each board's slot (Real, with the
+            // board's variant and macros, as the real core builds it). A .js
+            // robot script is not compiled; the run refuses it.
+            project->clearFirmwareBinaries();
+            compileQueue.clear();
+            compileMarkers.clear();
+            for (const Project::FirmwareJob& job : project->firmwareJobs())
+                if (Project::isFirmwarePath(job.sketchPath)) compileQueue.append(job);
+            if (!compileQueue.isEmpty()) {
                 setHudBtn(playBtn, "Compiling...", ":/icons/play.svg", playColor);
                 playBtn->setEnabled(false);
-                firmwareCompiler->compile(project->getProjectDirectory() + "/" + project->activeSketchPath(),
-                                          project->readActiveSketch(), project->pinsHeader(),
-                                          project->boardVariantHeader(), project->boardDefines());
+                compileNext();
                 return;
             }
             startRun();

@@ -6,7 +6,8 @@
 #include "Utils/Spatial.h"
 // #include "Telemetry/PlotTarget.h"
 #include "Simulation/MicroController/MicroController.h"
-#include "Simulation/Firmware/FirmwareRuntime.h"
+#include <QByteArray>
+#include <QHash>
 #include "Document/IdealBoard.h"
 #include "Document/RealBoard.h"
 #include "Document/Netlist.h"
@@ -45,8 +46,8 @@ class Project {
         QJsonArray unknownComponents;
         Rotation rootRotation;
 
-        FirmwareRuntime firmware{"MCU"};   // the robot's firmware while it is C++ (.ino/.cpp)
-        QByteArray firmwareBinary;         // compiled firmware for the next run (the compiler sets it)
+        QHash<int, QByteArray> firmwareBinaries;   // compiled firmware for the next run, by board uid (-1: the ideal board)
+        QHash<int, int> serialMonitorBauds;        // the Serial Monitor's baud rate per board ("serial_monitor")
         MicroController stageController{"STAGE"};   // runs the stage script; sees props + robot pose only
         Stage stage;
 
@@ -104,23 +105,33 @@ class Project {
         // Board components (a "board" block in their .rsdef), by uid.
         QList<ComponentInstance*> boards() const;
         static bool isBoard(const ComponentInstance* comp);
-        // The board that runs at the Real level: the first (by uid) with a
-        // sketch in its slot, else the first board; null without boards.
-        // One board runs until boards can talk to each other (UART).
-        ComponentInstance* activeBoard() const;
-        RealBoard realBoard() const;   // the active board with the wiring; invalid without one
+        // The boards that run at the Real level: every board with a sketch in
+        // its slot, by uid. They all run at once, in lockstep on one sim clock.
+        QList<ComponentInstance*> runningBoards() const;
+        RealBoard realBoard(int uid) const;   // a board with the wiring; invalid if uid isn't a board
+        QList<RealBoard> realBoards() const;  // every board, by uid
 
-        // The sketch the robot runs: the ideal board's (script.current) at
-        // Prototype, the active board's slot at Real. Empty = none.
+        // What Play compiles and runs: one sketch per board (uid; -1 = the
+        // ideal board at the Prototype level, running script.current).
+        struct FirmwareJob {
+            int uid = -1;
+            QString name;         // the board's name ("the ideal board")
+            QString sketchPath;   // relative to the project
+        };
+        QList<FirmwareJob> firmwareJobs() const;
+
+        // The sketch the ideal board runs (Prototype: script.current); empty
+        // at the Real level, where each board's slot holds its own.
         QString activeSketchPath() const;
-        QString readActiveSketch() const;
+        QString readSketch(const QString& relPath) const;
         // Prototype: the ideal board's robot_pins.h for the sketch (its pin
         // names). Real: empty; the sketch uses the board's own pins.
         QString pinsHeader();
-        // Real: the active board's pins_arduino.h (A0, LED_BUILTIN, ...) and
-        // its macros, as the real core has them; empty at the Prototype level.
-        QString boardVariantHeader() const;
-        QStringList boardDefines() const;
+        // Real: a board's pins_arduino.h (A0, LED_BUILTIN, ...) and its
+        // macros, as the real core has them; empty for the ideal board.
+        QString boardVariantHeader(int uid) const;
+        QStringList boardDefines(int uid) const;
+        static bool isFirmwarePath(const QString& path);
 
         // Scripts live under <project>/script/: a firmware sketch in a folder
         // of its own, named after it (script/arm/arm.ino, with its .h and .cpp
@@ -166,15 +177,14 @@ class Project {
         Rotation getRootRotation() const { return rootRotation; }
         void setRootRotation(const Rotation& rot) { rootRotation = rot; }
         QMap<int, ComponentInstance*>& getComponentMap();
-        FirmwareRuntime* getFirmware() { return &firmware; }
-        // The active sketch is firmware (C++: .ino/.cpp). A .js robot script
-        // (JavaScript robot scripts were removed) is refused at Play.
-        bool usesFirmware() const;
-        bool hasRobotScript() const { return !activeSketchPath().isEmpty(); }
-        // The controller that runs the robot: always its firmware.
-        RobotController* getRobotController() { return &firmware; }
-        void setFirmwareBinary(const QByteArray& wasm) { firmwareBinary = wasm; }
-        const QByteArray& getFirmwareBinary() const { return firmwareBinary; }
+        // Compiled firmware per board (Play compiles, the run loads).
+        void setFirmwareBinary(int uid, const QByteArray& wasm) { firmwareBinaries.insert(uid, wasm); }
+        QByteArray firmwareBinary(int uid) const { return firmwareBinaries.value(uid); }
+        void clearFirmwareBinaries() { firmwareBinaries.clear(); }
+        // The Serial Monitor's baud rate per board (UI state, saved with the
+        // project like the plots; not undoable).
+        int serialMonitorBaud(int uid) const { return serialMonitorBauds.value(uid, 9600); }
+        void setSerialMonitorBaud(int uid, int baud) { serialMonitorBauds.insert(uid, baud); }
         MicroController* getStageController() { return &stageController; }
         Stage* getStage() { return &stage; }
         QString readStageScript() const;   // empty when the project has none
