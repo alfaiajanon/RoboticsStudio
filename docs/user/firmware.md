@@ -81,11 +81,11 @@ Everything runs on **simulated time**. Your code itself takes no simulated time,
 | SPI | `SPI`: `begin`, `beginTransaction`, `transfer`, `transfer16`, `transfer(buf, n)`, `setClockDivider` | the board's shared SPI bus; parts listen while their CS pin is LOW (drive it with `digitalWrite`). Nothing answers on MISO yet. At the Real level 8 bits per byte at the transaction's clock (4 MHz by default), capped at the board's maximum |
 | Display | `Adafruit_ST7735` + `Adafruit_GFX` (subset): `initR`, `setRotation`, `fillScreen`, `drawPixel`, lines, rectangles, circles, bitmaps, text | a compatible subset of Adafruit's libraries, see [create_display.md](create_display.md#firmware-an-st7735-on-spi) |
 | Camera | `esp_camera.h`: `esp_camera_init`, `esp_camera_fb_get`, `esp_camera_fb_return` | a compatible subset of the ESP32 camera driver, see [create_camera.md](create_camera.md#firmware-esp32-camera) |
-| Serial | `begin`, `print`, `println`, `printf`, `available`, `read` | output appears in the **Output** panel, one entry per line, tagged `[MCU]`; nothing comes in yet (`available()` is 0). `Serial.printf` exists on ESP32 boards, not on an Uno |
+| Serial | `Serial`, and on ESP32 boards `Serial1`/`Serial2`: `begin`, `end`, `print`, `println`, `printf`, `write`, `available`, `read`, `peek`, `flush`, `availableForWrite`; `Stream`: `setTimeout`, `readString`, `readStringUntil`, `readBytes`, `readBytesUntil`, `parseInt`, `parseFloat`, `find`, `findUntil`; `SoftwareSerial.h` (Uno) | the board's USB port talks to the **Serial Monitor**; output also appears in **Output**, one entry per line, tagged with the board (`[MCU]` for the ideal board, `[Uno]`, ...). See [Serial ports](#serial-ports). `Serial.printf` exists on ESP32 boards, not on an Uno |
 | Text | `String`, `F("...")`, `PROGMEM`, `pgm_read_*` | a common subset of `String` |
 | Maths | `min`, `max`, `constrain`, `map`, `sq`, `radians`, `degrees`, `PI`…, `<math.h>`, `<cmath>`, `<algorithm>` | Arduino's helpers are templates, so the standard headers still work |
 | Random | `random`, `randomSeed` | repeats exactly run to run, even after `randomSeed(analogRead(...))` |
-| C library | `snprintf`, `strlen`, `malloc`… | `printf` (plain C) appears in Output tagged `[MCU][stdout]`, on a real Uno it prints nothing; `time()` is simulated seconds; `clock()` is not available; there are no files |
+| C library | `snprintf`, `strlen`, `malloc`… | `printf` (plain C) appears in Output tagged `[MCU][stdout]` (`[Uno][stdout]` at the Real level), on a real Uno it prints nothing; `time()` is simulated seconds; `clock()` is not available; there are no files |
 
 **Servo, as the real library behaves** (so the code and its surprises transfer):
 
@@ -94,12 +94,45 @@ Everything runs on **simulated time**. Your code itself takes no simulated time,
 - The library's default range is 544..2400 µs, wider than most hobby servos are specified for (an SG90 takes about 1000..2000 µs). Pass the part's range: `attach(pin, 1000, 2000)`.
 - `read()` returns the last angle you wrote, not the servo's position: a hobby servo has no feedback wire.
 - `detach()` stops the pulses and the servo goes limp.
+- So a sketch that waits for something (another board's first command) before the servos should move attaches them then, not in `setup()`.
 
 **ESP32Servo** (`#include <ESP32Servo.h>`, for ESP32 boards) behaves like the real ESP32Servo library, which differs from the Uno's:
 
 - `attach()` sends nothing: the servo stays limp until the first `write()`.
 - Pulses are whole timer ticks, rounded down. The default 10-bit timer at 50 Hz has 19.5 µs ticks: `write(90)` on a 1000..2000 µs range gives 1484 µs, and an MG996R moves in ~3.5° steps. Call `setTimerWidth(16)` **after** `attach()` (attach resets it) for 0.3 µs ticks; the pulses then restart with the next `write()`.
 - The attach range is clamped to 500..2500 µs; `write()` takes angles below 500.
+
+### Serial ports
+
+`Serial` is the board's USB port. What it prints appears in the board's tab of the **Serial Monitor** (next to Output) and in Output; what you type into the monitor's line (with the line ending picked next to it, **Newline** by default) arrives on it. `examples/firmware/serial_echo` reads commands typed into the monitor.
+
+```cpp
+void setup() { Serial.begin(115200); }
+void loop() {
+  if (Serial.available()) {
+    String cmd = Serial.readStringUntil('\n');   // waits up to setTimeout() (1000 ms) for the rest of the line
+    Serial.print("got "); Serial.println(cmd);
+  }
+}
+```
+
+At the **Prototype** level the ideal board's Serial is instant and works even without `begin()`. At the **Real** level it behaves like the board's:
+
+- **The monitor's baud rate must match `Serial.begin()`.** It is set in the monitor's tab and saved with the project. A mismatch shows garbage, both ways, as on the bench; Output says which rates differ.
+- **Every byte takes 10 bits at the baud rate** (8N1), queued in the TX buffer (64 bytes on an Uno, the 128-byte FIFO on an ESP32). `print()` returns at once while there is room and waits while the buffer is full, so a sketch that prints 100 characters per `loop()` at 9600 baud runs at about 9 loops a second, as on a real Uno. Use 115200, and print less often.
+- Nothing is sent before `begin()` (a warning says so).
+- Bytes that come in wait in the receive buffer (64 bytes on an Uno, 256 on an ESP32) until read. Overflowing it loses bytes (warned once).
+
+**Talking to another board** ([wiring.md](wiring.md#several-boards)):
+
+| Board | Port | Pins |
+|---|---|---|
+| Uno | `Serial` | D0 RX, D1 TX, the same pins as its USB link: another board on D0 drowns the monitor's input, and everything printed goes to both |
+| Uno | `SoftwareSerial link(rx, tx);` then `link.begin(57600)` | any two pins; no TX buffer (each `write()` takes the byte's time); only the port that called `listen()` (or `begin()`) last receives; 64-byte receive buffer, `overflow()`; reliable up to about 57600 baud on a real Uno |
+| ESP32 | `Serial` | IO3 RX, IO1 TX: the programmer |
+| ESP32 | `Serial1`, `Serial2` | any GPIOs: `Serial1.begin(57600, SERIAL_8N1, rxPin, txPin)` |
+
+`SoftwareSerial` doesn't exist on ESP32 cores, and `Serial1`/`Serial2` don't exist on an Uno: using them fails to compile here as it does in the Arduino IDE.
 
 **Every part, from firmware:**
 

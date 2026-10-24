@@ -1,6 +1,7 @@
 #include "PinBus.h"
 
 #include <algorithm>
+#include <functional>
 #include "Document/IdealBoard.h"
 #include "Document/RealBoard.h"
 #include "Document/Netlist.h"
@@ -15,36 +16,71 @@ void PinBus::build(const IdealBoard& board) {
         PinState s;
         s.type = p.type;
         s.ideal = true;
+        s.boardUid = -1;
         const int h = int(states.size());
         states.push_back(s);
         byPart.insert(partKey(p.uid, p.pinId), h);
-        byNumber.insert(p.number, h);
+        byNumber.insert(numberKey(-1, p.number), h);
     }
 }
 
 
 
-void PinBus::build(const RealBoard& board, const Netlist& netlist) {
+void PinBus::build(const QList<RealBoard>& boards, const Netlist& netlist, const QList<Join>& joins) {
     clear();
-    for (const Net& net : netlist.nets()) {
-        PinState s;
-        s.type = "net";
-        const int h = int(states.size());
-        states.push_back(s);
-        for (const PinRef& r : net.pins) byPart.insert(partKey(r.uid, r.pin), h);
+    const QList<Net> nets = netlist.nets();
+    const QHash<PinRef, int> netOf = Netlist::indexOf(nets);
+
+    // Nets joined through a level shifter's channels are one signal.
+    std::vector<int> parent(nets.size());
+    for (int i = 0; i < int(parent.size()); ++i) parent[i] = i;
+    std::function<int(int)> find = [&](int i) { return parent[i] == i ? i : parent[i] = find(parent[i]); };
+    QHash<int, double> rootBitrate;   // net root -> lowest rated bit rate of the shifters on it
+    for (const Join& j : joins) {
+        const int a = netOf.value(j.a, -1), b = netOf.value(j.b, -1);
+        if (a < 0 || b < 0) continue;
+        const int ra = find(a), rb = find(b);
+        parent[ra] = rb;
+        double rate = j.maxBitrate;
+        for (int r : {ra, rb}) {
+            const double old = rootBitrate.value(r, 0.0);
+            if (old > 0.0 && (rate <= 0.0 || old < rate)) rate = old;
+        }
+        rootBitrate.insert(rb, rate);
     }
-    ComponentInstance* comp = board.instance();
-    if (!comp || !comp->getBlueprint()) return;
-    const BoardDef& def = comp->getBlueprint()->board;
-    for (const PinDef& p : comp->getBlueprint()->pins) {
-        if (p.number < 0) continue;
-        const int h = ensurePin(comp->uid, p.id, p.type);
-        byNumber.insert(p.number, h);
-        if (p.type == "gpio") {
-            states[h].onBoard = true;
-            states[h].boardOhm = def.pinOutputOhm;
-            states[h].boardVolts = def.logicVoltage;
-            states[h].boardMaxA = def.pinAbsMaxA;
+    QHash<int, int> handleOfRoot;
+    for (int i = 0; i < int(nets.size()); ++i) {
+        const int root = find(i);
+        int h = handleOfRoot.value(root, -1);
+        if (h < 0) {
+            PinState s;
+            s.type = "net";
+            h = int(states.size());
+            states.push_back(s);
+            handleOfRoot.insert(root, h);
+        }
+        for (const PinRef& r : nets[i].pins) byPart.insert(partKey(r.uid, r.pin), h);
+    }
+    for (auto it = handleOfRoot.begin(); it != handleOfRoot.end(); ++it) {
+        auto rate = rootBitrate.constFind(find(it.key()));
+        if (rate != rootBitrate.constEnd()) states[it.value()].maxBitrate = rate.value();
+    }
+
+    for (const RealBoard& board : boards) {
+        ComponentInstance* comp = board.instance();
+        if (!comp || !comp->getBlueprint()) continue;
+        const BoardDef& def = comp->getBlueprint()->board;
+        for (const PinDef& p : comp->getBlueprint()->pins) {
+            if (p.number < 0) continue;
+            const int h = ensurePin(comp->uid, p.id, p.type);
+            byNumber.insert(numberKey(comp->uid, p.number), h);
+            if (p.type == "gpio" && !states[h].onBoard) {
+                states[h].onBoard = true;
+                states[h].boardUid = comp->uid;
+                states[h].boardOhm = def.pinOutputOhm;
+                states[h].boardVolts = def.logicVoltage;
+                states[h].boardMaxA = def.pinAbsMaxA;
+            }
         }
     }
 }
@@ -55,6 +91,7 @@ void PinBus::clear() {
     states.clear();
     byPart.clear();
     byNumber.clear();
+    nextReader = 0;
 }
 
 
@@ -65,14 +102,15 @@ int PinBus::handleOf(int uid, const QString& pinId) const {
 
 
 
-int PinBus::handleForNumber(int boardNumber) const {
-    return byNumber.value(boardNumber, -1);
+int PinBus::handleForNumber(int boardUid, int boardNumber) const {
+    return byNumber.value(numberKey(boardUid, boardNumber), -1);
 }
 
 
 
-int PinBus::numberOf(int h) const {
-    for (auto it = byNumber.begin(); it != byNumber.end(); ++it) if (it.value() == h) return it.key();
+int PinBus::numberOf(int h, int boardUid) const {
+    for (auto it = byNumber.begin(); it != byNumber.end(); ++it)
+        if (it.value() == h && int(it.key() >> 32) - 1 == boardUid) return int(quint32(it.key()));
     return -1;
 }
 
@@ -171,8 +209,21 @@ void PinBus::release(int h) {
 
 
 
-void PinBus::releaseBoardPins() {
-    for (int h : byNumber) release(h);
+void PinBus::releaseBoardPins(int boardUid) {
+    for (auto it = byNumber.begin(); it != byNumber.end(); ++it) {
+        if (int(it.key() >> 32) - 1 != boardUid) continue;
+        release(it.value());
+        if (states[it.value()].writerUid == boardUid) states[it.value()].writerUid = -2;
+    }
+}
+
+
+
+bool PinBus::claim(int h, int boardUid) {
+    if (!valid(h)) return true;
+    int& w = states[h].writerUid;
+    if (w == -2) w = boardUid;
+    return w == boardUid;
 }
 
 
@@ -248,8 +299,85 @@ double PinBus::amps(int h) const {
 
 
 
-std::vector<int> PinBus::boardNets() const {
+std::vector<int> PinBus::boardNets(int boardUid) const {
     std::vector<int> out;
-    for (int h = 0; h < int(states.size()); ++h) if (states[h].onBoard) out.push_back(h);
+    for (int h = 0; h < int(states.size()); ++h) if (states[h].onBoard && states[h].boardUid == boardUid) out.push_back(h);
     return out;
+}
+
+
+
+void PinBus::uartSend(int h, const UartByte& b) {
+    if (!valid(h)) return;
+    PinState& s = states[h];
+    if (!s.uartSenders.contains(b.sender)) s.uartSenders.append(b.sender);
+    // Kept even while nobody listens: a board later in the step order may
+    // start listening at an earlier sim time than this byte. Unread bytes
+    // older than kUartUnheard are gone (no receiver was there for them).
+    if (s.uartReaders.isEmpty()) {
+        size_t n = 0;
+        while (n < s.uart.size() && s.uart[n].arrival < b.start - kUartUnheard) ++n;
+        s.uart.erase(s.uart.begin(), s.uart.begin() + std::ptrdiff_t(n));
+        s.uartBase += n;
+    }
+    s.uart.push_back(b);
+}
+
+
+
+int PinBus::uartOpen(int h, double now) {
+    if (!valid(h)) return -1;
+    PinState& s = states[h];
+    size_t first = s.uartBase + s.uart.size();
+    for (size_t i = 0; i < s.uart.size(); ++i) {
+        if (s.uart[i].start >= now) { first = s.uartBase + i; break; }
+    }
+    const int id = nextReader++;
+    s.uartReaders.insert(id, first);
+    return id;
+}
+
+
+
+void PinBus::uartClose(int h, int reader) {
+    if (!valid(h)) return;
+    states[h].uartReaders.remove(reader);
+    pruneUart(states[h]);
+}
+
+
+
+bool PinBus::uartTake(int h, int reader, double now, UartByte* out) {
+    if (!valid(h)) return false;
+    PinState& s = states[h];
+    auto it = s.uartReaders.find(reader);
+    if (it == s.uartReaders.end()) return false;
+    const size_t i = it.value();
+    if (i < s.uartBase || i - s.uartBase >= s.uart.size()) return false;
+    const UartByte& b = s.uart[i - s.uartBase];
+    if (b.arrival > now) return false;
+    *out = b;
+    it.value() = i + 1;
+    if (i == s.uartBase) pruneUart(s);
+    return true;
+}
+
+
+
+// Drops the bytes every reader has taken (none while nobody listens: see uartSend).
+void PinBus::pruneUart(PinState& s) {
+    if (s.uartReaders.isEmpty()) return;
+    size_t lowest = s.uartBase + s.uart.size();
+    for (size_t c : s.uartReaders) lowest = std::min(lowest, c);
+    const size_t n = lowest - s.uartBase;
+    if (n == 0) return;
+    s.uart.erase(s.uart.begin(), s.uart.begin() + std::ptrdiff_t(n));
+    s.uartBase = lowest;
+}
+
+
+
+const QList<int>& PinBus::uartSenders(int h) const {
+    static const QList<int> none;
+    return valid(h) ? states[h].uartSenders : none;
 }

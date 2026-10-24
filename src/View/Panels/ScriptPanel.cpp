@@ -291,7 +291,7 @@ void ScriptPanel::refresh() {
     const int mcuCurrent = project->getCurrentScriptIdx();
     for (int i = 0; i < mcuPaths.size(); ++i) {
         const QString rel = mcuPaths[i].toString();
-        const bool active = real ? rel == project->activeSketchPath() : i == mcuCurrent;
+        const bool active = real ? boardsOf.contains(rel) : i == mcuCurrent;
         if (rel.endsWith(".js", Qt::CaseInsensitive)) {
             // An old project's JavaScript robot script: no longer runs.
             QTreeWidgetItem* item = fileItem(nullptr, scriptList, staleBadge(), rel, ScriptKind::Mcu, rel);

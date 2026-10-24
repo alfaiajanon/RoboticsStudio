@@ -50,6 +50,15 @@ struct PinDef {
 
 // What a board (a component with a "board" block) is: what its firmware is
 // compiled for and the limits of its pins. Only on board parts.
+// One serial port of a board ("uart" in the board block). Fixed ports name
+// their pins; a matrix port (ESP32 Serial1/Serial2) takes any gpio in begin().
+struct UartPortDef {
+    QString name;              // the core's object: Serial, Serial1, ...
+    QString rx, tx;            // pin ids; empty on a matrix port
+    bool usb = false;          // also wired to the board's USB-serial chip (the Serial Monitor)
+    bool matrix = false;
+};
+
 struct BoardDef {
     bool present = false;
     QString fqbn;              // arduino-cli board, e.g. arduino:avr:uno
@@ -72,6 +81,15 @@ struct BoardDef {
     // current curves) and its absolute maximum current (A). 0 = not modelled.
     double pinOutputOhm = 0.0;
     double pinAbsMaxA = 0.0;
+    // Serial ports, their buffers (bytes) and SoftwareSerial's limit (0 = the
+    // core has no SoftwareSerial; above it, reception is unreliable).
+    QList<UartPortDef> uarts;
+    int uartRxBuffer = 64, uartTxBuffer = 64;
+    double softSerialMaxRxBaud = 0.0;
+    const UartPortDef* uart(const QString& name) const {
+        for (const UartPortDef& u : uarts) if (u.name == name) return &u;
+        return nullptr;
+    }
     QMap<QString, QString> sources;   // field -> datasheet / estimate
 };
 

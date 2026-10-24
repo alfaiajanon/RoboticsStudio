@@ -54,12 +54,13 @@ SimulationManager::SimulationManager(Project* project): project(project),
 SimulationManager::~SimulationManager() {
     isAlive = false;
 
-    project->getFirmware()->stop();
+    for (auto& run : runs) run->fw->stop();
     project->getStageController()->stop();
 
-    if (firmwareThread.joinable()) {
-        firmwareThread.join();
+    for (auto& run : runs) {
+        if (run->thread.joinable()) run->thread.join();
     }
+    runs.clear();
     if (stageThread.joinable()) {
         stageThread.join();
     }
@@ -89,13 +90,17 @@ void SimulationManager::startThreads() {
     if (!physicsThread.joinable()) {
         physicsThread = std::thread(&SimulationManager::physicsLoop, this);
     }
-    if (!firmwareThread.joinable()) {
-        firmwareThread = std::thread(&SimulationManager::mcuLoop, this, project->getFirmware());
-    }
     if (!stageThread.joinable()) {
         stageThread = std::thread(&SimulationManager::mcuLoop, this, project->getStageController());
     }
 }
+
+
+FirmwareRuntime* SimulationManager::runOf(int boardUid) const {
+    for (FirmwareRuntime* fw : activeRuns) if (fw->boardUid() == boardUid) return fw;
+    return nullptr;
+}
+
 
 
 void SimulationManager::play() {
@@ -106,65 +111,88 @@ void SimulationManager::play() {
 
     ComponentInstance* root = project->getRootComponent();
 
-    // The pins between the board and the parts (before the emulators look
+    // The pins between the boards and the parts (before the emulators look
     // them up), and the buses they register on. Prototype: the ideal board,
-    // every part wired. Real: the active board through the project's nets.
+    // every part wired. Real: every board through the project's nets, with
+    // the nets a powered level shifter joins as one signal.
     const bool real = project->getLevel() == ProjectLevel::Real;
-    const RealBoard board = real ? project->realBoard() : RealBoard();
+    const QList<RealBoard> boards = real ? project->realBoards() : QList<RealBoard>();
     unpoweredUids.clear();
+    deviceBus.reset(&pinBus);
     if (!real) {
         pinBus.build(project->idealBoard());
-        deviceBus.reset(&pinBus);
+        deviceBus.addMaster(-1, false);
     } else {
-        if (board.isValid()) {
-            pinBus.build(board, project->netlist());
-            // Ground nets are a 0 V source for a load wired to them (a motor from a pin to GND).
-            for (const Net& net : project->netlist().nets()) {
-                for (const PinRef& r : net.pins) {
-                    ComponentInstance* c = project->getComponentByUid(r.uid);
-                    bool ground = false;
-                    if (c && c->getBlueprint())
-                        for (const PinDef& pd : c->getBlueprint()->pins) ground = ground || (pd.id == r.pin && pd.type == "ground");
-                    if (ground) { pinBus.markGround(pinBus.handleOf(r.uid, r.pin)); break; }
-                }
+        for (int dead : DesignRules::unpoweredParts(*project).keys()) unpoweredUids.insert(dead);
+        QList<PinBus::Join> joins;
+        for (ComponentInstance* c : project->getComponentMap()) {
+            ComponentBlueprint* bp = c->getBlueprint();
+            if (!bp || bp->emulatorDef.type != "level_shifter_emulator" || unpoweredUids.contains(c->uid)) continue;
+            const double rate = bp->emulatorDef.parameters.value("max_bitrate").toDouble();
+            for (const QVariant& ch : bp->emulatorDef.parameters.value("channels").toList()) {
+                const QVariantList pair = ch.toList();
+                if (pair.size() == 2) joins.append({PinRef{c->uid, pair[0].toString()}, PinRef{c->uid, pair[1].toString()}, rate});
             }
-        } else {
-            pinBus.clear();
         }
-        deviceBus.reset(&pinBus);
-        const BoardDef& def = board.def();
-        const int uid = board.isValid() ? board.instance()->uid : -1;
-        auto handle = [&](const QString& id) { return id.isEmpty() || uid < 0 ? -1 : pinBus.handleOf(uid, id); };
-        deviceBus.restrictTo(handle(def.i2cSda), handle(def.i2cScl), handle(def.spiSck), handle(def.spiMosi));
+        pinBus.build(boards, project->netlist(), joins);
+        // Ground nets are a 0 V source for a load wired to them (a motor from a pin to GND).
+        for (const Net& net : project->netlist().nets()) {
+            for (const PinRef& r : net.pins) {
+                ComponentInstance* c = project->getComponentByUid(r.uid);
+                bool ground = false;
+                if (c && c->getBlueprint())
+                    for (const PinDef& pd : c->getBlueprint()->pins) ground = ground || (pd.id == r.pin && pd.type == "ground");
+                if (ground) { pinBus.markGround(pinBus.handleOf(r.uid, r.pin)); break; }
+            }
+        }
+        // Each board masters its own I2C/SPI bus; a part is on the bus whose pins it shares.
+        for (const RealBoard& board : boards) {
+            const BoardDef& def = board.def();
+            const int uid = board.instance()->uid;
+            auto handle = [&](const QString& id) { return id.isEmpty() ? -1 : pinBus.handleOf(uid, id); };
+            deviceBus.addMaster(uid, true, handle(def.i2cSda), handle(def.i2cScl), handle(def.spiSck), handle(def.spiMosi));
+        }
 
         // The wiring checks, in the Output panel (they don't stop the run).
         for (const RuleIssue& issue : DesignRules::check(*project)) {
             if (issue.isError()) Log::error("Wiring: " + issue.message);
             else Log::warning("Wiring: " + issue.message);
         }
-        for (int dead : DesignRules::unpoweredParts(*project).keys()) unpoweredUids.insert(dead);
     }
     initEmulators(root);
     buildSchedule(root);
     startPower(root);
 
-    // The robot runs its compiled firmware. A .js robot script from before
-    // firmware is refused: physics runs, the robot stays idle (physics never
-    // waits for an idle controller).
-    robotController = project->getFirmware();
-    if (real && !board.isValid()) {
-        project->getFirmware()->stop();
+    // Every board with a sketch runs its compiled firmware, each on its own
+    // runtime and thread, in lockstep on the one sim clock. A .js robot
+    // script from before firmware is refused: physics runs, the robot stays
+    // idle (physics never waits for an idle controller).
+    for (FirmwareRuntime* fw : activeRuns) fw->stop();
+    activeRuns.clear();
+    serialHub.reset();
+    const QList<Project::FirmwareJob> jobs = project->firmwareJobs();
+    if (real && boards.isEmpty())
         Log::warning("Real level without a board: the physics runs, nothing drives the parts. Add a board from the library.");
-    } else if (project->usesFirmware()) {
-        project->getFirmware()->load(project->getFirmwareBinary(), &pinBus, &deviceBus,
-                                     real ? BoardProfile::fromBoard(board) : BoardProfile());
-    } else {
-        project->getFirmware()->stop();
-        if (project->hasRobotScript())
-            Log::error("The robot script is JavaScript (" + project->activeSketchPath() + "): JavaScript robot scripts were "
+    QHash<int, QString> boardNames;
+    for (const RealBoard& b : boards) boardNames.insert(b.instance()->uid, b.instance()->name);
+    for (const Project::FirmwareJob& job : jobs) {
+        if (!Project::isFirmwarePath(job.sketchPath)) {
+            Log::error("The robot script is JavaScript (" + job.sketchPath + "): JavaScript robot scripts were "
                        "removed. Port it to a firmware sketch (.ino), see docs/user/firmware.md. The robot stays idle.");
-        else if (real)
-            Log::warning(board.instance()->name + " has no firmware: pick a sketch in its Inspector. The parts stay idle.");
+            continue;
+        }
+        while (runs.size() <= activeRuns.size()) {
+            auto run = std::make_unique<BoardRun>();
+            run->fw = std::make_unique<FirmwareRuntime>("MCU");
+            run->thread = std::thread(&SimulationManager::mcuLoop, this, run->fw.get());
+            runs.push_back(std::move(run));
+        }
+        FirmwareRuntime* fw = runs[activeRuns.size()]->fw.get();
+        BoardProfile profile = job.uid < 0 ? BoardProfile() : BoardProfile::fromBoard(project->realBoard(job.uid));
+        profile.peers = boardNames;
+        serialHub.addBoard(job.uid, job.name, job.uid < 0);
+        serialHub.setMonitorBaud(job.uid, project->serialMonitorBaud(job.uid));
+        if (fw->load(project->firmwareBinary(job.uid), &pinBus, &deviceBus, profile, &serialHub)) activeRuns.push_back(fw);
     }
 
     // Stage script: sees the controlled props and the robot pose, nothing else.
@@ -191,7 +219,7 @@ void SimulationManager::edit() {
     startThreads();
 
     // Stop the scripts first: a step in progress may be waiting for one.
-    project->getFirmware()->stop();
+    for (auto& run : runs) run->fw->stop();
     project->getStageController()->stop();
     std::lock_guard<std::mutex> stepLock(stepMutex);
 
@@ -209,6 +237,7 @@ void SimulationManager::edit() {
     pinBus.clear();
     unpoweredUids.clear();
     overloadedPins.clear();
+    activeRuns.clear();
 
     mj_resetData(mj->getModel(), mj->getData());
     mj->forward();
@@ -586,22 +615,22 @@ void SimulationManager::setPartPowered(ComponentInstance* comp, bool powered, do
  * model; above a pin's absolute maximum a real pin is damaged (warned once).
  */
 void SimulationManager::checkBoardPins(double now) {
-    ComponentInstance* board = project->activeBoard();
-    if (!board) return;
-    double total = 0.0;
-    for (int h : pinBus.boardNets()) {
-        const PinState* s = pinBus.state(h);
-        const double a = std::fabs(pinBus.amps(h));
-        total += a;
-        if (s && s->boardMaxA > 0.0 && a > s->boardMaxA && !overloadedPins.contains(h)) {
-            overloadedPins.insert(h);
-            Log::warning(QString("MCU: %1 pin %2 carries %3 mA at %4 s (absolute maximum %5 mA): a real pin would be damaged "
-                                 "(not simulated). Drive a motor through a motor driver")
-                             .arg(board->name).arg(pinBus.numberOf(h)).arg(a * 1000.0, 0, 'f', 0).arg(now, 0, 'f', 3)
-                             .arg(s->boardMaxA * 1000.0, 0, 'f', 0));
+    for (ComponentInstance* board : project->boards()) {
+        double total = 0.0;
+        for (int h : pinBus.boardNets(board->uid)) {
+            const PinState* s = pinBus.state(h);
+            const double a = std::fabs(pinBus.amps(h));
+            total += a;
+            if (s && s->boardMaxA > 0.0 && a > s->boardMaxA && !overloadedPins.contains(h)) {
+                overloadedPins.insert(h);
+                Log::warning(QString("MCU: %1 pin %2 carries %3 mA at %4 s (absolute maximum %5 mA): a real pin would be damaged "
+                                     "(not simulated). Drive a motor through a motor driver")
+                                 .arg(board->name).arg(pinBus.numberOf(h, board->uid)).arg(a * 1000.0, 0, 'f', 0).arg(now, 0, 'f', 3)
+                                 .arg(s->boardMaxA * 1000.0, 0, 'f', 0));
+            }
         }
+        power.setBoardLoad(board->uid, total);
     }
-    power.setBoardLoad(board->uid, total);
 }
 
 
@@ -629,9 +658,8 @@ void SimulationManager::applyPower(double now, double dt) {
     }
     for (int uid : ev.switchedOn) setPartPowered(project->getComponentByUid(uid), true, now);
 
-    // Only the active board runs firmware; idle boards only count their resets.
-    ComponentInstance* activeBoard = project->getLevel() == ProjectLevel::Real ? project->activeBoard() : nullptr;
-    FirmwareRuntime* fw = project->getFirmware();
+    // A board that runs firmware is held in reset (pins released) and starts
+    // again; a board without firmware only counts its resets.
     for (int uid : ev.brownedOut) {
         ComponentInstance* board = project->getComponentByUid(uid);
         const QString name = board ? board->name : QString::number(uid);
@@ -640,12 +668,14 @@ void SimulationManager::applyPower(double now, double dt) {
             Log::warning(QString("MCU: %1 brownout reset at %2 s (%3 V on its supply rail)%4")
                              .arg(name).arg(now, 0, 'f', 3).arg(power.boardRailVolts(uid), 0, 'f', 2)
                              .arg(n == kResetsLogged ? "; further resets not logged (the count is in the summary at Stop)" : ""));
-        if (board && board == activeBoard && robotController == fw && fw->holdInReset()) pinBus.releaseBoardPins();
+        FirmwareRuntime* fw = runOf(uid);
+        if (fw && fw->holdInReset()) pinBus.releaseBoardPins(uid);
     }
     for (int uid : ev.released) {
-        if (activeBoard && activeBoard->uid == uid && robotController == fw && fw->isHeld() && fw->restart(now)
-            && resetsLogged.value(uid) <= kResetsLogged)
-            Log::info(QString("MCU: %1 starts again at %2 s (setup())").arg(activeBoard->name).arg(now, 0, 'f', 3));
+        FirmwareRuntime* fw = runOf(uid);
+        ComponentInstance* board = project->getComponentByUid(uid);
+        if (fw && fw->isHeld() && fw->restart(now) && resetsLogged.value(uid) <= kResetsLogged && board)
+            Log::info(QString("MCU: %1 starts again at %2 s (setup())").arg(board->name).arg(now, 0, 'f', 3));
     }
 }
 
@@ -705,7 +735,8 @@ bool SimulationManager::stepOnce() {
         dt = mj->getModel()->opt.timestep;
     }
 
-    if (robotController) robotController->runStep(t, dt);
+    serialHub.stamp(t);
+    for (FirmwareRuntime* fw : activeRuns) fw->runStep(t, dt);
     project->getStageController()->runStep(t, dt);
 
     for (ScheduledEmulator& s : asyncEmulators) s.emulator->awaitDue(t + dt);

@@ -135,9 +135,9 @@ void Project::setScript(int idx){
 
 
 
-bool Project::usesFirmware() const {
-    const QString path = activeSketchPath().toLower();
-    return path.endsWith(".ino") || path.endsWith(".cpp");
+bool Project::isFirmwarePath(const QString& path) {
+    const QString p = path.toLower();
+    return p.endsWith(".ino") || p.endsWith(".cpp");
 }
 
 
@@ -156,33 +156,50 @@ QList<ComponentInstance*> Project::boards() const {
 
 
 
-ComponentInstance* Project::activeBoard() const {
-    const QList<ComponentInstance*> all = boards();
-    for (ComponentInstance* b : all) if (!b->firmware.isEmpty()) return b;
-    return all.isEmpty() ? nullptr : all.first();
+QList<ComponentInstance*> Project::runningBoards() const {
+    QList<ComponentInstance*> out;
+    for (ComponentInstance* b : boards()) if (!b->firmware.isEmpty()) out.append(b);
+    return out;
 }
 
 
 
-RealBoard Project::realBoard() const {
-    return RealBoard::build(activeBoard(), rootComponent, wiring);
+RealBoard Project::realBoard(int uid) const {
+    ComponentInstance* b = componentMap.value(uid, nullptr);
+    return isBoard(b) ? RealBoard::build(b, rootComponent, wiring) : RealBoard();
+}
+
+
+
+QList<RealBoard> Project::realBoards() const {
+    QList<RealBoard> out;
+    for (ComponentInstance* b : boards()) out.append(RealBoard::build(b, rootComponent, wiring));
+    return out;
+}
+
+
+
+QList<Project::FirmwareJob> Project::firmwareJobs() const {
+    QList<FirmwareJob> jobs;
+    if (level == ProjectLevel::Real) {
+        for (ComponentInstance* b : runningBoards()) jobs.append({b->uid, b->name, b->firmware});
+    } else if (!activeSketchPath().isEmpty()) {
+        jobs.append({-1, "the ideal board", activeSketchPath()});
+    }
+    return jobs;
 }
 
 
 
 QString Project::activeSketchPath() const {
-    if (level == ProjectLevel::Real) {
-        ComponentInstance* b = activeBoard();
-        return b ? b->firmware : QString();
-    }
+    if (level == ProjectLevel::Real) return QString();
     if (currentScriptIdx < 0 || currentScriptIdx >= scriptPaths.size()) return QString();
     return scriptPaths[currentScriptIdx].toString();
 }
 
 
 
-QString Project::readActiveSketch() const {
-    const QString rel = activeSketchPath();
+QString Project::readSketch(const QString& rel) const {
     if (rel.isEmpty()) return {};
     QFile file(directoryPath + "/" + rel);
     if (!file.open(QFile::ReadOnly)) {
@@ -201,17 +218,17 @@ QString Project::pinsHeader() {
 
 
 
-QString Project::boardVariantHeader() const {
+QString Project::boardVariantHeader(int uid) const {
     if (level != ProjectLevel::Real) return QString();
-    const RealBoard rb = realBoard();
+    const RealBoard rb = realBoard(uid);
     return rb.isValid() ? rb.variantHeader() : QString();
 }
 
 
 
-QStringList Project::boardDefines() const {
+QStringList Project::boardDefines(int uid) const {
     if (level != ProjectLevel::Real) return {};
-    const RealBoard rb = realBoard();
+    const RealBoard rb = realBoard(uid);
     return rb.isValid() ? rb.defines() : QStringList();
 }
 
@@ -389,6 +406,10 @@ bool Project::loadProject(const QString& path) {
     setScript(scriptIdx);
 
     plotting = projectData["plotting"].toObject();
+    serialMonitorBauds.clear();
+    const QJsonObject monitor = projectData["serial_monitor"].toObject();
+    for (auto it = monitor.begin(); it != monitor.end(); ++it)
+        serialMonitorBauds.insert(it.key().toInt(), it.value().toObject()["baud"].toInt(9600));
 
     stage.setProjectDirectory(directoryPath);
     stage.setData(Stage::fromJson(projectData["stage"].toObject()));
@@ -421,6 +442,8 @@ void Project::unloadProject() {
     clear();
     projectData = QJsonObject();
     plotting = QJsonObject();
+    serialMonitorBauds.clear();
+    firmwareBinaries.clear();
     projectPath = "";
     directoryPath = "";
     currentScriptContent = "";
@@ -513,6 +536,11 @@ bool Project::saveProject() {
 
     if (plottingProvider) plotting = plottingProvider();
     projectData["plotting"] = plotting;
+    QJsonObject monitor;
+    for (auto it = serialMonitorBauds.begin(); it != serialMonitorBauds.end(); ++it)
+        monitor[QString::number(it.key())] = QJsonObject{{"baud", it.value()}};
+    if (monitor.isEmpty()) projectData.remove("serial_monitor");
+    else projectData["serial_monitor"] = monitor;
 
     QFile file(projectPath);
     if (!file.open(QFile::WriteOnly | QFile::Truncate)) {

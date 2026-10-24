@@ -6,7 +6,7 @@ The whole workflow on one page: build a robot from parts, program it, run it, an
 
 The **Hub** opens first.
 
-- **New Project** creates a project folder (`.rsproj` + a firmware sketch) and asks for the **level**: **Prototype** (an ideal controller wires every part for you; the default) or **Real** (you add a real board, an Uno or an ESP32-CAM, and wire it). See [wiring.md](wiring.md).
+- **New Project** creates a project folder (`.rsproj` + a firmware sketch) and asks for the **level**: **Prototype** (an ideal controller wires every part for you; the default) or **Real** (you add real boards, an Uno, an ESP32-CAM or both, and wire them). See [wiring.md](wiring.md).
 - **Open / Import Project** opens an existing `.rsproj`. Recent projects are listed on the right.
 - **Fetch Component Models** downloads or updates the standard part library.
 
@@ -22,7 +22,7 @@ A project folder holds:
 
 ## 2. Assemble the robot
 
-The editor has a central area that switches between the **3D viewport**, the **Script** editor and, at the Real level, the **Wiring** schematic (the small vertical switch next to **▶ PLAY** at the bottom-left, or **Ctrl+1** / **Ctrl+2** / **Ctrl+3**), plus the **Components** library, the **Scene Tree**, the **Inspector**, the **Output** log and the **Plot** panel.
+The editor has a central area that switches between the **3D viewport**, the **Script** editor and, at the Real level, the **Wiring** schematic (the small vertical switch next to **▶ PLAY** at the bottom-left, or **Ctrl+1** / **Ctrl+2** / **Ctrl+3**), plus the **Components** library, the **Scene Tree**, the **Inspector**, the **Output** log, the **Serial Monitor** and the **Plot** panel.
 
 1. Select the project in the **Scene Tree**. The Inspector shows a `root` slot with a **+**. Drag a part from the **Components** panel onto that **+**. This is your base part.
 2. Select a part. The Inspector lists its **connectors** (mounting points such as `horn`, `base`, `side_screw_left1`). Drag another part onto a connector's **+** to attach it.
@@ -56,7 +56,7 @@ void loop() {
 
 The Script view lists every project script on the left: a blue **M** marks a firmware sketch (it drives the robot), a green **S** a stage script (JavaScript; it drives props, see [stage.md](stage.md)). The active script of each kind, the one that runs on Play, is shown in bold. **+** creates a new firmware sketch or stage script. A project can hold several sketches; pick the active one in the Inspector (project selected, **Firmware**).
 
-- `Serial.print(...)` prints to the Output panel.
+- `Serial.print(...)` prints to the board's tab in the **Serial Monitor** (and to the Output panel). Typing into the monitor's line sends text to the sketch (`Serial.available()`, `Serial.readStringUntil('\n')`); at the Real level set the monitor's baud rate to the sketch's `Serial.begin()`.
 - `delay()`, `millis()` and the other time functions use **simulated time**, so they mean the same at any speed, even when your computer can't keep up.
 - What a part offers the firmware is what the real part offers: a servo has no position feedback, a DC motor no encoder. See the part's guide in this folder.
 
@@ -70,7 +70,7 @@ Press **▶ PLAY** at the bottom-left of the central area. Unsaved script edits 
 - The firmware runs in lockstep with the physics, like a microcontroller wired to the robot: the physics waits while your code runs, and your code waits during `delay()`. Heavy code makes the whole simulation run slower, never changes what the firmware sees.
 - Runs are repeatable: noise, dropped frames and other random effects come from the project's **Random Seed** (Inspector, project selected). The same seed gives exactly the same run; change it to try different luck.
 - Parts behave like cheap hardware: servos have deadband and noise, cameras drop frames and have latency, and so on.
-- At the Real level the active board runs its firmware slot with its own limits, the wiring checks go to the Output panel, and a part without power or ground stays dead. Supplies sag under load and a board resets on a brownout ([wiring.md](wiring.md#power)).
+- At the Real level every board runs the sketch in its firmware slot with its own limits, all on the same clock, and boards talk to each other over serial wires ([wiring.md](wiring.md#several-boards)); the wiring checks go to the Output panel, and a part without power or ground stays dead. Supplies sag under load and a board resets on a brownout ([wiring.md](wiring.md#power)).
 - **⏸ PAUSE** freezes physics, the firmware and the stage script (a running `delay()` resumes where it left off); **▶ RESUME** continues.
 - **⬛ STOP** returns to edit mode, resets the physics and the emulators, and stops the firmware and the stage script. Firmware crashes and stage script errors appear in the Output panel and stop that code until the next Play.
 

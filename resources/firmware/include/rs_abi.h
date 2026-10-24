@@ -73,8 +73,33 @@ RS_IMPORT(camera_init)  int32_t  rs_camera_init(int32_t sda_pin, int32_t format,
    low, high); returns the bytes written, 0 on timeout (2 s) or a short buf. */
 RS_IMPORT(camera_frame) int32_t  rs_camera_frame(int32_t sda_pin, uint8_t* buf, uint32_t cap, uint32_t* meta);
 
-/* ---- serial ---- */
-RS_IMPORT(serial_write) void     rs_serial_write(const char* data, uint32_t len);
+/* ---- serial ports ----
+   Ports: 0 = Serial, 1 = Serial1, 2 = Serial2 (the board's own), 16 and up =
+   SoftwareSerial instances (soft_serial_open). Serial is the board's USB port:
+   what it sends appears in the Serial Monitor and the Output panel, what is
+   typed in the monitor arrives on it. On a real board a byte takes 10 bits
+   at the baud rate on the wire (8N1), queued behind the bytes before it in
+   the board's TX buffer; a write waits while that buffer is full. The ideal
+   board's Serial is instant and works without begin(). */
+RS_IMPORT(serial_write) void     rs_serial_write(const char* data, uint32_t len);   /* = uart_write(0, ...) */
+/* rx/tx: pin numbers for a port whose pins are chosen in begin() (ESP32
+   Serial1/Serial2); -1 = the core's default. Returns 0, or -1 if the board
+   has no such port. */
+RS_IMPORT(uart_begin)   int32_t  rs_uart_begin(int32_t port, uint32_t baud, int32_t rx, int32_t tx);
+RS_IMPORT(uart_end)     void     rs_uart_end(int32_t port);
+RS_IMPORT(uart_write)   int32_t  rs_uart_write(int32_t port, const uint8_t* data, uint32_t len);
+RS_IMPORT(uart_available) int32_t rs_uart_available(int32_t port);
+RS_IMPORT(uart_read)    int32_t  rs_uart_read(int32_t port);    /* -1 if nothing has arrived */
+RS_IMPORT(uart_peek)    int32_t  rs_uart_peek(int32_t port);
+RS_IMPORT(uart_available_for_write) int32_t rs_uart_available_for_write(int32_t port);
+RS_IMPORT(uart_flush)   void     rs_uart_flush(int32_t port);   /* waits until everything is sent */
+/* Waits (simulated time) until a byte has arrived or the timeout passes: 1 or 0.
+   What Stream's timed reads (readStringUntil, parseInt, ...) poll with. */
+RS_IMPORT(uart_wait)    int32_t  rs_uart_wait(int32_t port, uint32_t timeout_us);
+/* SoftwareSerial: a port on any two pins; only the listening one receives. */
+RS_IMPORT(soft_serial_open) int32_t rs_soft_serial_open(int32_t rx, int32_t tx);
+RS_IMPORT(soft_serial_listen) int32_t rs_soft_serial_listen(int32_t port);   /* -1: stop listening; 1 if it switched */
+RS_IMPORT(soft_serial_overflow) int32_t rs_soft_serial_overflow(int32_t port);   /* and clears it */
 
 #ifdef __cplusplus
 }

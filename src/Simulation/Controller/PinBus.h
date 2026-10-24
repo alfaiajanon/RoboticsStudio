@@ -1,12 +1,25 @@
 #pragma once
 
 #include <QHash>
+#include <QList>
+#include <QPair>
 #include <QString>
+#include <cstdint>
 #include <vector>
+#include "Document/Netlist.h"
 
 class IdealBoard;
 class RealBoard;
-class Netlist;
+
+
+// One byte on a UART line (Real level: on the wire for 10 bits / baud).
+struct UartByte {
+    double start = 0.0;     // sim time its start bit begins
+    double arrival = 0.0;   // sim time its stop bit ends: a receiver has it from then on
+    double baud = 0.0;      // the sender's rate (a receiver at another rate reads garbage)
+    int sender = -1;        // board uid (-1: the ideal board)
+    uint8_t value = 0;
+};
 
 
 // What one pin carries right now. Ideal pins: no timer quantization, no
@@ -36,6 +49,20 @@ struct PinState {
     double srcV = 0.0, srcR = 0.0;   // Thevenin while connected
     double srcConn = 0.0;            // fraction of the time connected (EN PWM); 1 = always
     double amps = 0.0;               // current a load (motor) draws out of this net's source, last step
+
+    // Real level, several boards: the board whose gpio pin sets the
+    // electrical fields above, and the board that drives the net now (the
+    // first to write it; another board writing too is a conflict).
+    int boardUid = -1;
+    int writerUid = -2;              // -2 = nobody yet (-1 is the ideal board)
+    double maxBitrate = 0.0;         // through a level shifter: its rated bit rate (0 = no limit)
+
+    // A UART line on this net: the bytes in flight or not yet taken by every
+    // reader (absolute indexes start at uartBase), and each reader's cursor.
+    std::vector<UartByte> uart;
+    size_t uartBase = 0;
+    QHash<int, size_t> uartReaders;  // reader id -> next absolute index
+    QList<int> uartSenders;          // board uids that sent on this line
 };
 
 // What drives a net electrically: open (nothing, or a pin set as input), or a
@@ -65,23 +92,33 @@ struct PinSource {
 class PinBus {
     std::vector<PinState> states;
     QHash<QString, int> byPart;   // "uid:pinId" -> handle
-    QHash<int, int> byNumber;     // board number -> handle
+    QHash<quint64, int> byNumber; // (board uid, board number) -> handle
+    int nextReader = 0;
 
     static QString partKey(int uid, const QString& pinId) { return QString::number(uid) + ":" + pinId; }
+    static quint64 numberKey(int boardUid, int number) {
+        return (quint64(quint32(boardUid + 1)) << 32) | quint32(number);
+    }
     bool valid(int h) const { return h >= 0 && h < int(states.size()); }
+    void pruneUart(PinState& s);
 
     public:
-        // Prototype: one undriven pin per ideal-board pin; drops everything else.
+        // Prototype: one undriven pin per ideal-board pin (board uid -1);
+        // drops everything else.
         void build(const IdealBoard& board);
         // Real: one pin per net (every pin on the net shares it), plus one per
         // board pin with a number that has no wire. A part pin without a wire
         // gets its own pin from ensurePin(): nothing drives it, it floats.
-        void build(const RealBoard& board, const Netlist& netlist);
+        // `joins`: pin pairs whose nets are one signal (a powered level
+        // shifter's channels), each with its rated bit rate.
+        struct Join { PinRef a, b; double maxBitrate = 0.0; };
+        void build(const QList<RealBoard>& boards, const Netlist& netlist, const QList<Join>& joins = {});
         void clear();
 
         int handleOf(int uid, const QString& pinId) const;   // -1 if none
-        int handleForNumber(int boardNumber) const;          // -1 if no part has it
-        int numberOf(int h) const;                           // the board pin number of a handle, -1 if none
+        // A board's pin by its number (the ideal board: uid -1); -1 if none.
+        int handleForNumber(int boardUid, int boardNumber) const;
+        int numberOf(int h, int boardUid) const;             // that board's number for a handle, -1 if none
 
         // The board pin, or an off-board pin for a part pin that isn't typed
         // (so not on the board): scripts that reach the part directly keep
@@ -101,7 +138,13 @@ class PinBus {
         void writePulseUs(int h, double us, double periodUs = 0.0);
         bool pulse(int h, double* us) const;   // false unless pulses are being sent
         void release(int h);                   // stop driving (pulses stop, input floats)
-        void releaseBoardPins();               // every pin the firmware reaches (an MCU in reset: Hi-Z)
+        // Every pin a board's firmware reaches (an MCU in reset: Hi-Z).
+        void releaseBoardPins(int boardUid);
+
+        // A board starts driving the net. False if another board already
+        // drives it (both drive the net: a conflict the caller reports once).
+        bool claim(int h, int boardUid);
+        int writer(int h) const { return valid(h) ? states[h].writerUid : -2; }
 
         void writeLevel(int h, int level);
         int level(int h) const;
@@ -126,6 +169,20 @@ class PinBus {
         // The load current out of the net's source (a motor writes it, A).
         void setAmps(int h, double a);
         double amps(int h) const;
-        // Nets with a board gpio pin on them (for the pins' current).
-        std::vector<int> boardNets() const;
+        // Nets with one of this board's gpio pins on them (for the pins' current).
+        std::vector<int> boardNets(int boardUid) const;
+
+        // ---- UART lines (bytes on a net) ----
+        // How long a byte nobody has read yet stays on the line for a
+        // receiver that starts listening later in the same step (sim seconds).
+        static constexpr double kUartUnheard = 0.05;
+        void uartSend(int h, const UartByte& b);
+        // A receiver starts listening at sim time `now`: bytes already on
+        // the line before then are not its. Returns its reader id (-1: no pin).
+        int uartOpen(int h, double now);
+        void uartClose(int h, int reader);
+        // The reader's next byte that has fully arrived by `now`; false if none.
+        bool uartTake(int h, int reader, double now, UartByte* out);
+        // Board uids that have sent on the line (for "who drives this RX").
+        const QList<int>& uartSenders(int h) const;
 };

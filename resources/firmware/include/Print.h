@@ -1,7 +1,6 @@
 /*
- * Print.h: Arduino's Print (print/println of text and numbers) and the
- * Serial port. Serial output appears in the simulator's Output panel, one
- * entry per line.
+ * Print.h: Arduino's Print (print/println of text and numbers), then
+ * Stream and the serial ports (Stream.h).
  */
 #ifndef PRINT_H
 #define PRINT_H
@@ -47,23 +46,5 @@ class Print {
 };
 
 
-// The board's USB serial port. Nothing comes in on the ideal board yet.
-class HardwareSerial : public Print {
-    public:
-        void begin(unsigned long baud) { (void)baud; }
-        void begin(unsigned long baud, uint8_t config) { (void)baud; (void)config; }
-        void end() {}
-        int available() { return 0; }
-        int peek() { return -1; }
-        int read() { return -1; }
-        void flush() {}
-        explicit operator bool() const { return true; }
-
-        size_t write(uint8_t c) override;
-        size_t write(const uint8_t* data, size_t size) override;
-        using Print::write;
-};
-
-extern HardwareSerial Serial;
-
+#include "Stream.h"
 #endif   // PRINT_H

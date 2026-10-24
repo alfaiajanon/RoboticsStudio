@@ -63,6 +63,8 @@ class LockstepGate {
         // tag prefixes log messages ("MCU", "STAGE"); abort interrupts the
         // running code (thread-safe; called by the watchdog).
         LockstepGate(const QString& tag, std::function<void()> abort);
+        // Between runs: the name in its messages (a board's name).
+        void setTag(const QString& t) { tag = t; }
 
         // Any thread. Clears the stop/watchdog flags and the clock; Idle.
         // Only while the controller is out of its code (see waitUntilOutOfCall).
@@ -103,4 +105,6 @@ class LockstepGate {
         double micros();
         // Controller thread: the clock, uncharged.
         double now() const { return mcuTime - origin; }
+        // Controller thread: the absolute sim time (shared by every controller), uncharged.
+        double simTime() const { return mcuTime; }
 };

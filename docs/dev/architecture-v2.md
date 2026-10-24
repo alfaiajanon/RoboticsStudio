@@ -121,6 +121,8 @@ flowchart LR
 
 **Built (Phase 2, pass 2: motor drivers):** the DC motor is a two-terminal circuit at the Real level (pin types `motor` / `motor_out`); `PinBus` carries each net's source (a driver output, a board pin with the board's `pin_output_ohm`, ground) and the current back; `HBridgeEmulatorCpp` (L298N, TB6612FNG modules) with the datasheets' drops and truth tables; a pin's current over `pin_abs_max_ma` is warned about and loads the board's rail; design rules for motor-to-pin wiring, shorted outputs, per-channel current, L298N jumpers, and the stall current through drivers in the budget. Prototype behaviour is unchanged (same torque table). Demo: `DC Motor` / `DC Motor (Uno)`.
 
+**Built (Phase 2, pass 3: several boards, UART):** every board with a sketch runs, in lockstep on the one clock (stepped in uid order). UART is byte-level on the nets: a byte is on the wire for 10 bits / baud, through the board's TX/RX buffers (`board.uart`); a baud mismatch reads garbage; SoftwareSerial (Uno) and Serial1/Serial2 on any pins (ESP32). A BSS138 level shifter (`models/interface/level_shifter_bss138`) joins its channels' nets while powered. Design rules: board-to-board links are not shorts; TX to TX, logic levels between boards, common ground between linked boards, the shifter's sides. Demo: `Robot arm (ESP32-CAM + Uno)`.
+
 ## 5. Boards
 
 A board is a component like any other, with many pins and a **firmware slot** (the sketch it runs, a file in the project). At the Real level the user adds boards from the component library like any other part, as many as the robot needs. Its `.rsdef` lists the pin capabilities: PWM-capable pins, interrupt pins, ADC channels and resolution, I2C/SPI/UART pins, logic voltage (3.3 V / 5 V), and regulator current.
@@ -156,7 +158,7 @@ Rules:
 
 - The robot's firmware is C++ against the Arduino API, compiled in the app to WebAssembly with a bundled toolchain (wasi-sdk clang) and run in an embedded runtime (WAMR: C, small, fast interpreter).
 - **Built (Prototype level, first milestone):** `Simulation/Firmware/FirmwareRuntime` (WAMR 2.4.5, `extern/wamr`, built by `cmake/wamr/`) and `FirmwareCompiler` (wasi-sdk 34, fetched by `tools/fetch_wasi_sdk.sh`, a trimmed copy bundled in the AppImage); the core in `resources/firmware` (`rs_abi.h` imports, `Arduino.h`, `Print`/`Serial`, `String`, `Servo`); pins through `Simulation/Controller/PinBus` from `Document/IdealBoard` (`robot_pins.h`). Not yet: `Wire.h` and the part libraries. User guide: [docs/user/firmware.md](../user/firmware.md).
-- **Arduino core shim:** `setup()`/`loop()`, `pinMode`, `digitalRead`/`digitalWrite`, `analogRead`/`analogWrite`, `millis`, `micros`, `delay`, `Serial` (to the Output panel), `Servo.h`, `Wire.h`, plus libraries for the shipped parts (MPU6050, PCA9685, camera, display). Everything goes through the board's pins and the netlist.
+- **Arduino core shim:** `setup()`/`loop()`, `pinMode`, `digitalRead`/`digitalWrite`, `analogRead`/`analogWrite`, `millis`, `micros`, `delay`, `Serial`/`Serial1`/`Serial2`/`SoftwareSerial` with `Stream` (to and from the Serial Monitor and other boards, baud-timed at the Real level), `Servo.h`, `Wire.h`, plus libraries for the shipped parts (MPU6050, PCA9685, camera, display). Everything goes through the board's pins and the netlist.
 - **Prototype convenience:** the same sketch structure; parts are reached through generated pin names (`robot_pins.h`: `COMP_<uid>_<PIN>`, plus `<NAME>_<PIN>` for uniquely named parts), because the ideal board has no physical pins. At the Real level a sketch uses the board's own pins (section 2); a Real copy keeps the names in a `robot_pins.h` the user owns. (Settled 2026-10-19 instead of `comp_N` handles; Real-level pins settled 2026-10-21.)
 - **Transfer rule:** every demo sketch must also compile with `arduino-cli` for its real board. CI checks this.
 - **JavaScript** stays only for stage scripts (the `QJSEngine` stage controller, `prop_<id>` and `robot`). Done in Phase 7: robot JS scripts were removed and the demos ported to C++.
@@ -177,7 +179,8 @@ Built in Phase 2 (core slice); user guide: [wiring.md](../user/wiring.md).
 - The New Project dialog asks for the **level** (Prototype by default). A Real project starts with no board.
 - The level lives in the project settings (Inspector, nothing selected, above the firmware list) and in a HUD badge in the 3D view ("Prototype · ideal board", "Real · Uno"); clicking the badge opens the settings. The level is shown, not switched; a Prototype project has **Create Real copy...** there.
 - Selecting a board shows its firmware slot (pick a sketch, open it) and what is wired to each of its pins. The first board added at the Real level takes over the Prototype sketch.
-- Still to come: the migration wizard (Prototype → Real), several boards running at once (with UART), Serial tagged by board.
+- **Built (Phase 2, pass 3):** several boards running at once (each with its own `FirmwareRuntime`, thread and DeviceBus master), UART between them at the byte level, Output tagged by board, the **Serial Monitor** (`View/Panels/SerialMonitorPanel`, a tab next to Output: one tab per running board, input line, line ending, baud rate saved per board in the `.rsproj`). User guide: [wiring.md](../user/wiring.md#several-boards).
+- Still to come: the migration wizard (Prototype → Real).
 
 ## 10. What stays and what changes
 

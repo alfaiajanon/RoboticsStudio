@@ -532,19 +532,35 @@ void InspectorPanel::build_pins(ComponentInstance* comp) {
         return;
     }
     const bool real = project->getLevel() == ProjectLevel::Real;
-    const RealBoard board = real ? project->realBoard() : RealBoard();
-    const QList<BoardPin> pins = real ? board.pinsOf(comp->uid) : project->idealBoard().pinsOf(comp->uid);
+    // Real: the pins on every board this part is wired to (usually one).
+    QList<BoardPin> pins;
+    QHash<int, QString> boardName;   // board uid of each pin -> its name
+    QStringList wiredTo;
+    if (real) {
+        for (const RealBoard& rb : project->realBoards()) {
+            const QList<BoardPin> on = rb.pinsOf(comp->uid);
+            if (on.isEmpty()) continue;
+            wiredTo << rb.instance()->name;
+            for (const BoardPin& p : on) {
+                pins.append(p);
+                boardName.insert(int(pins.size()) - 1, rb.instance()->name);
+            }
+        }
+    } else {
+        pins = project->idealBoard().pinsOf(comp->uid);
+    }
     if (pins.isEmpty() && !real) return;
 
-    QGroupBox* box = new QGroupBox(real ? QString("Pins (wired to %1)").arg(board.isValid() ? board.instance()->name : "no board")
+    QGroupBox* box = new QGroupBox(real ? QString("Pins (wired to %1)").arg(wiredTo.isEmpty() ? QString("no board") : wiredTo.join(", "))
                                         : QString("Pins (ideal board)"), this);
     box->setToolTip(real ? "The board pins this part is wired to: use the number in the sketch, e.g. servo.attach(9)"
                          : "Use these names in the sketch, e.g. servo.attach(COMP_6_SIGNAL); they come from robot_pins.h");
     QFormLayout* form = new QFormLayout(box);
-    for (const BoardPin& p : pins) {
+    for (int i = 0; i < pins.size(); ++i) {
+        const BoardPin& p = pins[i];
         QString text;
         if (real) {
-            text = QString("%1 %2 = pin %3").arg(board.instance()->name, p.boardPinId.toUpper()).arg(p.number);
+            text = QString("%1 %2 = pin %3").arg(boardName.value(i), p.boardPinId.toUpper()).arg(p.number);
         } else {
             text = QString("%1 = %2").arg(p.constant).arg(p.number);
             if (!p.alias.isEmpty()) text += QString("  (or %1)").arg(p.alias);
@@ -595,8 +611,8 @@ void InspectorPanel::build_board(ComponentInstance* comp) {
     form->addRow("Firmware:", slot);
     form->addRow("Compiles for:", createShrinkableLabel(def.fqbn, box));
     form->addRow("Logic:", createShrinkableLabel(QString("%1 V, ADC %2-bit").arg(def.logicVoltage).arg(def.adcBits), box));
-    if (project->activeBoard() != comp)
-        form->addRow(createShrinkableLabel("Idle: one board runs at a time until boards can talk to each other (UART).", box));
+    if (comp->firmware.isEmpty())
+        form->addRow(createShrinkableLabel("Idle: pick a sketch for it to run. Every board with a sketch runs at Play, all at once.", box));
 
     const int uid = comp->uid;
     connect(combo, &QComboBox::currentIndexChanged, this, [combo, uid]() {

@@ -5,12 +5,16 @@
 #include <QSet>
 #include <QString>
 #include <atomic>
+#include <deque>
+#include <QMap>
 #include <vector>
 #include "Simulation/Controller/RobotController.h"
 
 class PinBus;
 class DeviceBus;
+class SerialHub;
 class RealBoard;
+struct UartByte;
 
 
 // What the board under the firmware can do. The ideal board (Prototype) does
@@ -18,6 +22,7 @@ class RealBoard;
 // level, from its .rsdef "board" block and pin caps) has its own limits.
 struct BoardProfile {
     bool ideal = true;
+    int uid = -1;                     // the board component (-1: the ideal board)
     QString name = "the ideal board";
     QHash<int, QStringList> caps;     // pin number -> capabilities (real boards)
     QHash<int, double> pwmHz;         // pin number -> analogWrite frequency, where it differs
@@ -26,6 +31,17 @@ struct BoardProfile {
     double adcVref = 5.0;
     double i2cDefaultHz = 100000.0;
     double spiMaxHz = 8e6;
+    // Serial ports (from the board's "uart" block; the ideal board: Serial,
+    // USB only, instant). Pins as board numbers, -1 on a matrix port.
+    struct Uart {
+        QString name;
+        int rx = -1, tx = -1;
+        bool usb = false, matrix = false;
+    };
+    QList<Uart> uarts{Uart{"Serial", -1, -1, true, false}};
+    int uartRxBuffer = 64, uartTxBuffer = 64;
+    double softSerialMaxRxBaud = 0.0;   // 0: no SoftwareSerial on this core
+    QHash<int, QString> peers;          // the other boards' names by uid (messages)
 
     bool can(int pin, const QString& cap) const { return ideal || caps.value(pin).contains(cap); }
     double pwmPeriodUs(int pin) const { return 1e6 / (ideal ? 490.0 : pwmHz.value(pin, defaultPwmHz)); }
@@ -58,6 +74,29 @@ class FirmwareRuntime : public RobotController {
     QString tag;
     PinBus* pins = nullptr;
     DeviceBus* devices = nullptr;
+    SerialHub* hub = nullptr;
+    int master = -1;   // this board's master on the DeviceBus
+
+    // A serial port: Serial/Serial1/Serial2 (ids 0..2) or a SoftwareSerial
+    // (ids from 16). Controller thread only.
+    struct Port {
+        QString name;
+        bool usb = false, soft = false, matrix = false;
+        int fixedRx = -1, fixedTx = -1;   // board pin numbers of a fixed port
+        bool begun = false;
+        double baud = 0.0;
+        int txH = -1, rxH = -1, reader = -1;
+        double txEnd = 0.0;               // sim time the last queued byte is sent
+        std::deque<uint8_t> rx;
+        bool overflow = false;            // SoftwareSerial::overflow()
+    };
+    QMap<int, Port> ports;
+    int listening = -1;                   // the SoftwareSerial that receives
+    int nextSoft = 16;
+    void resetPorts();
+    Port* port(int id, const char* what);
+    void pull(int id, Port& p);
+    void deliver(Port& p, const UartByte& b);
 
     // Kept alive while the module is loaded (WAMR reads from it).
     std::vector<uint8_t> binary;
@@ -90,7 +129,8 @@ class FirmwareRuntime : public RobotController {
         // UI thread, between runs: replace the firmware and start it at sim
         // time 0 (due on the first step). False (and logged) if it can't run.
         bool load(const QByteArray& wasm, PinBus* pinBus, DeviceBus* deviceBus = nullptr,
-                  const BoardProfile& profile = BoardProfile());
+                  const BoardProfile& profile = BoardProfile(), SerialHub* serialHub = nullptr);
+        int boardUid() const { return board.uid; }
         bool isLoaded() const { return instance != nullptr; }
 
         bool runCycle() override;
@@ -109,6 +149,10 @@ class FirmwareRuntime : public RobotController {
         // ---- for the native functions (controller thread) ----
         LockstepGate& clock() { return gate; }
         int pinHandle(int pin, const char* what);   // -1 (logged once) if no part has it
+        // The same for a pin the firmware drives: claims the net for this
+        // board (another board driving it too is warned about once).
+        int outHandle(int pin, const char* what);
+        int busMaster() const { return master; }
         int pinMode(int pin) const { return pinModes.value(pin, 0); }
         void setPinMode(int pin, int mode) { pinModes[pin] = mode; }
         QHash<int, int>& cameraFormat() { return cameraFormats; }
@@ -125,4 +169,19 @@ class FirmwareRuntime : public RobotController {
         // Text from the firmware: Serial (MCU) or stdout/stderr, logged per line.
         void appendText(int stream, const char* data, uint32_t len);
         enum Stream { SerialStream = 0, StdoutStream = 1, StderrStream = 2 };
+
+        // Serial ports (the uart_* natives). A real board sends each byte in
+        // 10 bits / baud of sim time behind the ones before it; the ideal board
+        // at once. Returns as the Arduino calls do.
+        bool uartBegin(int id, double baud, int rxPin, int txPin);
+        void uartEnd(int id);
+        int uartWrite(int id, const uint8_t* data, int len);
+        int uartAvailable(int id);
+        int uartRead(int id, bool peek);
+        int uartAvailableForWrite(int id);
+        void uartFlush(int id);
+        bool uartWait(int id, double timeout);   // until a byte is there (Stream's timeouts)
+        int softOpen(int rxPin, int txPin);
+        bool softListen(int id);
+        bool softOverflow(int id);
 };

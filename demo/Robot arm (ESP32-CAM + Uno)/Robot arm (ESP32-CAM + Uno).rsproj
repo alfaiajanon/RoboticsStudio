@@ -1,0 +1,673 @@
+{
+    "assembly": {
+        "components": [
+            {
+                "connection": {
+                    "parent_connector": "base",
+                    "parent_uid": 18,
+                    "self_connector": "base",
+                    "snap_angle": 0
+                },
+                "model_id": "servo_mg996r",
+                "name": "Yaw",
+                "parameters": {
+                    "servo_joint": 0
+                },
+                "uid": 1
+            },
+            {
+                "connection": {
+                    "parent_connector": "horn",
+                    "parent_uid": 1,
+                    "self_connector": "back_outside_1",
+                    "snap_angle": 0
+                },
+                "model_id": "joints_multipurpose_bracket",
+                "name": "Multipurpose Bracket (5)",
+                "parameters": {
+                },
+                "uid": 5
+            },
+            {
+                "connection": {
+                    "parent_connector": "arm_left_inside",
+                    "parent_uid": 5,
+                    "self_connector": "side_screw_left2",
+                    "snap_angle": 0
+                },
+                "model_id": "servo_mg996r",
+                "name": "Shoulder",
+                "parameters": {
+                    "servo_joint": 81
+                },
+                "uid": 6
+            },
+            {
+                "connection": {
+                    "parent_connector": "horn",
+                    "parent_uid": 6,
+                    "self_connector": "left_inside",
+                    "snap_angle": 0
+                },
+                "model_id": "joints_long_u_bracket",
+                "name": "Long U-Bracket (7)",
+                "parameters": {
+                },
+                "uid": 7
+            },
+            {
+                "connection": {
+                    "parent_connector": "base_outside",
+                    "parent_uid": 7,
+                    "self_connector": "base_outside",
+                    "snap_angle": 0
+                },
+                "model_id": "joints_long_u_bracket",
+                "name": "Long U-Bracket (8)",
+                "parameters": {
+                },
+                "uid": 8
+            },
+            {
+                "connection": {
+                    "parent_connector": "left_inside",
+                    "parent_uid": 8,
+                    "self_connector": "horn",
+                    "snap_angle": -90
+                },
+                "model_id": "servo_mg996r",
+                "name": "Elbow",
+                "parameters": {
+                    "servo_joint": 34
+                },
+                "uid": 11
+            },
+            {
+                "connection": {
+                    "parent_connector": "side_screw_left2",
+                    "parent_uid": 11,
+                    "self_connector": "arm_left_inside",
+                    "snap_angle": 0
+                },
+                "model_id": "joints_multipurpose_bracket",
+                "name": "Multipurpose Bracket (13)",
+                "parameters": {
+                },
+                "uid": 13
+            },
+            {
+                "connection": {
+                    "parent_connector": "back_outside_1",
+                    "parent_uid": 13,
+                    "self_connector": "base_outside",
+                    "snap_angle": 0
+                },
+                "model_id": "joints_long_u_bracket",
+                "name": "Long U-Bracket (14)",
+                "parameters": {
+                },
+                "uid": 14
+            },
+            {
+                "connection": {
+                    "parent_connector": "left_inside",
+                    "parent_uid": 14,
+                    "self_connector": "left_outside",
+                    "snap_angle": 0
+                },
+                "model_id": "joints_long_u_bracket",
+                "name": "Long U-Bracket (16)",
+                "parameters": {
+                },
+                "uid": 16
+            },
+            {
+                "connection": {
+                    "parent_connector": "root",
+                    "parent_uid": 0,
+                    "self_connector": "",
+                    "snap_angle": 0
+                },
+                "model_id": "base",
+                "name": "Base (18)",
+                "parameters": {
+                },
+                "uid": 18
+            },
+            {
+                "connection": {
+                    "parent_connector": "base_outside",
+                    "parent_uid": 16,
+                    "self_connector": "general",
+                    "snap_angle": -90
+                },
+                "firmware": "script/arm_vision/arm_vision.ino",
+                "model_id": "esp32_cam",
+                "name": "ESP32-CAM",
+                "parameters": {
+                },
+                "uid": 19
+            },
+            {
+                "connection": {
+                    "parent_connector": "battery",
+                    "parent_uid": 18,
+                    "self_connector": "base",
+                    "snap_angle": 90
+                },
+                "model_id": "battery_lipo_2s",
+                "name": "LiPo 2S",
+                "parameters": {
+                },
+                "uid": 20
+            },
+            {
+                "connection": {
+                    "parent_connector": "top",
+                    "parent_uid": 20,
+                    "self_connector": "base",
+                    "snap_angle": 0
+                },
+                "model_id": "buck_lm2596",
+                "name": "Buck 5V",
+                "parameters": {
+                },
+                "uid": 21
+            },
+            {
+                "connection": {
+                    "parent_connector": "top",
+                    "parent_uid": 21,
+                    "self_connector": "base",
+                    "snap_angle": 0
+                },
+                "firmware": "script/arm_servos/arm_servos.ino",
+                "model_id": "arduino_uno",
+                "name": "Uno",
+                "parameters": {
+                },
+                "uid": 22
+            },
+            {
+                "connection": {
+                    "parent_connector": "top",
+                    "parent_uid": 22,
+                    "self_connector": "base",
+                    "snap_angle": 0
+                },
+                "model_id": "level_shifter_bss138",
+                "name": "Level shifter",
+                "parameters": {
+                },
+                "uid": 23
+            }
+        ],
+        "constraints": [
+        ],
+        "transform": {
+            "rotation": [
+                0,
+                0,
+                0
+            ]
+        }
+    },
+    "level": "real",
+    "meta": {
+        "author": "",
+        "icon": "logo.png",
+        "name": "Robot arm (ESP32-CAM + Uno)",
+        "version": "1.0.0"
+    },
+    "plotting": {
+        "canvases": [
+            {
+                "enabled": true,
+                "name": "New Plot",
+                "targets": [
+                    {
+                        "color": "#ff5500",
+                        "signal": "current_angle_real",
+                        "uid": 6
+                    },
+                    {
+                        "color": "#ffffff",
+                        "signal": "target_angle",
+                        "uid": 6
+                    }
+                ],
+                "type": "scalar"
+            },
+            {
+                "enabled": true,
+                "name": "New Plot",
+                "targets": [
+                    {
+                        "signal": "image",
+                        "uid": 19
+                    }
+                ],
+                "type": "image"
+            }
+        ],
+        "motion": {
+            "targets": [
+            ]
+        }
+    },
+    "schema": 3,
+    "script": {
+        "current": 0,
+        "paths": [
+            "script/arm_vision/arm_vision.ino",
+            "script/arm_servos/arm_servos.ino"
+        ]
+    },
+    "serial_monitor": {
+        "19": {
+            "baud": 115200
+        },
+        "22": {
+            "baud": 115200
+        }
+    },
+    "stage": {
+        "environment": {
+            "ambient": [
+                0.1,
+                0.1,
+                0.1
+            ],
+            "fog": {
+                "color": [
+                    0.5,
+                    0.5,
+                    0.5
+                ],
+                "enabled": false,
+                "end": 1,
+                "start": 0
+            },
+            "gravity": [
+                0,
+                0,
+                -9.81
+            ],
+            "headlight": [
+                0.4,
+                0.4,
+                0.4
+            ],
+            "light": {
+                "castShadow": true,
+                "diffuse": [
+                    0.8,
+                    0.8,
+                    0.8
+                ],
+                "dir": [
+                    0,
+                    0,
+                    -1
+                ]
+            },
+            "shadowSize": 4096,
+            "skyBottom": [
+                0,
+                0,
+                0
+            ],
+            "skyTop": [
+                0.4,
+                0.6,
+                0.8
+            ],
+            "timestep": 0.002
+        },
+        "floor": {
+            "color1": [
+                0.2,
+                0.3,
+                0.4
+            ],
+            "color2": [
+                0.1,
+                0.15,
+                0.2
+            ],
+            "euler": [
+                0,
+                0,
+                0
+            ],
+            "file": "",
+            "friction": [
+                1,
+                0.005,
+                1e-04
+            ],
+            "pattern": "checker",
+            "pos": [
+                0,
+                0,
+                0
+            ],
+            "scale": [
+                1,
+                1,
+                1
+            ],
+            "texRepeat": 11.1,
+            "type": "plane"
+        },
+        "props": [
+            {
+                "control": {
+                    "maxSpeed": 1,
+                    "maxYawRate": 180,
+                    "response": 100
+                },
+                "euler": [
+                    0,
+                    0,
+                    0
+                ],
+                "friction": [
+                    1,
+                    0.005,
+                    1e-04
+                ],
+                "id": "sp1",
+                "mass": 0.2,
+                "motion": "controlled",
+                "pos": [
+                    0.3,
+                    0,
+                    0.1
+                ],
+                "rgba": [
+                    0.8,
+                    0.5,
+                    0.2,
+                    1
+                ],
+                "shape": "sphere",
+                "size": [
+                    0.015,
+                    0,
+                    0
+                ]
+            }
+        ],
+        "robotSpawn": [
+            0,
+            0,
+            0
+        ],
+        "script": {
+            "current": 0,
+            "paths": [
+                "script/stage.js"
+            ]
+        }
+    },
+    "version": "0.3.0-alpha",
+    "wiring": {
+        "layout": {
+            "1": [
+                -320,
+                0
+            ],
+            "11": [
+                -320,
+                240
+            ],
+            "19": [
+                0,
+                0
+            ],
+            "20": [
+                360,
+                0
+            ],
+            "21": [
+                360,
+                160
+            ],
+            "22": [
+                -20,
+                330
+            ],
+            "23": [
+                330,
+                330
+            ],
+            "6": [
+                -320,
+                120
+            ]
+        },
+        "wires": [
+            {
+                "a": {
+                    "pin": "5v",
+                    "uid": 19
+                },
+                "b": {
+                    "pin": "vcc",
+                    "uid": 1
+                }
+            },
+            {
+                "a": {
+                    "pin": "gnd",
+                    "uid": 19
+                },
+                "b": {
+                    "pin": "gnd",
+                    "uid": 1
+                }
+            },
+            {
+                "a": {
+                    "pin": "5v",
+                    "uid": 19
+                },
+                "b": {
+                    "pin": "vcc",
+                    "uid": 6
+                }
+            },
+            {
+                "a": {
+                    "pin": "gnd",
+                    "uid": 19
+                },
+                "b": {
+                    "pin": "gnd",
+                    "uid": 6
+                }
+            },
+            {
+                "a": {
+                    "pin": "5v",
+                    "uid": 19
+                },
+                "b": {
+                    "pin": "vcc",
+                    "uid": 11
+                }
+            },
+            {
+                "a": {
+                    "pin": "gnd",
+                    "uid": 19
+                },
+                "b": {
+                    "pin": "gnd",
+                    "uid": 11
+                }
+            },
+            {
+                "a": {
+                    "pin": "plus",
+                    "uid": 20
+                },
+                "b": {
+                    "pin": "in",
+                    "uid": 21
+                }
+            },
+            {
+                "a": {
+                    "pin": "minus",
+                    "uid": 20
+                },
+                "b": {
+                    "pin": "gnd_in",
+                    "uid": 21
+                }
+            },
+            {
+                "a": {
+                    "pin": "out",
+                    "uid": 21
+                },
+                "b": {
+                    "pin": "5v",
+                    "uid": 19
+                }
+            },
+            {
+                "a": {
+                    "pin": "gnd_out",
+                    "uid": 21
+                },
+                "b": {
+                    "pin": "gnd",
+                    "uid": 19
+                }
+            },
+            {
+                "a": {
+                    "pin": "d9",
+                    "uid": 22
+                },
+                "b": {
+                    "pin": "signal",
+                    "uid": 1
+                }
+            },
+            {
+                "a": {
+                    "pin": "d10",
+                    "uid": 22
+                },
+                "b": {
+                    "pin": "signal",
+                    "uid": 6
+                }
+            },
+            {
+                "a": {
+                    "pin": "d11",
+                    "uid": 22
+                },
+                "b": {
+                    "pin": "signal",
+                    "uid": 11
+                }
+            },
+            {
+                "a": {
+                    "pin": "gnd",
+                    "uid": 22
+                },
+                "b": {
+                    "pin": "gnd2",
+                    "uid": 19
+                }
+            },
+            {
+                "a": {
+                    "pin": "3v3",
+                    "uid": 19
+                },
+                "b": {
+                    "pin": "lv",
+                    "uid": 23
+                }
+            },
+            {
+                "a": {
+                    "pin": "5v",
+                    "uid": 22
+                },
+                "b": {
+                    "pin": "hv",
+                    "uid": 23
+                }
+            },
+            {
+                "a": {
+                    "pin": "gnd2",
+                    "uid": 22
+                },
+                "b": {
+                    "pin": "gnd",
+                    "uid": 23
+                }
+            },
+            {
+                "a": {
+                    "pin": "gnd3",
+                    "uid": 19
+                },
+                "b": {
+                    "pin": "gnd2",
+                    "uid": 23
+                }
+            },
+            {
+                "a": {
+                    "pin": "io14",
+                    "uid": 19
+                },
+                "b": {
+                    "pin": "lv1",
+                    "uid": 23
+                }
+            },
+            {
+                "a": {
+                    "pin": "hv1",
+                    "uid": 23
+                },
+                "b": {
+                    "pin": "d2",
+                    "uid": 22
+                }
+            },
+            {
+                "a": {
+                    "pin": "d3",
+                    "uid": 22
+                },
+                "b": {
+                    "pin": "hv2",
+                    "uid": 23
+                }
+            },
+            {
+                "a": {
+                    "pin": "lv2",
+                    "uid": 23
+                },
+                "b": {
+                    "pin": "io15",
+                    "uid": 19
+                }
+            }
+        ]
+    }
+}

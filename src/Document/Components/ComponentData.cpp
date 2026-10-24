@@ -960,6 +960,28 @@ static BoardDef parseBoard(const QJsonObject& b, const QList<PinDef>& pins, Load
         board.variantPins[it.key()] = it.value().toInt();
     }
     for (const QJsonValue& v : variant["defines"].toArray()) board.defines << v.toString();
+    const QJsonObject uart = b["uart"].toObject();
+    for (const QJsonValue& v : uart["ports"].toArray()) {
+        const QJsonObject u = v.toObject();
+        UartPortDef port;
+        port.name = readString(u, "name", "board.uart.ports", err, true);
+        port.rx = u["rx"].toString();
+        port.tx = u["tx"].toString();
+        port.usb = u["usb"].toBool(false);
+        port.matrix = u["matrix"].toBool(false);
+        if (!err.has() && !QRegularExpression("^[A-Za-z_][A-Za-z0-9_]*$").match(port.name).hasMatch())
+            err.set(QString("board.uart.ports: '%1' is not a C++ name").arg(port.name));
+        if (!err.has() && port.matrix && (!port.rx.isEmpty() || !port.tx.isEmpty()))
+            err.set(QString("board.uart.ports: '%1' is a matrix port: its pins are chosen in begin(), not listed").arg(port.name));
+        if (!err.has() && !port.matrix && (port.rx.isEmpty() || port.tx.isEmpty()))
+            err.set(QString("board.uart.ports: '%1' needs 'rx' and 'tx'").arg(port.name));
+        if (!err.has() && board.uart(port.name)) err.set(QString("board.uart.ports: '%1' is listed twice").arg(port.name));
+        board.uarts.append(port);
+    }
+    board.uartRxBuffer = int(readNumber(uart, "rx_buffer", "board.uart", err, false, 64));
+    board.uartTxBuffer = int(readNumber(uart, "tx_buffer", "board.uart", err, false, 64));
+    board.softSerialMaxRxBaud = readNumber(uart["software_serial"].toObject(), "max_rx_baud", "board.uart.software_serial", err, false, 0.0);
+    if (!err.has() && (board.uartRxBuffer < 1 || board.uartTxBuffer < 1)) err.set("board.uart: 'rx_buffer' and 'tx_buffer' must be >= 1");
     const QJsonObject src = b["sources"].toObject();
     for (auto it = src.begin(); it != src.end(); ++it) board.sources[it.key()] = it.value().toString();
     if (err.has()) return board;
@@ -979,6 +1001,10 @@ static BoardDef parseBoard(const QJsonObject& b, const QList<PinDef>& pins, Load
     checkPin(board.spiMosi, "spi_mosi", "spi.mosi");
     checkPin(board.spiMiso, "spi_miso", "spi.miso");
     for (const QString& id : board.analogWriteHzByPin.keys()) checkPin(id, "pwm", "analog_write.pins");
+    for (const UartPortDef& u : board.uarts) {
+        checkPin(u.rx, "uart_rx", "uart.ports." + u.name + ".rx");
+        checkPin(u.tx, "uart_tx", "uart.ports." + u.name + ".tx");
+    }
     return board;
 }
 
@@ -1009,6 +1035,19 @@ static QJsonObject boardToJson(const BoardDef& b) {
     }
     if (b.pinOutputOhm > 0.0) o["pin_output_ohm"] = b.pinOutputOhm;
     if (b.pinAbsMaxA > 0.0) o["pin_abs_max_ma"] = b.pinAbsMaxA * 1000.0;
+    if (!b.uarts.isEmpty() || b.softSerialMaxRxBaud > 0.0) {
+        QJsonArray ports;
+        for (const UartPortDef& u : b.uarts) {
+            QJsonObject po{{"name", u.name}};
+            if (u.matrix) po["matrix"] = true;
+            else { po["rx"] = u.rx; po["tx"] = u.tx; }
+            if (u.usb) po["usb"] = true;
+            ports.append(po);
+        }
+        QJsonObject uart{{"ports", ports}, {"rx_buffer", b.uartRxBuffer}, {"tx_buffer", b.uartTxBuffer}};
+        if (b.softSerialMaxRxBaud > 0.0) uart["software_serial"] = QJsonObject{{"max_rx_baud", b.softSerialMaxRxBaud}};
+        o["uart"] = uart;
+    }
     if (!b.variantPins.isEmpty() || !b.defines.isEmpty()) {
         QJsonObject vpins;
         for (auto it = b.variantPins.begin(); it != b.variantPins.end(); ++it) vpins[it.key()] = it.value();

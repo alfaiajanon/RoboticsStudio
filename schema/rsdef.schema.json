@@ -85,6 +85,31 @@
                 "logic_voltage": { "type": "number", "description": "Volts on a HIGH output" },
                 "pin_output_ohm": { "type": "number", "minimum": 0, "description": "A gpio pin's output resistance as a source/sink (from the VOH/VOL vs current curves)" },
                 "pin_abs_max_ma": { "type": "number", "minimum": 0, "description": "A gpio pin's absolute maximum current" },
+                "uart": {
+                    "type": "object", "additionalProperties": false,
+                    "description": "The board's serial ports (the core's Serial objects), their buffers and SoftwareSerial's limit",
+                    "properties": {
+                        "ports": {
+                            "type": "array",
+                            "items": {
+                                "type": "object", "required": ["name"], "additionalProperties": false,
+                                "properties": {
+                                    "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$", "description": "the core's object: Serial, Serial1, ..." },
+                                    "rx": { "type": "string", "description": "pin id with 'uart_rx' (fixed port)" },
+                                    "tx": { "type": "string", "description": "pin id with 'uart_tx' (fixed port)" },
+                                    "usb": { "type": "boolean", "description": "also wired to the board's USB-serial chip (the Serial Monitor)" },
+                                    "matrix": { "type": "boolean", "description": "pins chosen in begin(baud, config, rx, tx) (ESP32 GPIO matrix); no rx/tx here" }
+                                }
+                            }
+                        },
+                        "rx_buffer": { "type": "integer", "minimum": 1, "description": "receive buffer, bytes (AVR core: 64)" },
+                        "tx_buffer": { "type": "integer", "minimum": 1, "description": "transmit buffer, bytes; print() waits while it is full" },
+                        "software_serial": {
+                            "type": "object", "additionalProperties": false,
+                            "properties": { "max_rx_baud": { "type": "number", "minimum": 0, "description": "above it, SoftwareSerial reception is unreliable on this board (warned)" } }
+                        }
+                    }
+                },
                 "adc": {
                     "type": "object", "additionalProperties": false,
                     "properties": { "bits": { "type": "integer" }, "vref": { "type": "number" } }
@@ -270,7 +295,7 @@
                 "type": {
                     "type": "string",
                     "description": "EmulatorFactory type. Empty or absent: default_emulator. Unknown types are logged and the component gets no emulator.",
-                    "examples": ["servo_emulator", "stepper_emulator", "dc_gear_emulator", "imu_emulator", "camera_emulator", "display_emulator", "default_emulator"]
+                    "examples": ["servo_emulator", "stepper_emulator", "dc_gear_emulator", "hbridge_emulator", "level_shifter_emulator", "imu_emulator", "camera_emulator", "display_emulator", "default_emulator"]
                 },
                 "source": { "type": ["object", "null"], "description": "Reserved for a custom emulator script; unused." },
                 "parameters": { "type": "object", "description": "Free-form, read by the emulator in init(). Known keys of some types are typed below; others pass through." },

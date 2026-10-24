@@ -57,14 +57,3 @@ size_t Print::printf(const char* format, ...) {
     if (n < 0) return 0;
     return write(buf, size_t(n) < sizeof buf ? size_t(n) : sizeof buf - 1);
 }
-
-
-size_t HardwareSerial::write(uint8_t c) {
-    rs_serial_write(reinterpret_cast<const char*>(&c), 1);
-    return 1;
-}
-
-size_t HardwareSerial::write(const uint8_t* data, size_t size) {
-    if (size) rs_serial_write(reinterpret_cast<const char*>(data), uint32_t(size));
-    return size;
-}

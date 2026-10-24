@@ -11,8 +11,16 @@ QString firmwareTemplate(Project* project, bool realLevel) {
     QString pinList, servoName, servoPin;
     int pulseMin = 1000, pulseMax = 2000;
     const bool real = project ? project->getLevel() == ProjectLevel::Real : realLevel;
-    // At the Real level: the active board's pins from the wiring.
-    const RealBoard board = real && project ? project->realBoard() : RealBoard();
+    // At the Real level: the pins from the wiring of the board the new sketch
+    // is likely for: the first without a sketch, else the first board.
+    int boardUid = -1;
+    if (real && project) {
+        for (ComponentInstance* b : project->boards()) {
+            if (boardUid < 0) boardUid = b->uid;
+            if (b->firmware.isEmpty()) { boardUid = b->uid; break; }
+        }
+    }
+    const RealBoard board = real && project ? project->realBoard(boardUid) : RealBoard();
     const bool esp32 = board.isValid() && board.def().fqbn.startsWith("esp32:");
     const QList<BoardPin> boardPins = real ? board.pins() : project ? project->idealBoard().pins() : QList<BoardPin>{};
     for (const BoardPin& p : boardPins) {
