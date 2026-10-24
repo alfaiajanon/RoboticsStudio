@@ -2,6 +2,17 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Ask before deciding
+
+**Any decision that changes the direction of the work needs the user's permission first.** Do what was asked, the way it was asked; when something else seems needed, ask and wait for the answer. This includes:
+
+- Git: "commit" means commit on the current branch. Don't create branches, push, open PRs, amend or rebase unless asked.
+- Scope: no extra features, parts, refactors or files beyond the request.
+- Design: when there are several reasonable ways to do something (an API, a format, a UI placement, a model), present the options and let the user choose.
+- Plans: don't change an approved plan, or the order of the work in `temp/plan.md`, on your own.
+
+Small, mechanical choices inside an approved task (names, local code structure) don't need asking; anything that shapes what gets built does.
+
 ## Project
 
 RoboticsStudio: a drag-and-drop robotics simulator (Qt 6 / C++17 / MuJoCo 3.3.7, Linux). Users assemble components (servos, IMUs, brackets, wheels) from a library, program them with C++ Arduino sketches (compiled to wasm in the app, transferable to a real board), and watch live telemetry. Components emulate cheap, flawed hardware (backlash, noise).
