@@ -377,7 +377,8 @@
             "spi": "datasheet: ATmega328P, SPI clock up to f_osc/2 = 8 MHz",
             "variant": "arduino:avr 1.8.8 core: variants/standard/pins_arduino.h (pin names) and boards.txt/platform.txt (uno.build.board=AVR_UNO: -DARDUINO_AVR_UNO -DARDUINO_ARCH_AVR, -DARDUINO=10607 from arduino-cli, F_CPU 16 MHz). A6/A7 exist in the variant but not on the Uno's header",
             "pin_output_ohm": "ATmega328P datasheet: absolute maximum DC current per I/O pin 40 mA (200 mA through VCC/GND); DC characteristics VOH >= 4.0 V at IOH = 20 mA, VCC = 5 V (worst case, 85 C: <= 50 ohm); the typical VOH/VOL-vs-current curves at 25 C give ~0.5 V at 20 mA, ~25 ohm (estimate read from the curves). Above 40 mA a real pin is damaged (not simulated)",
-            "pin_abs_max_ma": "ATmega328P datasheet: absolute maximum DC current per I/O pin 40 mA (200 mA through VCC/GND); DC characteristics VOH >= 4.0 V at IOH = 20 mA, VCC = 5 V (worst case, 85 C: <= 50 ohm); the typical VOH/VOL-vs-current curves at 25 C give ~0.5 V at 20 mA, ~25 ohm (estimate read from the curves). Above 40 mA a real pin is damaged (not simulated)"
+            "pin_abs_max_ma": "ATmega328P datasheet: absolute maximum DC current per I/O pin 40 mA (200 mA through VCC/GND); DC characteristics VOH >= 4.0 V at IOH = 20 mA, VCC = 5 V (worst case, 85 C: <= 50 ohm); the typical VOH/VOL-vs-current curves at 25 C give ~0.5 V at 20 mA, ~25 ohm (estimate read from the curves). Above 40 mA a real pin is damaged (not simulated)",
+            "uart": "arduino:avr core: HardwareSerial.h SERIAL_TX_BUFFER_SIZE / SERIAL_RX_BUFFER_SIZE 64 (RAMEND > 1023); Serial on D0/D1, also wired to the ATmega16U2 USB-serial chip through 1 k resistors (Uno R3 schematic: an external driver on D0 wins over the USB chip). SoftwareSerial (library 1.0): any pin, 64-byte receive buffer, one port listens at a time; estimate: reception above 57600 baud is unreliable on a 16 MHz Uno (bit timing in software, widely reported)"
         },
         "variant": {
             "pins": {
@@ -405,7 +406,22 @@
             ]
         },
         "pin_output_ohm": 25,
-        "pin_abs_max_ma": 40
+        "pin_abs_max_ma": 40,
+        "uart": {
+            "ports": [
+                {
+                    "name": "Serial",
+                    "rx": "d0",
+                    "tx": "d1",
+                    "usb": true
+                }
+            ],
+            "rx_buffer": 64,
+            "tx_buffer": 64,
+            "software_serial": {
+                "max_rx_baud": 57600
+            }
+        }
     },
     "power": {
         "supplies": [
